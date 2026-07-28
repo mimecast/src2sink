@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..graph_common import iter_nodes, load_v2_repo_records
 from ..renderers.markdown import md_table
@@ -17,16 +18,16 @@ MAX_MD_ROWS = 200
 class _PiiFlowCounts:
     """Aggregated PII/HTTP/queue touchpoint counters across all repos."""
 
-    by_class: Counter = field(default_factory=Counter)
-    by_repo: Counter = field(default_factory=Counter)
-    field_counts: Counter = field(default_factory=Counter)
-    sensitive_by_repo: Counter = field(default_factory=Counter)
-    http_in_by_repo: Counter = field(default_factory=Counter)
-    http_out_by_repo: Counter = field(default_factory=Counter)
-    queue_by_repo: Counter = field(default_factory=Counter)
+    by_class: Counter[str] = field(default_factory=Counter)
+    by_repo: Counter[str] = field(default_factory=Counter)
+    field_counts: Counter[str] = field(default_factory=Counter)
+    sensitive_by_repo: Counter[str] = field(default_factory=Counter)
+    http_in_by_repo: Counter[str] = field(default_factory=Counter)
+    http_out_by_repo: Counter[str] = field(default_factory=Counter)
+    queue_by_repo: Counter[str] = field(default_factory=Counter)
 
 
-def _collect_pii_flow(records: list[dict]) -> _PiiFlowCounts:
+def _collect_pii_flow(records: list[dict[str, Any]]) -> _PiiFlowCounts:
     """Tally PII, HTTP, and queue nodes per classification and per repo."""
     c = _PiiFlowCounts()
     for data in records:

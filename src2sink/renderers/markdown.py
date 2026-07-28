@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from ..sanitize import UNTRUSTED_CONTENT_NOTICE, for_table_cell
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from ..schema import RepoSummaryV2
 
 AUTO_START = "<!-- AUTO-GENERATED:START key={key} -->"
@@ -117,7 +119,7 @@ def render_repo_md_v2(summary: RepoSummaryV2) -> str:
     return "\n".join(out)
 
 
-def merge_with_manual(md_path, generated: str) -> str:
+def merge_with_manual(md_path: Path, generated: str) -> str:
     """Merge generated AUTO-GENERATED blocks into an existing manual markdown file.
 
     Replaces each keyed block in the existing file, appending any block whose

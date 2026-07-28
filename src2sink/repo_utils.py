@@ -6,20 +6,38 @@ import configparser
 import json
 import re
 import tomllib
-import xml.etree.ElementTree as ET
+# All parsing goes through defusedxml (DET) below — stdlib ET is imported *only*
+# for its ParseError type, which defusedxml raises and does not re-export (D-3).
+import xml.etree.ElementTree as ET  # nosec B405 - no stdlib parse call  # nosemgrep
 from collections import defaultdict
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any, Protocol
 
 import defusedxml.ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
 from . import internal_groups as _internal_groups
-from .constants import MAX_FILE_BYTES, SKIP_DIRS
+# Re-exported explicitly: build_metabase_v2 rebinds ``repo_utils.MAX_FILE_BYTES``
+# at startup so a --max-file-bytes override applies to the manifest read paths.
+from .constants import MAX_FILE_BYTES as MAX_FILE_BYTES
+from .constants import SKIP_DIRS
 from .safe_paths import resolve_within
 
 # Untrusted manifests (pom.xml, *.csproj) are parsed with defusedxml to block
 # entity-expansion ("billion laughs") and external-entity attacks. ``ET`` is
 # retained only for its ``ParseError`` type (raised for merely malformed XML).
+
+# Callback shapes used by the identity/artifact index passes below.
+ArtifactRegister = Callable[[str, str, str], None]
+
+
+class IdentityRegister(Protocol):
+    """Records ``(group, name)`` — and optionally a full coordinate — → clone path."""
+
+    def __call__(
+        self, group: str, name: str, clone_path: str | None, full: str | None = None
+    ) -> None: ...
 
 # ---------------------------------------------------------------------------
 # External-coordinate fast-reject prefixes
@@ -348,6 +366,8 @@ def _read_pom_identity(pom_path: Path) -> tuple[str, str] | None:
         root = DET.parse(pom_path).getroot()
     except (ET.ParseError, DefusedXmlException, OSError):
         return None
+    if root is None:
+        return None
     own_group: str | None = None
     own_artifact: str | None = None
     parent_group: str | None = None
@@ -477,6 +497,8 @@ def _read_dotnet_project_identity(path: Path) -> tuple[str, str, str | None] | N
         root = DET.parse(path).getroot()
     except (ET.ParseError, DefusedXmlException, OSError):
         return None
+    if root is None:
+        return None
     found: dict[str, str] = {}
     for el in root.iter():
         tag = _strip_xmlns(el.tag)
@@ -522,7 +544,7 @@ def _rel_to_parent(path: Path, repos_root: Path) -> str | None:
         return None
 
 
-def _index_poms(repos_root: Path, register) -> None:
+def _index_poms(repos_root: Path, register: ArtifactRegister) -> None:
     """Register (groupId, artifactId, path) identity for every pom.xml found."""
     for path in _iter_manifests(repos_root, "pom.xml"):
         ident = _read_pom_identity(path)
@@ -531,7 +553,7 @@ def _index_poms(repos_root: Path, register) -> None:
             register(ident[0], ident[1], rel)
 
 
-def _index_gradle(repos_root: Path, register) -> None:
+def _index_gradle(repos_root: Path, register: ArtifactRegister) -> None:
     """Register identity for Gradle root projects and their included modules."""
     for settings_name in ("settings.gradle", "settings.gradle.kts"):
         for path in _iter_manifests(repos_root, settings_name):
@@ -639,7 +661,7 @@ _component_identity_index_cache: dict[
 ] | None = None
 
 
-def _iter_manifests(repos_root: Path, pattern: str):
+def _iter_manifests(repos_root: Path, pattern: str) -> Iterator[Path]:
     """Yield manifest paths matching ``pattern`` under ``repos_root``.
 
     Applies the same depth window (2..6) and ``SKIP_DIRS`` filtering used by
@@ -676,7 +698,7 @@ def _strip_repos_prefix(rel_str: str, repos_prefix: str) -> str:
 
 
 def _seed_identity_from_artifact_index(
-    repos_root: Path, register, by_name: dict[str, list[str]]
+    repos_root: Path, register: IdentityRegister, by_name: dict[str, list[str]]
 ) -> None:
     """Pass 1: seed identity tables from the shared Maven/Gradle/npm index.
 
@@ -697,7 +719,7 @@ def _seed_identity_from_artifact_index(
         register(scope, name, _strip_repos_prefix(rel, repos_prefix), full=name)
 
 
-def _index_identity_readers(repos_root: Path, register) -> None:
+def _index_identity_readers(repos_root: Path, register: IdentityRegister) -> None:
     """Pass 2: walk the per-ecosystem manifest readers (simple + glob)."""
     readers = [
         (filename, reader) for filename, reader in _SIMPLE_IDENTITY_READERS.items()
@@ -709,7 +731,7 @@ def _index_identity_readers(repos_root: Path, register) -> None:
                 register(ident[0], ident[1], _rel_to_root(path, repos_root), full=ident[2])
 
 
-def _index_gradle_single_module(repos_root: Path, register) -> None:
+def _index_gradle_single_module(repos_root: Path, register: IdentityRegister) -> None:
     """Pass 3: Gradle single-module repos (build.gradle, no settings.gradle)."""
     for gname in ("build.gradle", "build.gradle.kts"):
         for path in _iter_manifests(repos_root, gname):
@@ -776,7 +798,9 @@ def _build_component_identity_index(repos_root: Path) -> tuple[
     return result
 
 
-def _source_map_lookup(coord: str, source_map: dict | None) -> tuple[bool, str | None]:
+def _source_map_lookup(
+    coord: str, source_map: dict[str, Any] | None
+) -> tuple[bool, str | None]:
     """Resolve ``coord`` via an explicit source map.
 
     Returns ``(handled, value)``: ``handled`` is True when the source map is
@@ -831,7 +855,7 @@ def _glob_library_dir(repos_root: Path, coord: str) -> str | None:
 
 
 def _locate_library_source(
-    repos_root: Path, coord: str, *, source_map: dict | None = None
+    repos_root: Path, coord: str, *, source_map: dict[str, Any] | None = None
 ) -> str | None:
     """Find an internal-library coordinate's source directory under repos_root."""
     if not coord:

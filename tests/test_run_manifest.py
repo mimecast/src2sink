@@ -1,4 +1,4 @@
-"""B8 — run provenance manifest (threat-model R-1 / GDPR Art. 30)."""
+"""TA-015 / B8 — run provenance manifest (threat-model R-1 / GDPR Art. 30)."""
 
 from __future__ import annotations
 

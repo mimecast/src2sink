@@ -175,7 +175,7 @@ def _import_hits_in_file(
 
 def _scan_repo_for_binding(
     repo_dir: Path, src: str, binding: ApiClientBinding,
-    seen: set[tuple[str, str]], pom_rx, gradle_rx,
+    seen: set[tuple[str, str]], pom_rx: re.Pattern[str], gradle_rx: re.Pattern[str],
 ) -> list[ProducerHit]:
     """Scan a repo directory tree for imports and build-file references to the binding."""
     hits: list[ProducerHit] = []

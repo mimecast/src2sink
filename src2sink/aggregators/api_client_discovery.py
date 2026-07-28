@@ -167,7 +167,9 @@ def _build_entry(
     else:
         entry = {k: cand[k] for k in _TUNABLE_FIELDS}
         entry["status"] = STATUS_PENDING
-    entry["confidence"] = _confidence(entry["target_repo"], scanned, bool(entry["paths"]))
+    entry["confidence"] = _confidence(
+        str(entry["target_repo"] or ""), scanned, bool(entry["paths"])
+    )
     entry["evidence"] = evidence
     return entry
 

@@ -1,6 +1,9 @@
 ![src2sink logo](./images/src2sink-logo-light.png)
 # Source-Code Metabase
 
+[![CI](https://github.com/mimecast/src2sink/actions/workflows/ci.yml/badge.svg)](https://github.com/mimecast/src2sink/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 A structured, human-readable knowledge base of the analysed source-code
 ecosystem. Designed to be loaded as **context for LLM SAST** so that
 cross-repository taint analysis becomes possible — sources in one repo,
@@ -134,6 +137,24 @@ uv run src2sink-build \
 uv run pytest tests/ -q
 uv run pytest tests/ -q -m fleet   # needs metabase/repos v2 JSONs
 ```
+
+### Build gates
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs six gates on every push,
+pull request, and weekly (advisories move even when the code does not):
+
+| Gate | What it enforces | Locally |
+|---|---|---|
+| `test` | pytest + coverage floors (80% overall, 90% on the security modules) | `make test` |
+| `srtm` | every requirement in the [SRTM](docs/security-privacy-gap-analysis.md) still has a test or a documented audit | `make srtm` |
+| `mypy (strict)` | `mypy --strict` over `src2sink/` and `scripts/` | `make typecheck` |
+| `bandit` | Python SAST on first-party code | `make bandit` |
+| `pip-audit` | dependency vulnerability audit (`TA-011` / `SC-1`) | `make audit` |
+| `opengrep` | pattern SAST, pinned ruleset, gated at ERROR severity | `make opengrep` |
+
+`make ci` runs everything except `opengrep`, which needs the external ruleset
+checkout. Known false positives carry inline `# nosec` / `# nosemgrep`
+annotations with a stated reason rather than blanket rule exclusions.
 
 > **Incremental behaviour:** each re-run compares the repo's current `git HEAD` SHA
 > against the SHA stored in the existing per-repo JSON. Repos that haven't changed are

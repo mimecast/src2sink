@@ -24,7 +24,7 @@ def test_safe_read_text_size_and_missing(tmp_path, monkeypatch):
 
 
 def test_oversized_reads_are_size_gated(tmp_path, monkeypatch):
-    """SAST finding 3 (SEC-1/D-4): manifest/git reads must honour MAX_FILE_BYTES.
+    """TA-006 / SAST finding 3 (SEC-1/D-4): manifest/git reads must honour MAX_FILE_BYTES.
 
     A hostile repo can ship a huge .git/HEAD, gradle file, or package.json; these
     read paths previously bypassed the cap that safe_read_text applies elsewhere.

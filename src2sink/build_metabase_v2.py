@@ -12,6 +12,7 @@ import os
 import re
 import sys
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,7 @@ from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
 from .extractors.config import extract_from_config, is_config_path
 from .extractors.unified import extract_from_file
 from .renderers.markdown import merge_with_manual, render_repo_md_v2
-from .schema import SCHEMA_VERSION, RepoSummaryV2
+from .schema import SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -66,7 +67,7 @@ def is_skip_dir(name: str) -> bool:
     return name in SKIP_DIRS or (name.startswith(".") and name not in {".github"})
 
 
-def iter_repo_files(repo_root: Path):
+def iter_repo_files(repo_root: Path) -> Iterator[Path]:
     """Yield every scannable file under a repo, skipping excluded dirs and escaping symlinks.
 
     os.walk does not follow symlinked directories (followlinks defaults to
@@ -177,11 +178,11 @@ def _record_dependencies(summary: RepoSummaryV2, deps: list[dict[str, str]]) -> 
 
 def _scan_repo_files(
     repo_root: Path, repo_id: str, summary: RepoSummaryV2
-) -> tuple[Counter[str], list, list]:
+) -> tuple[Counter[str], list[FlowNode], list[FlowEdge]]:
     """Extract flow nodes/edges from each scannable file (with cap + pre-screen)."""
     lang_counts: Counter[str] = Counter()
-    all_nodes: list = []
-    all_edges: list = []
+    all_nodes: list[FlowNode] = []
+    all_edges: list[FlowEdge] = []
     scanned = 0
     for path in iter_repo_files(repo_root):
         if _MAX_FILES_PER_REPO and scanned >= _MAX_FILES_PER_REPO:
@@ -424,7 +425,7 @@ def _write_run_manifest(
                 {"repo": f"{r['group']}/{r['name']}", "git_sha": r.get("git_sha")}
                 for r in rows
             ),
-            key=lambda e: e["repo"],
+            key=lambda e: str(e["repo"]),
         ),
     }
     (metabase_root / "run-manifest.json").write_text(

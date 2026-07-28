@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from ..graph_common import extract_urls_and_paths
+
+if TYPE_CHECKING:
+    from ..known_api_clients import ApiClientBinding
 
 # Client call sites (pattern, language hint, purpose)
 HTTP_OUT_CALL_RX: list[tuple[re.Pattern[str], str, str]] = [
@@ -29,7 +33,7 @@ HTTP_OUT_CALL_RX: list[tuple[re.Pattern[str], str, str]] = [
 _BINDING_CLASS_RX: list[tuple[re.Pattern[str], str, str]] = []
 
 
-def configure_http_out_client_patterns(bindings) -> None:
+def configure_http_out_client_patterns(bindings: Iterable[ApiClientBinding]) -> None:
     """Build per-binding class-pattern regex entries from loaded ApiClientBindings."""
     global _BINDING_CLASS_RX
     _BINDING_CLASS_RX = []

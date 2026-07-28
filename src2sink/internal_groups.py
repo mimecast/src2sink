@@ -53,17 +53,18 @@ def _read_pattern_file(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() == ".json":
         data = json.loads(text)
+        raw: object
         if isinstance(data, dict):
-            patterns = data.get("patterns", [])
+            raw = data.get("patterns", [])
         elif isinstance(data, list):
-            patterns = data
+            raw = data
         else:
             raise ValueError(
                 f"{path}: JSON must be an object with a 'patterns' array or a bare array"
             )
-        if not isinstance(patterns, list):
+        if not isinstance(raw, list):
             raise ValueError(f"{path}: 'patterns' must be an array of regex strings")
-        return [str(p).strip() for p in patterns if str(p).strip()]
+        return [str(p).strip() for p in raw if str(p).strip()]
     patterns: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()

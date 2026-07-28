@@ -66,7 +66,7 @@ DATA_CLASS: dict[str, str] = {
     "customerpolicy": "tenant-config",
     "dlpclassification": "tenant-content-classified",
     "sandboxverdict": "tenant-derived",
-    "apikey": "credential",
+    "apikey": "credential",  # nosec B105 - a classification label for a field *name*, not a secret
     "api_key": "credential",
     "customerapikey": "credential",
     "bearertoken": "credential",

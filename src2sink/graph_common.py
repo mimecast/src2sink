@@ -11,6 +11,7 @@ from .schema import SCHEMA_VERSION
 
 # Hosts that are not useful service-graph targets (v1 parity).
 SERVICE_GRAPH_NOISE_HOSTS = frozenset({
+    # nosec B104 - a denylist of noise hostnames found in scanned source; nothing binds a socket.
     "localhost", "127.0.0.1", "0.0.0.0", "example.com", "example.org",
     "test.com", "foo.com", "test.local", "playwright.dev",
     "www.w3.org", "schemas.xmlsoap.org", "swagger.io",

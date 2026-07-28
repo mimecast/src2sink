@@ -234,7 +234,7 @@ def _write_pii_sinks(taint_dir: Path, buckets: TaintCatalogueBuckets) -> None:
         "`field_name` is null and `confidence` is low — generic persistence, "
         "not proven PII). See `SCHEMA.md` § `taint/pii-sinks.md`._\n",
         [["Family", "Count"],
-         *[[k, str(v)] for k, v in Counter(r.get("family") for r in buckets.pii_sinks).most_common()]],
+         *[[str(k), str(v)] for k, v in Counter(r.get("family") for r in buckets.pii_sinks).most_common()]],
         [
             [
                 r["repo"],
@@ -291,7 +291,7 @@ def write_crypto_and_payload_catalogues(taint_dir: Path, buckets: TaintCatalogue
         "reaches an execution sink in the same file. Use `trace.py` for cross-repo "
         "producer analysis._\n",
         [["Confidence", "Count"],
-         *[[k, str(v)] for k, v in Counter(r.get("confidence") for r in buckets.raw_payload).most_common()]],
+         *[[str(k), str(v)] for k, v in Counter(r.get("confidence") for r in buckets.raw_payload).most_common()]],
         [
             [
                 r["repo"],

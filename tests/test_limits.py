@@ -111,7 +111,7 @@ def test_no_file_cap_scans_all(tmp_path, monkeypatch):
 
 
 def test_oversized_file_skipped_with_note(tmp_path, monkeypatch):
-    """A file over --max-file-bytes is skipped AND recorded (no silent cap)."""
+    """TA-006 — a file over --max-file-bytes is skipped AND recorded (no silent cap)."""
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / "src" / "Small.java").write_text("class Small {}", encoding="utf-8")

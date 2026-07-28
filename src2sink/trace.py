@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -231,7 +232,9 @@ _SCAN_SUFFIXES = frozenset(
 _SCAN_SKIP_PARTS = frozenset({"node_modules", ".git", "target", "build"})
 
 
-def _scan_needles(target: str, path_filter: str | None):
+def _scan_needles(
+    target: str, path_filter: str | None
+) -> tuple[list[str], re.Pattern[str] | None]:
     """Build the literal-scan needle list and a compiled quoted-string regex."""
     _, name = target.split("/", 1)
     binding = next((b for b in get_bindings() if b.target_repo == target), None)
@@ -254,7 +257,9 @@ def _scan_needles(target: str, path_filter: str | None):
     return needles, scan_rx
 
 
-def _iter_consumer_files(repos_root: Path, target_dir: Path):
+def _iter_consumer_files(
+    repos_root: Path, target_dir: Path
+) -> Iterator[tuple[str, Path, Path]]:
     """Yield (src_id, sub_dir, file) for scannable files in non-target repos."""
     for repo_dir in repos_root.iterdir():
         if not repo_dir.is_dir():
@@ -271,7 +276,13 @@ def _iter_consumer_files(repos_root: Path, target_dir: Path):
                 yield src_id, sub, path
 
 
-def _literal_hits_in_file(src_id, sub, path, needles, scan_rx) -> list[UpstreamHit]:
+def _literal_hits_in_file(
+    src_id: str,
+    sub: Path,
+    path: Path,
+    needles: list[str],
+    scan_rx: re.Pattern[str] | None,
+) -> list[UpstreamHit]:
     """Scan untrusted source text of one file for quoted-string literals referencing the target.
 
     Matches are only recorded, never evaluated.

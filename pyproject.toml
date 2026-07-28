@@ -23,10 +23,13 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "bandit>=1.9.4",
+    "mypy>=2.3.0",
     "pip-audit>=2.7.0",
     "pytest>=9.0.3",
     "pytest-cov>=6.0.0",
     "ruff>=0.15.0",
+    "types-defusedxml>=0.7.0.20260504",
 ]
 
 [build-system]
@@ -57,6 +60,14 @@ omit = ["*/__init__.py"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.mypy]
+# Strict from the start on the shipped package + CI scripts. Tests are excluded:
+# they lean on pytest fixtures and deliberately malformed fixture data, where
+# full annotation buys little. `mypy` runs as its own CI job (see ci.yml).
+files = ["src2sink", "scripts"]
+strict = true
+pretty = true
 
 [tool.ruff.lint]
 # Ruff's default rule set: pyflakes (F) + the core pycodestyle checks (E4 imports,

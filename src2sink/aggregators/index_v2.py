@@ -14,7 +14,7 @@ from ..renderers.markdown import md_table
 
 def _row_from_record(data: dict[str, Any]) -> dict[str, Any]:
     """Summarise one repo record into an index row of per-family node counts."""
-    families = Counter()
+    families: Counter[str] = Counter()
     weak_algos: list[str] = []
     for node in iter_nodes(data):
         families[node.get("family", "")] += 1

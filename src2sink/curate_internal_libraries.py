@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+from typing import Any
 
 from .aggregators.library_source_map import load_library_source_map
 from .library_taint_java import render_taint_table, scan_java_public_api
@@ -21,7 +22,7 @@ def _extract_coordinate(lib_text: str) -> str | None:
 
 
 def _resolve_library_root(
-    repos_root: Path, coord: str, source_map: dict | None = None
+    repos_root: Path, coord: str, source_map: dict[str, Any] | None = None
 ) -> Path | None:
     """Resolve the on-disk source root for a library coordinate, or None.
 
@@ -68,7 +69,7 @@ def curate_library_file(
     lib_path: Path,
     repos_root: Path,
     coord: str,
-    source_map: dict | None = None,
+    source_map: dict[str, Any] | None = None,
 ) -> bool:
     """Fill a library file's placeholder taint table from scanned source.
 

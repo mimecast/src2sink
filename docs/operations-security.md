@@ -8,7 +8,12 @@ implementation cannot enforce on its own.
 
 ---
 
-## 1. Data classification & handling
+## 1. Data classification & handling (`TA-010`)
+
+Audit evidence for `TA-010` (output/config sensitivity handling): the table below
+is the handling standard a reviewer checks the deployment against — restricted,
+encrypted-at-rest metabase store and `api-clients.json` supplied as a CI secret
+file.
 
 | Asset | Classification | Handling |
 |---|---|---|
@@ -23,7 +28,10 @@ the control is handling and access, not suppression (threat-model `P-2`, `I-1`).
 
 ---
 
-## 2. Running in CI (least privilege)
+## 2. Running in CI (least privilege) (`TA-012`)
+
+Audit evidence for `TA-012` (least-privilege CI + sandbox): the checklist below is
+what a reviewer confirms for the pipeline that runs the scan.
 
 - Run under a **dedicated least-privilege CI identity** with no access to
   production secrets beyond `api-clients.json`. Do not run as root. (`E-1`, `SEC-NEW-11`.)
@@ -62,7 +70,7 @@ literal-PII redaction in snippets (`PRV-NEW-2`).
 
 ---
 
-## 4. Retention & erasure (`PRV-NEW-1`, GDPR Art. 5(1)(e) / Art. 17)
+## 4. Retention & erasure (`PRV-NEW-1`, `TA-014`, GDPR Art. 5(1)(e) / Art. 17)
 
 The metabase records personal-data **references** (field names/classifications,
 a ROPA projection) — not values — but it is still a durable cross-fleet map and
@@ -83,21 +91,24 @@ needs a lifecycle:
 
 ## 5. Dependency & supply-chain hygiene (`SC-1`, `SEC-NEW-9`)
 
-- Run a vulnerability audit regularly and in CI:
+- A vulnerability audit runs on every push and pull request: the `pip-audit` job
+  in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) fails the build on
+  any advisory hit. Locally:
 
   ```sh
   make audit        # == uv run pip-audit
   ```
 
-  Wire `make audit` into the pipeline (fail the build on findings above your
-  threshold). No org-specific CI file is committed here — add the step to your
-  existing pipeline.
-- The runtime XML parser is `defusedxml` (permissive PSFL); `pip-audit` and
-  `pytest-cov` are dev-only and never ship in the build artefact.
-- **Recommendation — commit the lockfile:** `uv.lock` is currently gitignored.
-  Committing it (and installing with hash verification) would give reproducible,
-  tamper-evident dependency installs — the missing half of `SC-1`. This is a
-  policy decision left to the team; it is not changed here.
+- The same workflow runs the SAST gates — `bandit` and `opengrep` (pinned rules)
+  — plus `mypy --strict` and the SRTM traceability check (§`TA-011`).
+- The runtime XML parser is `defusedxml` (permissive PSFL); `pip-audit`,
+  `bandit`, `mypy` and `pytest-cov` are dev-only and never ship in the build
+  artefact.
+- **The lockfile is committed** and every CI job installs with `uv sync --locked`,
+  which fails if `uv.lock` has drifted from `pyproject.toml`. Installs are
+  therefore reproducible and hash-verified, and a dependency change is a reviewed
+  diff — the pin half of `SC-1`, asserted by `TA-011`
+  (`tests/test_dependency_pinning.py`).
 
 ---
 

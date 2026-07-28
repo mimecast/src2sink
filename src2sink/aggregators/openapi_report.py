@@ -51,8 +51,8 @@ def write_openapi_artifacts(
     helm_hosts = discover_helm_hosts(repos_root) if repos_root else []
     helm_path = graphs_dir / "helm-service-hosts.jsonl"
     with helm_path.open("w", encoding="utf-8") as fh:
-        for row in helm_hosts:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        for helm_row in helm_hosts:
+            fh.write(json.dumps(helm_row, ensure_ascii=False) + "\n")
 
     md: list[str] = [
         "# OpenAPI / Swagger specs (discovered)\n",

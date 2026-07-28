@@ -19,6 +19,7 @@ import faulthandler
 import multiprocessing as mp
 import time
 from collections.abc import Callable, Iterable, Iterator
+from multiprocessing.connection import Connection
 from typing import Any
 
 # Defaults (overridable via CLI). A repo exceeding the timeout is killed and
@@ -30,7 +31,14 @@ _TERMINATE_GRACE_S = 5.0
 _POLL_INTERVAL_S = 0.05
 
 
-def _entry(func, item, initializer, initargs, timeout, conn) -> None:  # pragma: no cover - runs in child
+def _entry(  # pragma: no cover - runs in child
+    func: Callable[[Any], Any],
+    item: Any,
+    initializer: Callable[..., None] | None,
+    initargs: tuple[Any, ...],
+    timeout: float,
+    conn: Connection,
+) -> None:
     """Child-process entry point: init, run ``func(item)``, send the result back."""
     # If we hang past the deadline, dump a traceback to stderr before the parent
     # kills us — so a hostile/pathological repo leaves a diagnostic breadcrumb.
@@ -44,7 +52,7 @@ def _entry(func, item, initializer, initargs, timeout, conn) -> None:  # pragma:
     except BaseException as exc:  # noqa: BLE001 - report, never crash silently
         try:
             conn.send({"_error": True, "error": type(exc).__name__})
-        except Exception:
+        except Exception:  # nosec B110 - the pipe is already broken; the parent times out and records the repo (D-1)
             pass
     finally:
         faulthandler.cancel_dump_traceback_later()
@@ -153,7 +161,9 @@ def map_with_timeout(
             running = still
 
             if running and not progressed:
-                time.sleep(_POLL_INTERVAL_S)
+                # Deliberate 50ms back-off in the worker poll loop — not stray debug
+                # code (opengrep arbitrary-sleep).
+                time.sleep(_POLL_INTERVAL_S)  # nosemgrep
     finally:
         # Never leave orphaned workers behind (e.g. on generator close).
         for r in running:

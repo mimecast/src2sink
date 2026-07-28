@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 STATUS_PENDING = "pending"
 STATUS_CLONED = "cloned"
@@ -16,7 +17,7 @@ STATUS_EXCLUDED = "excluded"
 STATUS_AMBIGUOUS = "ambiguous"
 
 
-def load_library_source_map(path: Path) -> dict[str, dict]:
+def load_library_source_map(path: Path) -> dict[str, dict[str, Any]]:
     """Return coord -> entry dict, or {} if the file is missing/invalid."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -51,13 +52,13 @@ def generate_library_source_map(metabase_root: Path, repo_jsons: list[Path]) -> 
                 coord_versions[coord].add(ver)
 
     # Build updated mappings, preserving manual overrides
-    mappings: list[dict] = []
+    mappings: list[dict[str, Any]] = []
     for coord, count in sorted(coord_consumers.items(), key=lambda x: -x[1]):
         prev = existing.get(coord, {})
         # Preserve manually-set status and clone_path overrides
         status = prev.get("status", STATUS_PENDING)
         clone_path = prev.get("clone_path") or _infer_clone_path(coord)
-        entry: dict = {
+        entry: dict[str, Any] = {
             "coordinate": coord,
             "clone_path": clone_path or "",
             "status": status,
@@ -111,7 +112,7 @@ def _resolve_clone_path(
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _entry_needs_resolution(entry: dict) -> bool:
+def _entry_needs_resolution(entry: dict[str, Any]) -> bool:
     """True if a source-map entry is still flagged and worth resolving."""
     if not entry.get("coordinate"):
         return False

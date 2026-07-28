@@ -61,4 +61,4 @@ library-source-map.json
 internal-libraries/**
 ropa/processing-activities.jsonl
 ropa/categories-of-personal-data.md
-/uv.lock
+

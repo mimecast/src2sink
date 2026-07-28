@@ -1,0 +1,196 @@
+name: CI
+
+# Build gates for src2sink. Every job is independent and runs in parallel:
+#
+#   test       pytest + the coverage floors (project 80%, security modules 90%)
+#   srtm       Security Requirements Traceability Matrix — every requirement in
+#              docs/security-privacy-gap-analysis.md §8 still has live evidence
+#   mypy       mypy --strict over src2sink/ and scripts/
+#   bandit     Python SAST (first-party code)
+#   pip-audit  dependency vulnerability audit (TA-011 / SC-1)
+#   opengrep   pattern SAST with a pinned ruleset, gated at ERROR severity
+#
+# The weekly schedule matters for pip-audit: advisories land against dependencies
+# that have not changed, so a green build last week says nothing about today.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays 06:17 UTC — off the hour to avoid the scheduler's peak-minute queue.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+# Read-only by default; no job needs more (E-1 / SEC-NEW-11: least privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Kept in step with requires-python in pyproject.toml.
+  PYTHON_VERSION: "3.14"
+  # Actions are pinned to commit SHAs (not tags) so a moved tag cannot change
+  # what runs here — the same supply-chain rule the project applies to its
+  # own dependencies (SC-1).
+  #   actions/checkout        v7.0.1
+  #   astral-sh/setup-uv      v9.0.0
+  #   actions/upload-artifact v7.0.1
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        # --locked: install exactly the committed, hash-pinned uv.lock and fail if
+        # it has drifted from pyproject.toml. Reproducible, tamper-evident installs
+        # are the SC-1 control that TA-011 asserts.
+        run: uv sync --locked
+      - name: Run tests
+        # Coverage gates come from pyproject addopts (--cov-fail-under=80) plus
+        # the per-module 90% floor in tests/test_zz_security_coverage_gate.py.
+        run: uv run pytest -q
+      - name: Coverage report
+        if: always()
+        run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+  srtm:
+    name: srtm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Check requirement traceability
+        # Fails when a requirement in the SRTM has no implementing test (or, for
+        # the audit-only artifacts, no section in the operations guide), and when
+        # a test carries a TA-xxx label the matrix no longer contains.
+        # --no-project: the checker is stdlib-only, so skip installing the tree.
+        run: uv run --no-project python scripts/srtm_check.py --summary "$GITHUB_STEP_SUMMARY"
+
+  mypy:
+    name: mypy (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Type-check
+        # Targets and strict mode come from [tool.mypy] in pyproject.toml.
+        run: uv run mypy
+
+  bandit:
+    name: bandit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Scan first-party code
+        # Every severity fails the build: the tree is clean today, and the four
+        # known false positives carry inline `# nosec <id> - reason` annotations.
+        # tests/ is excluded on purpose — its fixtures are deliberate attack
+        # payloads (billion-laughs XML, traversal symlinks, injection strings).
+        run: uv run bandit -r src2sink scripts
+      - name: Machine-readable report
+        if: always()
+        run: uv run bandit -r src2sink scripts -f json -o bandit-report.json || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Audit dependencies
+        # TA-011 / SC-1. Fails on any advisory hit against the resolved
+        # dependency set, runtime and dev alike.
+        run: uv run pip-audit --progress-spinner=off
+
+  opengrep:
+    name: opengrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Pinned: a rules bump is a reviewed change, not something that silently
+      # turns the build red (or, worse, silently stops flagging something).
+      OPENGREP_VERSION: v1.26.0
+      OPENGREP_RULES_SHA: f1d2b562b414783763fd02a6ed2736eaed622efa
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch pinned ruleset
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: opengrep/opengrep-rules
+          ref: ${{ env.OPENGREP_RULES_SHA }}
+          path: .opengrep-rules
+          persist-credentials: false
+      - name: Install opengrep
+        # Release binaries are cosign-signed; the .cert/.sig assets alongside the
+        # binary can be verified with `cosign verify-blob` if the org adopts it.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL --retry 3 \
+            "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+            -o "$RUNNER_TEMP/bin/opengrep"
+          chmod +x "$RUNNER_TEMP/bin/opengrep"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/opengrep" --version
+      - name: Scan
+        # ERROR severity is the gate; WARNING/INFO findings are reported in the
+        # SARIF artifact without failing the build. The two known ERROR-level
+        # false positives carry inline `# nosemgrep` annotations with a reason.
+        run: |
+          set -euo pipefail
+          opengrep scan \
+            --config .opengrep-rules/python \
+            --severity ERROR \
+            --error \
+            --timeout 60 \
+            --sarif-output opengrep.sarif \
+            src2sink scripts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: opengrep-sarif
+          path: opengrep.sarif
+          retention-days: 30
