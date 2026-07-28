@@ -661,6 +661,24 @@ _component_identity_index_cache: dict[
 ] | None = None
 
 
+def is_skipped_path(path: Path, root: Path) -> bool:
+    """True if a path segment *below* ``root`` names an excluded directory.
+
+    Only the segments under ``root`` are considered. The absolute prefix is the
+    operator's filesystem layout, not the scanned tree: a repos root under
+    ``/tmp/repos`` or ``~/build/repos`` is perfectly legitimate, and matching
+    ``SKIP_DIRS`` against it would silently exclude everything beneath it.
+    """
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        try:
+            rel = path.resolve().relative_to(root.resolve())
+        except ValueError:
+            rel = path
+    return any(part in SKIP_DIRS for part in rel.parts)
+
+
 def _iter_manifests(repos_root: Path, pattern: str) -> Iterator[Path]:
     """Yield manifest paths matching ``pattern`` under ``repos_root``.
 
@@ -676,7 +694,7 @@ def _iter_manifests(repos_root: Path, pattern: str) -> Iterator[Path]:
             continue
         if depth > max_extra_depth or depth < 2:
             continue
-        if any(part in SKIP_DIRS for part in path.parts):
+        if is_skipped_path(path, repos_root):
             continue
         yield path
 

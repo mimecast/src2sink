@@ -30,6 +30,7 @@ from .repo_utils import (
     detect_build_systems,
     detect_git_sha,
     is_internal_coordinate,
+    is_skipped_path,
     parse_package_json_dependencies,
     parse_pom_dependencies,
 )
@@ -149,15 +150,15 @@ def _collect_dependencies(repo_root: Path) -> list[dict[str, str]]:
     """Gather declared dependencies from pom.xml, build.gradle*, and package.json."""
     deps: list[dict[str, str]] = []
     for pom in repo_root.rglob("pom.xml"):
-        if not any(seg in SKIP_DIRS for seg in pom.parts):
+        if not is_skipped_path(pom, repo_root):
             deps.extend(parse_pom_dependencies(pom))
     for gradle in list(repo_root.rglob("build.gradle")) + list(
         repo_root.rglob("build.gradle.kts")
     ):
-        if not any(seg in SKIP_DIRS for seg in gradle.parts):
+        if not is_skipped_path(gradle, repo_root):
             deps.extend(_parse_gradle_deps(gradle))
     for pkg in repo_root.rglob("package.json"):
-        if not any(seg in SKIP_DIRS for seg in pkg.parts):
+        if not is_skipped_path(pkg, repo_root):
             deps.extend(parse_package_json_dependencies(pkg))
     return deps
 

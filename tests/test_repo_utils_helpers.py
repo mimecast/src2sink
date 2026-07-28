@@ -49,6 +49,38 @@ def test_oversized_reads_are_size_gated(tmp_path, monkeypatch):
     assert "pkg" not in npm
 
 
+def _pom(path, group, artifact):
+    _w(path, f"<project><groupId>{group}</groupId>"
+             f"<artifactId>{artifact}</artifactId></project>")
+
+
+def test_skip_dirs_apply_below_the_root_only(tmp_path):
+    """SKIP_DIRS must match segments *under* the root, never the absolute prefix.
+
+    A repos root can legitimately live under /tmp, ~/build, or any other path
+    whose segments collide with SKIP_DIRS. Matching the whole absolute path made
+    the manifest index silently empty there — everything resolved to "not found"
+    with no error (it is how CI, whose tmpdir is under /tmp, first caught this).
+    """
+    repos_root = tmp_path / "tmp" / "build" / "repos"          # hostile prefix
+    _pom(repos_root / "grp" / "widget-service" / "pom.xml", "com.acme", "widget")
+    _pom(repos_root / "grp" / "widget-service" / "target" / "pom.xml", "com.acme", "stale")
+
+    pom_by_coord, _pom_by_artifact, _npm = ru._build_repo_artifact_index(repos_root)
+
+    assert ("com.acme", "widget") in pom_by_coord, "prefix segments must not exclude the tree"
+    # ...while a real build-output directory *below* the root is still skipped.
+    assert ("com.acme", "stale") not in pom_by_coord
+
+
+def test_is_skipped_path(tmp_path):
+    root = tmp_path / "tmp" / "repos"
+    assert not ru.is_skipped_path(root / "grp" / "repo" / "pom.xml", root)
+    assert ru.is_skipped_path(root / "grp" / "repo" / "target" / "pom.xml", root)
+    # A path outside the root falls back to checking every segment.
+    assert ru.is_skipped_path(tmp_path / "node_modules" / "pom.xml", root)
+
+
 def test_is_internal_coordinate():
     internal_groups.configure_internal_group_patterns([r"^com\.acme(\..+)?$", r"^@acme(/.+)?$"])
     try:
