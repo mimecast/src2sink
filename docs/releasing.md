@@ -52,6 +52,12 @@ git switch main && git pull            # release from main only
 git status --short                     # must be empty
 ```
 
+Write the release notes **first**, while the changes are still fresh: add a
+dated section for the new version at the top of [`CHANGELOG.md`](../CHANGELOG.md),
+and a `[x.y.z]: .../releases/tag/vx.y.z` link at the bottom. That section is the
+release body in step 8, so write it for someone deciding whether to upgrade —
+what changed for *them*, not which commits landed.
+
 Bump `version` in `pyproject.toml`, then refresh and re-check the lockfile:
 
 ```sh
@@ -145,10 +151,13 @@ uv run --isolated --no-project --python 3.14 --with src2sink src2sink-build --he
 
 ## 8. Publish the GitHub release
 
+Use the version's `CHANGELOG.md` section as the body — one source of truth, so
+the GitHub release and the changelog can never disagree:
+
 ```sh
-gh release create v1.0.0 dist/* \
-  --title "src2sink 1.0.0" \
-  --notes "$(git log --pretty='- %s' <previous-tag>..v1.0.0)"
+# everything between this version's heading and the next one
+awk '/^## \[1\.0\.0\]/{f=1; next} /^## \[/{f=0} f' CHANGELOG.md > /tmp/notes.md
+gh release create v1.0.0 dist/* --title "src2sink 1.0.0" --notes-file /tmp/notes.md
 ```
 
 Attaching the artefacts gives anyone who cannot reach PyPI a checksum-comparable

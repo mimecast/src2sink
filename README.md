@@ -316,5 +316,6 @@ Do not add public PyPI fallbacks.
 - [`docs/api-clients-json.md`](https://github.com/mimecast/src2sink/blob/main/docs/api-clients-json.md) — the internal-service binding file.
 - [`metabase-usage.md`](https://github.com/mimecast/src2sink/blob/main/metabase-usage.md) — using the output as LLM context.
 - [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md) — publishing a version to PyPI.
+- [`CHANGELOG.md`](https://github.com/mimecast/src2sink/blob/main/CHANGELOG.md) — what shipped in each version.
 - [`NEXT_STEPS.md`](https://github.com/mimecast/src2sink/blob/main/NEXT_STEPS.md) — roadmap · [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md) — known small gaps.
 - `/ai-sast-scanner` skill — SAST prompt this metabase feeds.
