@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://db.example.com:5432/analytics
+  ssl:
+    bundle:
+      pem:
+        ciphers: TLS_AES_256_GCM_SHA384
+jwt:
+  signing-algorithm: RS256

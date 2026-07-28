@@ -1,0 +1,33 @@
+{
+  "build_systems": [],
+  "dependencies_external_count": 0,
+  "dependencies_internal": [],
+  "edge_count": 0,
+  "families": [
+    "http-in"
+  ],
+  "frameworks": [],
+  "language_breakdown": {
+    "java": 1
+  },
+  "node_count": 1,
+  "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "GET",
+        "path": "/items",
+        "raw": "@GetMapping(\"/items\""
+      },
+      "family": "http-in",
+      "file": "src/ItemsController.java",
+      "framework": "spring",
+      "kind": "source",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    }
+  ],
+  "primary_language": "java"
+}

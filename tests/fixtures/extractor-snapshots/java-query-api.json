@@ -1,0 +1,135 @@
+{
+  "edge_count": 2,
+  "families": [
+    "data-class-field",
+    "http-in",
+    "raw-code-payload",
+    "sql"
+  ],
+  "node_count": 8,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 1,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 17,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 21,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "REQUEST",
+        "path": "/queries",
+        "raw": "@RequestMapping(\"/queries\""
+      },
+      "family": "http-in",
+      "file": "src/QueryController.java",
+      "framework": "spring",
+      "kind": "source",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": "raw-sql-payload",
+      "detail": {
+        "endpoint_path": "/queries",
+        "field_line": 21,
+        "sink_line": 17,
+        "sink_symbol": "query"
+      },
+      "family": "raw-code-payload",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 21,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": "raw-sql-payload",
+      "detail": {
+        "endpoint_path": "/queries",
+        "field_line": 22,
+        "sink_line": 17,
+        "sink_symbol": "query"
+      },
+      "family": "raw-code-payload",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "execution": true,
+        "parameterised": false,
+        "raw": "jdbcTemplate.query(request.getSql())",
+        "symbol": "query"
+      },
+      "family": "sql",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 17,
+      "pii_classification": null
+    }
+  ]
+}

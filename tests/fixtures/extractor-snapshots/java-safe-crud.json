@@ -1,0 +1,25 @@
+{
+  "edge_count": 0,
+  "families": [
+    "http-in"
+  ],
+  "node_count": 1,
+  "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "GET",
+        "path": "/items",
+        "raw": "@GetMapping(\"/items\""
+      },
+      "family": "http-in",
+      "file": "src/ItemsController.java",
+      "framework": "spring",
+      "kind": "source",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    }
+  ]
+}

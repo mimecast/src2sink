@@ -1,0 +1,15 @@
+{
+  "inbound_count": 1,
+  "path_filter": null,
+  "raw_payload_count": 2,
+  "sql_sink_count": 1,
+  "store_count": 0,
+  "target_repo": "dataplatform/query-api-service",
+  "upstream": [
+    {
+      "confidence": "low",
+      "kind": "http-out-graph",
+      "source_repo": "dataplatform/api-consumer"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "npm_by_name": {
+    "@acme/ui-kit": "repos/platform/ui-kit"
+  },
+  "pom_by_artifact": {
+    "widget": [
+      "repos/platform/widget-service"
+    ]
+  },
+  "pom_by_coord": {
+    "com.acme:widget": "repos/platform/widget-service"
+  }
+}

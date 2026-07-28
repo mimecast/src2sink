@@ -1,0 +1,72 @@
+{
+  "edge_count": 0,
+  "families": [
+    "config-security",
+    "crypto-config",
+    "data-store"
+  ],
+  "node_count": 4,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "key": "signing-algorithm",
+        "value_line": "signing-algorithm: RS256"
+      },
+      "family": "config-security",
+      "file": "application.yml",
+      "framework": null,
+      "kind": "propagator",
+      "language": "config",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "line": "ciphers: TLS_AES_256_GCM_SHA384",
+        "subkind": "tls-cipher-suite"
+      },
+      "family": "crypto-config",
+      "file": "application.yml",
+      "framework": null,
+      "kind": "propagator",
+      "language": "config",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "line": "signing-algorithm: RS256",
+        "subkind": "jwt-algorithm"
+      },
+      "family": "crypto-config",
+      "file": "application.yml",
+      "framework": null,
+      "kind": "propagator",
+      "language": "config",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "source": "uri-pattern",
+        "url": "jdbc:postgresql://db.example.com:5432/analytics",
+        "vendor": "jdbc"
+      },
+      "family": "data-store",
+      "file": "application.yml",
+      "framework": null,
+      "kind": "store",
+      "language": "config",
+      "line": 3,
+      "pii_classification": null
+    }
+  ]
+}

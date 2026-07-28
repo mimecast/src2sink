@@ -1,0 +1,185 @@
+{
+  "dangerous-payload-fields.jsonl": [],
+  "pii-sinks.jsonl": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "field_name": "phone",
+        "raw": "logger.info("
+      },
+      "family": "pii-log",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:13:pii-log:sink:3bf5136850f6",
+      "kind": "sink",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber",
+        "raw": "logger.info("
+      },
+      "family": "pii-log",
+      "file": "src/sender.py",
+      "framework": null,
+      "id": "python/sms-sender:src/sender.py:7:pii-log:sink:04f2ad659cf0",
+      "kind": "sink",
+      "language": "python",
+      "line": 7,
+      "pii_classification": "direct-pii",
+      "repo": "python/sms-sender"
+    }
+  ],
+  "pii-sources.jsonl": [
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phone"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "id": "notifications/sms-gateway:src/EventPublisher.java:13:pii-field:source:891f4ed96fe4",
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-gateway"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phone"
+      },
+      "family": "pii-field",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:10:pii-field:source:6d794cb97c40",
+      "kind": "source",
+      "language": "java",
+      "line": 10,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "id": "notifications/sms-gateway:src/EventPublisher.java:12:pii-field:source:21817e66fd00",
+      "kind": "source",
+      "language": "java",
+      "line": 12,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-gateway"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "id": "notifications/sms-gateway:src/EventPublisher.java:13:pii-field:source:891f4ed96fe4",
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-gateway"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:12:pii-field:source:21817e66fd00",
+      "kind": "source",
+      "language": "java",
+      "line": 12,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:13:pii-field:source:891f4ed96fe4",
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:13:pii-field:source:891f4ed96fe4",
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/sender.py",
+      "framework": null,
+      "id": "python/sms-sender:src/sender.py:6:pii-field:source:d980f62346dc",
+      "kind": "source",
+      "language": "python",
+      "line": 6,
+      "pii_classification": "direct-pii",
+      "repo": "python/sms-sender"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/sender.py",
+      "framework": null,
+      "id": "python/sms-sender:src/sender.py:7:pii-field:source:58a508fa40f9",
+      "kind": "source",
+      "language": "python",
+      "line": 7,
+      "pii_classification": "direct-pii",
+      "repo": "python/sms-sender"
+    }
+  ]
+}

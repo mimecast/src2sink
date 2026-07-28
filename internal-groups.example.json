@@ -1,0 +1,8 @@
+{
+  "patterns": [
+    "^com\\.acme(\\..+)?$",
+    "^com\\.acme(?:cloud|rnd|production)(\\..+)?$",
+    "^@acme(/.+)?$",
+    "^internal[-_].+$"
+  ]
+}

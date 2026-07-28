@@ -1,0 +1,64 @@
+# ----------------------------------------------------------------------
+# Python / build / virtualenv noise
+# ----------------------------------------------------------------------
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# IDE / OS noise
+.DS_Store
+.idea/
+.mypy_cache/
+.vscode/
+.cursor/
+
+# Test / coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+archive/
+
+# ----------------------------------------------------------------------
+# Metabase: auto-generated subtrees produced by build_metabase_v2.py.
+# All output directories are created by the script at runtime.
+# ----------------------------------------------------------------------
+
+# Indexes — regenerated unconditionally on every build
+index/**
+
+# Graphs — regenerated unconditionally on every build
+graphs/**
+
+# Taint catalogues — regenerated unconditionally on every build
+taint/**
+
+# Convention files — regenerated unconditionally on every build
+conventions/**
+
+# Organization-specific internal dependency namespace patterns (copy from
+# internal-groups.example.json and customize locally).
+internal-groups.json
+internal-groups.txt
+
+# API client bindings — real service names (copy from api-clients.example.json).
+api-clients.json
+# Discovered candidate bindings — same sensitivity (internal service topology).
+api-clients.discovered.json
+
+# Library source map — generated at build time, contains real repo paths.
+library-source-map.json
+
+# Internal-libraries: per-library <coord>.md files are kept (hand-curated
+# taint tables, preserved unless they still contain `_TBD_`).
+internal-libraries/**
+ropa/processing-activities.jsonl
+ropa/categories-of-personal-data.md
+/uv.lock

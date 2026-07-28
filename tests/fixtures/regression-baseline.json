@@ -1,0 +1,39 @@
+{
+  "repos": {
+    "config/store-svc": {
+      "config-security": 1,
+      "crypto-config": 2,
+      "data-store": 1
+    },
+    "dataplatform/api-consumer": {
+      "http-out": 2,
+      "data-class-field": 4
+    },
+    "dataplatform/query-api-service": {
+      "http-in": 1,
+      "data-class-field": 4,
+      "raw-code-payload": 2,
+      "sql": 1
+    },
+    "go/http-caller": {
+      "data-class-field": 1
+    },
+    "negative/safe-crud": {
+      "http-in": 1
+    },
+    "notifications/sms-consumer": {
+      "pii-field": 4,
+      "pii-log": 1,
+      "queue-sub": 1
+    },
+    "notifications/sms-gateway": {
+      "pii-field": 3,
+      "queue-pub": 1
+    },
+    "python/sms-sender": {
+      "pii-field": 2,
+      "pii-log": 1
+    }
+  },
+  "schema_version": 2
+}

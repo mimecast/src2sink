@@ -1,0 +1,90 @@
+{
+  "edge_count": 1,
+  "families": [
+    "data-class-field",
+    "http-in",
+    "raw-code-payload",
+    "sql"
+  ],
+  "node_count": 5,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 3,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "POST",
+        "path": "/execute",
+        "raw": "@PostMapping(\"/execute\""
+      },
+      "family": "http-in",
+      "file": "src/SqlRunner.java",
+      "framework": "spring",
+      "kind": "source",
+      "language": "java",
+      "line": 4,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": "raw-sql-payload",
+      "detail": {
+        "endpoint_path": "/execute",
+        "field_line": 3,
+        "sink_line": 6,
+        "sink_symbol": "query"
+      },
+      "family": "raw-code-payload",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 3,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "execution": true,
+        "parameterised": false,
+        "raw": "jdbcTemplate.query(req.getSql())",
+        "symbol": "query"
+      },
+      "family": "sql",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    }
+  ]
+}

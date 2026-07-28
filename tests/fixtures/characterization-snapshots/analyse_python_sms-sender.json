@@ -1,0 +1,61 @@
+{
+  "build_systems": [],
+  "dependencies_external_count": 0,
+  "dependencies_internal": [],
+  "edge_count": 0,
+  "families": [
+    "pii-field",
+    "pii-log"
+  ],
+  "frameworks": [],
+  "language_breakdown": {
+    "python": 1
+  },
+  "node_count": 3,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "source",
+      "language": "python",
+      "line": 6,
+      "pii_classification": "direct-pii"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "source",
+      "language": "python",
+      "line": 7,
+      "pii_classification": "direct-pii"
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber",
+        "raw": "logger.info("
+      },
+      "family": "pii-log",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "sink",
+      "language": "python",
+      "line": 7,
+      "pii_classification": "direct-pii"
+    }
+  ],
+  "primary_language": "python"
+}

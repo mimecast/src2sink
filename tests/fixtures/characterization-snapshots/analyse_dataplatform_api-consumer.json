@@ -1,0 +1,118 @@
+{
+  "build_systems": [],
+  "dependencies_external_count": 0,
+  "dependencies_internal": [],
+  "edge_count": 0,
+  "families": [
+    "data-class-field",
+    "http-out"
+  ],
+  "frameworks": [],
+  "language_breakdown": {
+    "java": 1
+  },
+  "node_count": 6,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "host": "query-api-service.dev",
+        "http_method": "POST",
+        "path": "/v1/queries",
+        "paths": [
+          "/v1/queries"
+        ],
+        "purpose": "client-call",
+        "raw": "HttpRequest.newBuilder",
+        "url": "https://query-api-service.dev/v1/queries"
+      },
+      "family": "http-out",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "host": "query-api-service.dev",
+        "http_method": "POST",
+        "path": "/v1/queries",
+        "paths": [
+          "/v1/queries"
+        ],
+        "purpose": "client-call",
+        "raw": "URI.create(",
+        "url": "https://query-api-service.dev/v1/queries"
+      },
+      "family": "http-out",
+      "file": "src/QueryClient.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 9,
+      "pii_classification": null
+    }
+  ],
+  "primary_language": "java"
+}

@@ -1,0 +1,76 @@
+{
+  "build_systems": [],
+  "dependencies_external_count": 0,
+  "dependencies_internal": [],
+  "edge_count": 0,
+  "families": [
+    "pii-field",
+    "queue-pub"
+  ],
+  "frameworks": [],
+  "language_breakdown": {
+    "java": 1
+  },
+  "node_count": 4,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 12,
+      "pii_classification": "direct-pii"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phone"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "field_name": "phoneNumber"
+      },
+      "family": "pii-field",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": "direct-pii"
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "direction": "produce",
+        "system": "kafka",
+        "topic": "customer-phone-updates"
+      },
+      "family": "queue-pub",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    }
+  ],
+  "primary_language": "java"
+}

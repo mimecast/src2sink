@@ -1,0 +1,14 @@
+{
+  "_comment": "API client bindings — copy to api-clients.json and fill in your values. See AGENTS.md for usage.",
+  "bindings": [
+    {
+      "target_repo": "acme/sql-runner-api",
+      "maven_artifact": "sql-runner-api-client",
+      "import_prefix": "com.example.acme.sqlrunner.client",
+      "paths": ["/query", "/query/sync", "/query/{handle}", "/results/{handle}"],
+      "payload_fields": ["sql"],
+      "service_aliases": ["sql-runner-api"],
+      "class_patterns": ["SqlRunnerApiClient", "AcmeSqlRunnerClient"]
+    }
+  ]
+}

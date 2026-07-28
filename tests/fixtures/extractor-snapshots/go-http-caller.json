@@ -1,0 +1,23 @@
+{
+  "edge_count": 0,
+  "families": [
+    "data-class-field"
+  ],
+  "node_count": 1,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "main.go",
+      "framework": null,
+      "kind": "source",
+      "language": "go",
+      "line": 8,
+      "pii_classification": null
+    }
+  ]
+}

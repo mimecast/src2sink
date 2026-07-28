@@ -1,0 +1,26 @@
+{
+  "by_coord": {
+    ":acme-pytools": "data/pyproj-lib",
+    "@acme:@acme/ui-kit": "platform/ui-kit",
+    "com.acme:widget": "platform/widget-service",
+    "github.com/acme:thing": "systems/gomod"
+  },
+  "by_full": {
+    "@acme/ui-kit": "platform/ui-kit",
+    "github.com/acme/thing": "systems/gomod"
+  },
+  "by_name": {
+    "@acme/ui-kit": [
+      "platform/ui-kit"
+    ],
+    "acme-pytools": [
+      "data/pyproj-lib"
+    ],
+    "thing": [
+      "systems/gomod"
+    ],
+    "widget": [
+      "platform/widget-service"
+    ]
+  }
+}
