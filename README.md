@@ -1,3 +1,4 @@
+![src2sink logo](./images/src2sink-logo-light.png)
 # Source-Code Metabase
 
 A structured, human-readable knowledge base of the analysed source-code

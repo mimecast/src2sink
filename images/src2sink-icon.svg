@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="taint" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0" stop-color="#3EC5E0"/><stop offset="0.55" stop-color="#8B5CF6"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient></defs><rect x="0" y="0" width="512" height="512" rx="112" fill="#0E1420"/><rect x="0" y="0" width="512" height="512" rx="112" fill="none" stroke="#161E2E" stroke-width="2"/><g transform="translate(0.0,0.0) scale(1.0)">
+<line x1="238" y1="118" x2="238" y2="394" stroke="#3A4356" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.5 22"/>
+<line x1="318" y1="118" x2="318" y2="394" stroke="#3A4356" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.5 22"/>
+<path d="M 186 160 C 268 160 236 250 288 300 C 316 327 330 330 344 338" fill="none" stroke="url(#taint)" stroke-width="23" stroke-linecap="round"/>
+<circle cx="146" cy="160" r="36" fill="none" stroke="#3EC5E0" stroke-width="21"/>
+<g transform="translate(376,364)">
+<path d="M -38 -32 A 50 50 0 1 0 -12 -48" fill="none" stroke="#FF6B3D" stroke-width="17" stroke-linecap="round"/>
+<path d="M -20 -14 A 24 24 0 1 0 -2 -23" fill="none" stroke="#FF6B3D" stroke-width="13" stroke-linecap="round" opacity="0.85"/>
+<circle cx="0" cy="0" r="9.5" fill="#FF6B3D"/>
+</g></g></svg>
