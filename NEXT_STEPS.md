@@ -1,7 +1,7 @@
 # Next steps — metabase
 
 Short gap list. **Full plan and progress record:**
-[`docs/metabase-v2-implementation-plan.md`](../docs/metabase-v2-implementation-plan.md).
+[`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 For commands and artefact locations see [`README.md`](./README.md) and
 [`SCHEMA.md`](./SCHEMA.md).

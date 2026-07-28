@@ -1,8 +1,8 @@
-![src2sink logo](./images/src2sink-logo-light.png)
+![src2sink logo](https://raw.githubusercontent.com/mimecast/src2sink/main/images/src2sink-logo-light.png)
 # Source-Code Metabase
 
 [![CI](https://github.com/mimecast/src2sink/actions/workflows/ci.yml/badge.svg)](https://github.com/mimecast/src2sink/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mimecast/src2sink/blob/main/LICENSE)
 
 A structured, human-readable knowledge base of the analysed source-code
 ecosystem. Designed to be loaded as **context for LLM SAST** so that
@@ -10,8 +10,8 @@ cross-repository taint analysis becomes possible — sources in one repo,
 sinks in another, internal libraries that act as transparent pass-
 throughs to dangerous APIs.
 
-**Canonical field definitions:** [`SCHEMA.md`](./SCHEMA.md)  
-**Roadmap / gaps:** [`NEXT_STEPS.md`](./NEXT_STEPS.md)
+**Canonical field definitions:** [`SCHEMA.md`](https://github.com/mimecast/src2sink/blob/main/SCHEMA.md)  
+**Roadmap / gaps:** [`NEXT_STEPS.md`](https://github.com/mimecast/src2sink/blob/main/NEXT_STEPS.md)
 
 ---
 
@@ -140,13 +140,13 @@ uv run pytest tests/ -q -m fleet   # needs metabase/repos v2 JSONs
 
 ### Build gates
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs six gates on every push,
+[`.github/workflows/ci.yml`](https://github.com/mimecast/src2sink/blob/main/.github/workflows/ci.yml) runs six gates on every push,
 pull request, and weekly (advisories move even when the code does not):
 
 | Gate | What it enforces | Locally |
 |---|---|---|
 | `test` | pytest + coverage floors (80% overall, 90% on the security modules) | `make test` |
-| `srtm` | every requirement in the [SRTM](docs/security-privacy-gap-analysis.md) still has a test or a documented audit | `make srtm` |
+| `srtm` | every requirement in the [SRTM](https://github.com/mimecast/src2sink/blob/main/docs/security-privacy-gap-analysis.md) still has a test or a documented audit | `make srtm` |
 | `mypy (strict)` | `mypy --strict` over `src2sink/` and `scripts/` | `make typecheck` |
 | `bandit` | Python SAST on first-party code | `make bandit` |
 | `pip-audit` | dependency vulnerability audit (`TA-011` / `SC-1`) | `make audit` |
@@ -155,6 +155,9 @@ pull request, and weekly (advisories move even when the code does not):
 `make ci` runs everything except `opengrep`, which needs the external ruleset
 checkout. Known false positives carry inline `# nosec` / `# nosemgrep`
 annotations with a stated reason rather than blanket rule exclusions.
+
+Publishing a version to PyPI: [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md).
+Known small gaps: [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md).
 
 > **Incremental behaviour:** each re-run compares the repo's current `git HEAD` SHA
 > against the SHA stored in the existing per-repo JSON. Repos that haven't changed are
@@ -303,9 +306,15 @@ Do not add public PyPI fallbacks.
 
 ## See also
 
-- [`docs/metabase-v2-implementation-plan.md`](../docs/metabase-v2-implementation-plan.md) — **phased plan and progress record**.
-- Root [`README.md`](../README.md) — clone + triage pipeline.
-- [`AGENTS.md`](../AGENTS.md) — contributor / agent quick reference.
-- [`SCHEMA.md`](./SCHEMA.md) — complete v2 node/edge vocabulary.
-- [`NEXT_STEPS.md`](./NEXT_STEPS.md) — short gap list.
+- [`SCHEMA.md`](https://github.com/mimecast/src2sink/blob/main/SCHEMA.md) — complete v2 node/edge vocabulary.
+- [`docs/implementation-plan.md`](https://github.com/mimecast/src2sink/blob/main/docs/implementation-plan.md) — **phased plan and progress record**.
+- [`docs/architecture.md`](https://github.com/mimecast/src2sink/blob/main/docs/architecture.md) — components, data flow, trust boundaries.
+- [`docs/threat-model.md`](https://github.com/mimecast/src2sink/blob/main/docs/threat-model.md) — STRIDE risk register.
+- [`docs/security-privacy-gap-analysis.md`](https://github.com/mimecast/src2sink/blob/main/docs/security-privacy-gap-analysis.md) — requirements, abuse cases, SRTM.
+- [`docs/operations-security.md`](https://github.com/mimecast/src2sink/blob/main/docs/operations-security.md) — running it safely; data classification and retention.
+- [`docs/sast-report.md`](https://github.com/mimecast/src2sink/blob/main/docs/sast-report.md) — self-review of this tool's own code.
+- [`docs/api-clients-json.md`](https://github.com/mimecast/src2sink/blob/main/docs/api-clients-json.md) — the internal-service binding file.
+- [`metabase-usage.md`](https://github.com/mimecast/src2sink/blob/main/metabase-usage.md) — using the output as LLM context.
+- [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md) — publishing a version to PyPI.
+- [`NEXT_STEPS.md`](https://github.com/mimecast/src2sink/blob/main/NEXT_STEPS.md) — roadmap · [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md) — known small gaps.
 - `/ai-sast-scanner` skill — SAST prompt this metabase feeds.

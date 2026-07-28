@@ -1,11 +1,23 @@
 [project]
 name = "src2sink"
 version = "1.0.0"
-description = "Add your description here"
+description = "Cross-repository source-to-sink metabase for LLM-assisted SAST"
 authors = [{ name = "Brett Crawley" }]
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["sast", "static-analysis", "taint-analysis", "security", "tree-sitter", "llm"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
 dependencies = [
     "defusedxml>=0.7.1",
     "ipykernel>=7.2.0",
@@ -20,6 +32,11 @@ dependencies = [
     "tree-sitter-python>=0.25.0",
     "tree-sitter-typescript>=0.23.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mimecast/src2sink"
+Repository = "https://github.com/mimecast/src2sink"
+Issues = "https://github.com/mimecast/src2sink/issues"
 
 [dependency-groups]
 dev = [
@@ -38,6 +55,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["src2sink*"]
+
+# Ship the PEP 561 marker so downstream consumers actually get the annotations
+# the "Typing :: Typed" classifier advertises (mypy --strict is a CI gate).
+[tool.setuptools.package-data]
+src2sink = ["py.typed"]
 
 [project.scripts]
 src2sink-build = "src2sink.build_metabase_v2:main"
