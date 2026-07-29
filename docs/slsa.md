@@ -243,6 +243,15 @@ against your identity by hand. Only worth it if depending on
 
 ### 4.2 Acceptance test
 
+Passed for 1.0.3 on 2026-07-29. The provenance names the generator's reusable
+workflow as the builder (`generator_generic_slsa3.yml@refs/tags/v2.1.0`) rather
+than this repository's workflow — that identity is what distinguishes L3 from
+L2 — binds the build to tag `v1.0.3` at commit `8113a17`, and its subject digests
+match the files PyPI serves. Rekor log index `2280305561`.
+
+Note the predicate is SLSA `v0.2`, which is what generator v2.1.0 emits;
+`slsa-verifier` handles it, but a v1-only parser will not.
+
 ```sh
 slsa-verifier verify-artifact src2sink-<v>-py3-none-any.whl \
   --provenance-path multiple.intoto.jsonl \
@@ -321,12 +330,13 @@ Be precise when claiming a level, because the Build track is narrower than
 | 5 ✅ | Emit artefact digests from `build` | prep | 30 min |
 | 6 ✅ | Add the `generator_generic_slsa3.yml` job, tag-pinned with a comment explaining why | L2 → L3 | 2–3 h |
 | 7 ✅ | Rehearse via `workflow_dispatch` (no PyPI involvement) | — | 1 h |
-| 8 | Cut a release; run the §4.2 acceptance check | verifies L3 | 30 min |
-| 9 | State the claimed level and verification steps in the README | — | 15 min |
+| 8 ✅ | Cut a release; run the §4.2 acceptance check | verifies L3 | 30 min |
+| 9 ✅ | State the claimed level and verification steps in the README | — | 15 min |
 
-Steps 1–4 are independently valuable and worth doing regardless of whether L3
-ever happens: they are what let anyone outside this repository check that a
-published artefact came from a build of this source.
+All nine are done. Releases from 1.0.3 are **SLSA Build L3**; 1.0.2 is L2; 1.0.0
+and 1.0.1 carry no provenance. The one open dependency is upstream — see
+[`todo.md`](todo.md) for the generator's Node 20 exposure and the monthly
+rehearsal that watches it.
 
 ---
 
