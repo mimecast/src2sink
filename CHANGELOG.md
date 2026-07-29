@@ -33,6 +33,10 @@ the version exists to carry the release automation and documentation below.
 
 ## [1.0.0] — 2026-07-28
 
+> **Yanked on PyPI, 2026-07-29 — "Superseded by 1.0.1".** Not a defect: 1.0.1 is
+> functionally identical, and this release is sound. Existing `== 1.0.0` pins
+> keep resolving as before; new installs resolve to 1.0.1 regardless.
+
 First public release. src2sink builds a **source-to-sink metabase**: a structured,
 human-readable knowledge base of an entire source-code estate, designed to be
 loaded as context for LLM-assisted SAST so taint can be followed *across*
