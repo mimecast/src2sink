@@ -5,6 +5,38 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
+## [1.0.2] — 2026-07-29
+
+**No functional changes.** Adds build provenance to the release process.
+
+### Added
+
+- **Signed build provenance — SLSA Build L2.** Every published artefact now
+  carries provenance generated and signed by the build platform, in two forms:
+  a GitHub attestation, and a PEP 740 attestation stored alongside the files on
+  PyPI so it is available to anyone who installed from there rather than from
+  the GitHub release. Verify with:
+
+  ```sh
+  gh attestation verify src2sink-1.0.2-py3-none-any.whl --repo mimecast/src2sink
+  python -m pypi_attestations verify pypi --repo mimecast/src2sink src2sink-1.0.2-*.whl
+  ```
+
+  Provenance ties an artefact to the source commit, tag, and workflow run that
+  produced it, so a file claiming to be src2sink can be checked rather than
+  trusted. 1.0.0 and 1.0.1 have none — they predate this.
+
+  This is Build **L2**, not L3: the identity that signs belongs to the same job
+  that runs the build, so it is not beyond the reach of a compromised build step.
+  [`docs/slsa.md`](docs/slsa.md) sets out what closes that gap.
+
+### Changed
+
+- The publish step uses `pypa/gh-action-pypi-publish` instead of `uv publish`.
+  uv uploads PEP 740 attestations that already exist but does not generate them;
+  the PyPA action does both. Publishing is still tokenless Trusted Publishing,
+  and the PyPI publisher configuration is unchanged.
+
 ## [1.0.1] — 2026-07-29
 
 **No functional changes.** The analyser, its output schema, and the CLI are
@@ -144,5 +176,6 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[1.0.2]: https://github.com/mimecast/src2sink/releases/tag/v1.0.2
 [1.0.1]: https://github.com/mimecast/src2sink/releases/tag/v1.0.1
 [1.0.0]: https://github.com/mimecast/src2sink/releases/tag/v1.0.0

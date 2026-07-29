@@ -159,6 +159,24 @@ annotations with a stated reason rather than blanket rule exclusions.
 Publishing a version to PyPI: [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md).
 Known small gaps: [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md).
 
+### Verifying a release
+
+Releases from 1.0.2 carry signed build provenance (SLSA Build L2) tying each
+artefact to the source commit, tag, and workflow run that produced it — so a file
+claiming to be src2sink can be checked rather than trusted:
+
+```sh
+# downloaded from the GitHub release
+gh attestation verify src2sink-1.0.2-py3-none-any.whl --repo mimecast/src2sink
+
+# installed from PyPI (PEP 740 attestation)
+python -m pypi_attestations verify pypi --repo mimecast/src2sink src2sink-1.0.2-*.whl
+```
+
+1.0.0 and 1.0.1 predate this and have no provenance. What the claim does and does
+not cover — and the plan for Build L3 — is in
+[`docs/slsa.md`](https://github.com/mimecast/src2sink/blob/main/docs/slsa.md).
+
 > **Incremental behaviour:** each re-run compares the repo's current `git HEAD` SHA
 > against the SHA stored in the existing per-repo JSON. Repos that haven't changed are
 > skipped (`skip  group/name (unchanged)`); only changed repos are re-extracted.

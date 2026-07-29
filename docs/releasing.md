@@ -149,6 +149,10 @@ you; the run page shows *Review deployments*). Approve it and the upload runs,
 followed by the GitHub release with your changelog section as the body and the
 artefacts attached.
 
+The build also signs **provenance** for each artefact (SLSA Build L2): a GitHub
+attestation, plus a PEP 740 attestation uploaded alongside the files on PyPI.
+Verification commands are in §6 and in [`slsa.md`](slsa.md).
+
 Nothing has been published until you approve. A run left unapproved expires
 harmlessly.
 
@@ -160,6 +164,18 @@ uv run --isolated --no-project --python 3.14 --with src2sink src2sink-build --he
 
 Then open <https://pypi.org/project/src2sink/> and confirm the banner renders and
 the README links resolve.
+
+Check the provenance landed — a release that silently stops producing it is the
+failure nobody notices:
+
+```sh
+gh release download "v$VERSION" -D /tmp/rel
+gh attestation verify /tmp/rel/src2sink-$VERSION-py3-none-any.whl --repo mimecast/src2sink
+curl -sH 'Accept: application/vnd.pypi.simple.v1+json' https://pypi.org/simple/src2sink/ \
+  | jq -r --arg v "$VERSION" '.files[] | select(.filename|contains($v)) | .provenance'
+```
+
+The `jq` line must print URLs, not `null`.
 
 ---
 
@@ -182,10 +198,17 @@ the README links resolve.
 Only if the workflow is unavailable and a release cannot wait. This puts a
 long-lived token on a laptop, which is what Trusted Publishing exists to avoid.
 
+Note the cost beyond the token: `uv publish` uploads PEP 740 attestations only
+if they already exist next to the distributions — it does not generate them — and
+a hand build produces no GitHub attestation at all. Sign explicitly, or the
+release ships without provenance and drops below the level every other release
+meets.
+
 ```sh
 export UV_PUBLISH_TOKEN='pypi-...'     # project-scoped token
 rm -rf dist && uv build
 uv run --with twine twine check dist/*
+uv run --with pypi-attestations python -m pypi_attestations sign dist/*
 uv publish --dry-run dist/*
 uv publish dist/*
 gh release create v1.0.1 dist/* --title "src2sink 1.0.1" --notes-file <(

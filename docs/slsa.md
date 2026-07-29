@@ -5,16 +5,23 @@ it should be done. Written against [SLSA v1.0](https://slsa.dev/spec/v1.0/levels
 whose **Build track** is the only track with stable levels; the Source and
 Dependency tracks are still drafts and are out of scope here.
 
-The short version: the hard parts are already done. The release runs on a hosted
-platform from a tag, actions are SHA-pinned, publishing is tokenless, and a human
-approves each upload. What is missing is the actual product of SLSA — **signed
-provenance** — which nothing in the pipeline currently produces.
+The short version: the hard parts were already done — the release runs on a
+hosted platform from a tag, actions are SHA-pinned, publishing is tokenless, and
+a human approves each upload. What was missing was the actual product of SLSA,
+**signed provenance**. Phase 1 (§3) is now implemented and releases from 1.0.2
+are **Build L2**. Phase 2 (§4), which reaches L3, is not.
 
 ---
 
 ## 1. Where we are today
 
-Verified on 2026-07-29 against the published 1.0.1 artefacts:
+**Phase 1 is implemented** (see §3); from 1.0.2 onward every release carries
+signed provenance, so the Build track level is **L2**. The starting position
+below is kept because it is the evidence the plan was built on, and because the
+same commands are how you confirm a future release has not silently stopped
+producing provenance.
+
+### Before Phase 1 — verified on 2026-07-29 against the published 1.0.1 artefacts
 
 ```console
 $ gh attestation verify src2sink-1.0.1-py3-none-any.whl --repo mimecast/src2sink
@@ -27,12 +34,13 @@ null
 null
 ```
 
-No provenance exists in either place, so the Build track level is **L0**, not L1.
-`uv publish` uploads PEP 740 attestations when they sit alongside the
+No provenance existed in either place, so the Build track level was **L0**, not
+L1. `uv publish` uploads PEP 740 attestations when they sit alongside the
 distributions but does not generate them, and nothing in
-[`release.yml`](../.github/workflows/release.yml) generates any.
+[`release.yml`](../.github/workflows/release.yml) generated any. Phase 1 fixed
+both halves.
 
-What *is* already in place — all of it required by, or supporting, L2/L3:
+What was *already* in place — all of it required by, or supporting, L2/L3:
 
 | Property | Status | Where |
 |---|---|---|
@@ -45,9 +53,9 @@ What *is* already in place — all of it required by, or supporting, L2/L3:
 | Upload gated on human approval | ✅ | `pypi` environment, required reviewer |
 | Publish job holds no permission but `id-token: write` | ✅ | `release.yml` `publish` job |
 | Dependencies hash-pinned and installed `--locked` | ✅ | `uv.lock`, CI `uv sync --locked` |
-| **Signed provenance produced** | ❌ | nothing generates it |
-| **Provenance distributed to consumers** | ❌ | — |
-| **Provenance generated outside user-controlled steps** | ❌ | required for L3 only |
+| **Signed provenance produced** | ✅ 1.0.2+ | `attest-build-provenance` in `build` |
+| **Provenance distributed to consumers** | ✅ 1.0.2+ | GitHub attestation store; PEP 740 on PyPI |
+| **Provenance generated outside user-controlled steps** | ❌ | required for L3 — Phase 2 |
 
 ---
 
@@ -273,8 +281,8 @@ Be precise when claiming a level, because the Build track is narrower than
 
 | # | Step | Level | Effort |
 |---|---|---|---|
-| 1 | Add `attest-build-provenance` to the `build` job | L1 → L2 | 20 min |
-| 2 | Swap `uv publish` for `gh-action-pypi-publish` (or pre-sign with `pypi-attestations`) | L2 on PyPI | 20 min |
+| 1 ✅ | Add `attest-build-provenance` to the `build` job | L1 → L2 | 20 min |
+| 2 ✅ | Swap `uv publish` for `gh-action-pypi-publish` (or pre-sign with `pypi-attestations`) | L2 on PyPI | 20 min |
 | 3 | Cut a release; run the three acceptance checks in §3.3 | verifies L2 | 30 min |
 | 4 | Document consumer verification in the README | — | 15 min |
 | 5 | Emit artefact digests from `build` | prep | 30 min |
