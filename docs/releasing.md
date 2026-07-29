@@ -1,35 +1,46 @@
 # Releasing src2sink to PyPI
 
-The whole procedure, start to finish. It is deliberately manual — releases are
-rare and irreversible, so the steps are ones you read before running.
+Pushing a `v*` tag publishes the release. The
+[`Release` workflow](../.github/workflows/release.yml) builds from the tagged
+tree, uploads to PyPI over **Trusted Publishing** (OIDC — no API token exists
+anywhere in this repository), and attaches the same artefacts to the GitHub
+release. Your job is everything up to the tag.
 
 **The one rule that matters:** a version number on PyPI can never be reused.
-Upload `1.0.0`, notice a mistake, and your only options are to yank it and
-release `1.0.1`. Test on TestPyPI first (step 6) whenever anything about the
-packaging itself has changed.
+Upload `1.0.1`, notice a mistake, and your only options are to yank it and
+release `1.0.2`. The workflow refuses to publish if the tag and the packaged
+version disagree, but it cannot check that the *contents* are right — that is
+what step 3 is for.
 
 Package: [`src2sink`](https://pypi.org/project/src2sink/) · built with
 `setuptools`, driven by `uv`.
 
 ---
 
-## 0. Prerequisites (once per machine)
+## 0. One-time setup
 
-- A PyPI account with **2FA enabled** (mandatory for new projects).
-- An **API token**, scoped to this project once it exists:
-  <https://pypi.org/manage/account/token/>. Keep it in your password manager;
-  export it per shell session rather than storing it in a dotfile:
+Already done for this repository — recorded here because it breaks silently if
+anyone renames things.
 
-  ```sh
-  export UV_PUBLISH_TOKEN='pypi-...'
-  ```
+**On PyPI** (project → *Manage* → *Publishing* → *Add a new publisher* → GitHub):
 
-  Never pass a token as a literal argument in a shared shell — it lands in
-  history and, in CI, in logs (see [operations-security.md](operations-security.md) §1).
-- A TestPyPI account + token if you intend to rehearse:
-  <https://test.pypi.org/manage/account/token/>.
+| Field | Value |
+|---|---|
+| Owner | `mimecast` |
+| Repository name | `src2sink` |
+| Workflow name | `release.yml` |
+| Environment name | `pypi` |
 
----
+PyPI matches all four. Renaming the workflow file or the environment stops
+publishing until the publisher entry is updated to match.
+
+**On GitHub** (*Settings* → *Environments* → `pypi`): optionally add required
+reviewers to gate every upload on a human approval, and restrict deployments to
+tags matching `v*`. The `publish` job is the only one granted `id-token: write`,
+and it holds no other permission.
+
+No token is needed for the normal path. Keep a project-scoped API token in your
+password manager only as the break-glass fallback (appendix).
 
 ## 1. Decide the version
 
@@ -52,11 +63,12 @@ git switch main && git pull            # release from main only
 git status --short                     # must be empty
 ```
 
-Write the release notes **first**, while the changes are still fresh: add a
-dated section for the new version at the top of [`CHANGELOG.md`](../CHANGELOG.md),
-and a `[x.y.z]: .../releases/tag/vx.y.z` link at the bottom. That section is the
-release body in step 8, so write it for someone deciding whether to upgrade —
-what changed for *them*, not which commits landed.
+Add a dated section for the new version at the top of
+[`CHANGELOG.md`](../CHANGELOG.md), plus a `[x.y.z]: .../releases/tag/vx.y.z` link
+at the bottom. **This is not optional:** the workflow extracts that section as
+the GitHub release body and fails the release if it is empty. Write it for
+someone deciding whether to upgrade — what changed for *them*, not which commits
+landed.
 
 Bump `version` in `pyproject.toml`, then refresh and re-check the lockfile:
 
@@ -68,9 +80,7 @@ uv lock --check                        # must pass; CI installs with --locked
 **`README.md` is the PyPI project page.** PyPI renders it standalone, with no
 repository around it, so every link and image in it must be an **absolute URL** —
 a relative `./images/logo.png` renders as a broken image and `./SCHEMA.md`
-resolves to a pypi.org 404. Keep the banner on
-`https://raw.githubusercontent.com/mimecast/src2sink/main/...` and in-repo links
-on `https://github.com/mimecast/src2sink/blob/main/...`. Check with:
+resolves to a pypi.org 404. Check with:
 
 ```sh
 grep -noE '\]\((?!http)[^)]+\)' -P README.md   # must print nothing
@@ -83,41 +93,87 @@ make ci                                # lint, typecheck, test, srtm, bandit, au
 ```
 
 `make ci` covers everything CI does except `opengrep` (which needs the external
-ruleset — see the Makefile target). Do not release off a red or unrun tree: the
-CI badge reflects the last push, not your working copy.
-
-## 4. Commit and tag
+ruleset — see the Makefile target). Rehearse the build while you are here:
 
 ```sh
-git commit -am "Release 1.0.0"
-git tag -a v1.0.0 -m "src2sink 1.0.0"  # annotated, v-prefixed
-git push origin main
-git push origin v1.0.0
-```
-
-Push the commit *before* the tag, so the tag never points at a commit the remote
-does not have. Wait for CI to go green on the pushed commit before continuing —
-that is the last cheap moment to abort.
-
-## 5. Build
-
-```sh
-rm -rf dist build src2sink.egg-info    # never ship a stale artefact
-uv build                               # writes dist/*.whl and dist/*.tar.gz
-uv run --with twine twine check dist/* # metadata + README render must PASS
-```
-
-`dist/` is gitignored; the artefacts are reproducible from the tag, so there is
-nothing to commit here.
-
-Sanity-check the wheel in a throwaway environment before it reaches anyone:
-
-```sh
+rm -rf dist build src2sink.egg-info
+uv build
+uv run --with twine twine check dist/*
 uv run --isolated --no-project --python 3.14 \
-  --with ./dist/src2sink-1.0.0-py3-none-any.whl src2sink-build --help
+  --with ./dist/src2sink-<version>-py3-none-any.whl src2sink-build --help
 ```
 
-## 6. Rehearse on TestPyPI (optional, but do it for packaging changes)
+These artefacts are a rehearsal only — the ones that ship are built by the
+workflow from the tag. `dist/` is gitignored.
+
+## 4. Commit, push, and wait for green
+
+```sh
+git commit -am "Release 1.0.1"
+git push origin main
+gh run watch "$(gh run list --workflow=CI --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+```
+
+This is the last cheap moment to abort. Everything after the tag is public.
+
+## 5. Tag — this publishes
+
+```sh
+git tag -a v1.0.1 -m "src2sink 1.0.1"
+git push origin v1.0.1
+```
+
+Watch it land:
+
+```sh
+gh run watch "$(gh run list --workflow=Release --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+```
+
+The workflow builds, checks the tag against `pyproject.toml`, `twine check`s the
+metadata, publishes to PyPI, and creates the GitHub release with your changelog
+section as the body and the artefacts attached.
+
+## 6. Verify from outside
+
+```sh
+uv run --isolated --no-project --python 3.14 --with src2sink src2sink-build --help
+```
+
+Then open <https://pypi.org/project/src2sink/> and confirm the banner renders and
+the README links resolve.
+
+---
+
+## If something goes wrong
+
+- **Bad artefact already published.** You cannot overwrite it. Yank the release
+  (`pypi.org` → *Manage* → *Yank*), which hides it from new resolutions while
+  leaving existing pins working, then fix forward with a patch version.
+- **Wrong tag, nothing published yet.**
+  `git tag -d v1.0.1 && git push --delete origin v1.0.1`. Once a version is on
+  PyPI, leave the tag alone — it is the provenance record for what shipped.
+- **The publish job fails with an OIDC/trusted-publisher error.** The four fields
+  in §0 must match exactly, including the environment name. A workflow renamed
+  or moved is the usual cause.
+- **Tag/version mismatch.** The build job fails before anything is uploaded.
+  Delete the tag, fix `pyproject.toml`, commit, re-tag.
+
+## Appendix: publishing by hand (break-glass)
+
+Only if the workflow is unavailable and a release cannot wait. This puts a
+long-lived token on a laptop, which is what Trusted Publishing exists to avoid.
+
+```sh
+export UV_PUBLISH_TOKEN='pypi-...'     # project-scoped token
+rm -rf dist && uv build
+uv run --with twine twine check dist/*
+uv publish --dry-run dist/*
+uv publish dist/*
+gh release create v1.0.1 dist/* --title "src2sink 1.0.1" --notes-file <(
+  awk '/^## \[1\.0\.1\]/{f=1; next} /^## \[/{f=0} f' CHANGELOG.md)
+```
+
+Rehearsing on TestPyPI first, when the packaging itself has changed:
 
 ```sh
 uv publish --publish-url https://test.pypi.org/legacy/ \
@@ -127,59 +183,4 @@ uv run --isolated --no-project --python 3.14 \
   --with src2sink src2sink-build --help
 ```
 
-TestPyPI does not mirror all dependencies, hence the fallback index. If the
-install resolves and the entry point runs, the real upload will behave.
-
-## 7. Publish
-
-```sh
-uv publish --dry-run dist/*            # what would be uploaded, no upload
-uv publish dist/*                      # uses $UV_PUBLISH_TOKEN
-```
-
-Equivalent with twine, if you prefer it:
-
-```sh
-uv run --with twine twine upload dist/*
-```
-
-Then verify from a clean environment:
-
-```sh
-uv run --isolated --no-project --python 3.14 --with src2sink src2sink-build --help
-```
-
-## 8. Publish the GitHub release
-
-Use the version's `CHANGELOG.md` section as the body — one source of truth, so
-the GitHub release and the changelog can never disagree:
-
-```sh
-# everything between this version's heading and the next one
-awk '/^## \[1\.0\.0\]/{f=1; next} /^## \[/{f=0} f' CHANGELOG.md > /tmp/notes.md
-gh release create v1.0.0 dist/* --title "src2sink 1.0.0" --notes-file /tmp/notes.md
-```
-
-Attaching the artefacts gives anyone who cannot reach PyPI a checksum-comparable
-copy of exactly what was published.
-
----
-
-## If something goes wrong
-
-- **Bad artefact already uploaded.** You cannot overwrite it. Yank the release
-  (`pypi.org` → *Manage* → *Yank*), which hides it from new resolutions while
-  leaving existing pins working, then fix forward with a patch version.
-- **Wrong tag.** If nothing has been published yet:
-  `git tag -d v1.0.0 && git push --delete origin v1.0.0`. Once a version is on
-  PyPI, leave the tag alone — it is the provenance record for what shipped.
-- **Token leaked.** Revoke it at <https://pypi.org/manage/account/token/>
-  immediately, then issue a project-scoped replacement.
-
-## Worth doing next
-
-Move publishing to **PyPI Trusted Publishing** (OIDC): a `release.yml` workflow
-triggered on `v*` tags, with a `pypi` environment and `id-token: write`. It
-removes the long-lived token entirely and makes the uploaded artefact the one CI
-built from the tag, not one built on a laptop. Tracked in
-[`todo.md`](todo.md) when someone picks it up.
+TestPyPI does not mirror all dependencies, hence the fallback index.

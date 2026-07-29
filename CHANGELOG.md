@@ -5,6 +5,32 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
+## [1.0.1] — 2026-07-29
+
+**No functional changes.** The analyser, its output schema, and the CLI are
+byte-for-byte what 1.0.0 shipped. There is nothing here a user of 1.0.0 needs;
+the version exists to carry the release automation and documentation below.
+
+### Added
+
+- This changelog, and a release procedure ([`docs/releasing.md`](docs/releasing.md))
+  covering versioning, the gate run, tagging, building, and recovery when a bad
+  version reaches PyPI.
+- Automated publishing via **PyPI Trusted Publishing** (OIDC). A `v*` tag now
+  builds from the tagged tree, verifies the tag matches the packaged version,
+  publishes to PyPI, and attaches the same artefacts to the GitHub release —
+  with no API token stored anywhere in the repository.
+- A link to this changelog from the README.
+
+### Fixed
+
+- **CI cache save race.** Every cached job derived the same `uv` cache key and
+  started at once, so they raced for the save reservation and the losers
+  annotated each run with "Unable to reserve cache". One job now writes the
+  cache and the rest restore only; `srtm`, which installs nothing, opts out
+  entirely (the input defaults to `auto`, which had quietly opted it in).
+  Verified on a green run with zero annotations.
+
 ## [1.0.0] — 2026-07-28
 
 First public release. src2sink builds a **source-to-sink metabase**: a structured,
@@ -114,4 +140,5 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[1.0.1]: https://github.com/mimecast/src2sink/releases/tag/v1.0.1
 [1.0.0]: https://github.com/mimecast/src2sink/releases/tag/v1.0.0
