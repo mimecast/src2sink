@@ -39,10 +39,17 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### Fixed
 
-- Build provenance no longer attests `dist/.gitignore`. `subject-path: dist/*`
+- **Build provenance no longer attests `dist/.gitignore`.** `subject-path: dist/*`
   matched the file uv writes there, so 1.0.2's provenance lists it as a third
-  subject alongside the wheel and sdist. Cosmetic — the real artefacts are
-  attested correctly — but confusing to read.
+  subject alongside the wheel and sdist. Cosmetic — the real artefacts were
+  attested correctly either way — but a provenance statement claiming a
+  `.gitignore` was a build output undermines confidence in the rest of it. The
+  attested subjects are now the two distributions and nothing else:
+
+  ```console
+  $ gh attestation verify src2sink-1.0.3-py3-none-any.whl --repo mimecast/src2sink
+  # subjects: src2sink-1.0.3-py3-none-any.whl, src2sink-1.0.3.tar.gz
+  ```
 
 ## [1.0.2] — 2026-07-29
 
@@ -200,6 +207,18 @@ CI runs six gates on every push and pull request, and weekly:
 Dependencies are hash-pinned in a committed `uv.lock` and installed with
 `uv sync --locked`. Known false positives are annotated inline with a stated
 reason rather than suppressed wholesale.
+
+### Fixed before release
+
+- **`SKIP_DIRS` was matched against each manifest's absolute path**, so a repos
+  root under any colliding path segment — `/tmp/repos`, `~/build/repos` — indexed
+  nothing at all. Silently: no error, no note, every coordinate resolving to "not
+  found" and every source-map lookup coming back empty. The first CI run caught
+  it, because GitHub runners put pytest's temporary directories under `/tmp`;
+  reproducible locally with `TMPDIR=/tmp`. `SKIP_DIRS` now applies only to
+  segments *below* the scan root — the absolute prefix is the operator's
+  filesystem layout, not part of the scanned tree. No published version is
+  affected: the fix predates this release.
 
 ### Requirements
 
