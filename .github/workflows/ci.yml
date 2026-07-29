@@ -50,6 +50,10 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          # The one job that *writes* the uv cache. Every cached job resolves the
+          # same key from uv.lock, so if they all saved they would race for the
+          # reservation and the losers would annotate the run with "Unable to
+          # reserve cache". The others below are restore-only.
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install dependencies
@@ -74,6 +78,10 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          # Nothing to cache: the checker is stdlib-only and installs no tree.
+          # enable-cache defaults to "auto", which would otherwise opt this job
+          # into the same save race.
+          enable-cache: false
       - name: Check requirement traceability
         # Fails when a requirement in the SRTM has no implementing test (or, for
         # the audit-only artifacts, no section in the operations guide), and when
@@ -92,6 +100,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false  # restore-only; the test job writes this cache
       - name: Install dependencies
         run: uv sync --locked
       - name: Type-check
@@ -109,6 +118,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false  # restore-only; the test job writes this cache
       - name: Install dependencies
         run: uv sync --locked
       - name: Scan first-party code
@@ -138,6 +148,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false  # restore-only; the test job writes this cache
       - name: Install dependencies
         run: uv sync --locked
       - name: Audit dependencies
