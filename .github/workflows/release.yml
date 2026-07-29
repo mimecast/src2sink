@@ -103,12 +103,18 @@ jobs:
     permissions:
       actions: read # read the workflow run that produced the artefacts
       id-token: write # sign the provenance
-      contents: read
+      # contents: write is required even though upload-assets is false below.
+      # GitHub validates a called workflow's *declared* permissions against the
+      # caller's grant when the run starts, and the generator's upload-assets job
+      # declares contents: write — so granting only read fails the whole run
+      # before any job executes ("This run likely failed because of a workflow
+      # file issue"), with no log to explain it.
+      contents: write
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.build.outputs.hashes }}
-      # The release job attaches the provenance itself, so the generator does not
-      # need write access to the release.
+      # The release job attaches the provenance itself, alongside the
+      # distributions, so nothing here writes to the release.
       upload-assets: false
 
   publish:
