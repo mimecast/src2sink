@@ -34,10 +34,23 @@ anyone renames things.
 PyPI matches all four. Renaming the workflow file or the environment stops
 publishing until the publisher entry is updated to match.
 
-**On GitHub** (*Settings* → *Environments* → `pypi`): optionally add required
-reviewers to gate every upload on a human approval, and restrict deployments to
-tags matching `v*`. The `publish` job is the only one granted `id-token: write`,
-and it holds no other permission.
+**On GitHub** (*Settings* → *Environments* → `pypi`) — already configured:
+
+- **Deployment branches and tags:** a custom rule allowing tags matching `v*`.
+  This must include tags; a branch-only policy blocks every release, since the
+  workflow only ever runs from a tag.
+- **Required reviewers:** `BrettCrawley`. The `publish` job therefore *pauses*
+  and waits for an approval before anything reaches PyPI — see step 5. Remove
+  the reviewer if you would rather releases run unattended.
+
+**Nothing else needs configuring in GitHub.** In particular `id-token: write`,
+which lets the job mint the OIDC token PyPI exchanges for an upload credential,
+is granted in the workflow itself (`permissions:` on the `publish` job) and can
+only be granted there. The repository's *Workflow permissions* setting merely
+sets the default token scope, which a job-level `permissions:` block overrides;
+there is no repository switch for OIDC. The grant is deliberately narrow: only
+`publish` holds `id-token: write` and nothing else, and only the `release` job
+holds `contents: write`.
 
 No token is needed for the normal path. Keep a project-scoped API token in your
 password manager only as the break-glass fallback (appendix).
@@ -129,9 +142,15 @@ Watch it land:
 gh run watch "$(gh run list --workflow=Release --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
 ```
 
-The workflow builds, checks the tag against `pyproject.toml`, `twine check`s the
-metadata, publishes to PyPI, and creates the GitHub release with your changelog
-section as the body and the artefacts attached.
+The workflow builds, checks the tag against `pyproject.toml`, and `twine check`s
+the metadata. It then **waits** — the `pypi` environment requires a reviewer, so
+the `publish` job sits pending until you approve the deployment (GitHub emails
+you; the run page shows *Review deployments*). Approve it and the upload runs,
+followed by the GitHub release with your changelog section as the body and the
+artefacts attached.
+
+Nothing has been published until you approve. A run left unapproved expires
+harmlessly.
 
 ## 6. Verify from outside
 
