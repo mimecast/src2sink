@@ -5,6 +5,15 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
+## [Unreleased]
+
+### Fixed
+
+- Build provenance no longer attests `dist/.gitignore`. `subject-path: dist/*`
+  matched the file uv writes there, so 1.0.2's provenance lists it as a third
+  subject alongside the wheel and sdist. Cosmetic — the real artefacts are
+  attested correctly — but confusing to read.
+
 ## [1.0.2] — 2026-07-29
 
 **No functional changes.** Adds build provenance to the release process.

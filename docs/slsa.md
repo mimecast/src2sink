@@ -108,8 +108,15 @@ In the `build` job, after `uv build` and the `twine check`:
       # … existing checkout / setup-uv / version check / build / twine check …
       - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-path: "dist/*"
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
 ```
+
+Name the distribution types rather than globbing `dist/*`: uv writes a
+`dist/.gitignore`, and a glob attests it as though it were a release artefact —
+harmless, but it puts a baffling extra subject in the provenance. (1.0.2 shipped
+with exactly that; fixed for the next release.)
 
 Note the trade-off: the `build` job currently holds only the workflow-level
 `contents: read`, and this adds two write permissions to the job that runs your
