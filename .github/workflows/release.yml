@@ -21,6 +21,13 @@ on:
   # publishing anything. Use this to exercise a change to this workflow before
   # a tag makes its failures expensive.
   workflow_dispatch:
+  schedule:
+    # 05:23 UTC on the 1st — the same rehearsal, unattended. The release path
+    # depends on slsa-github-generator, whose pinned actions still target the
+    # deprecated Node 20 runtime (see docs/todo.md); when upstream breaks, this
+    # tells us on a quiet morning rather than on the day we want to ship.
+    # publish and release are tag-only, so a scheduled run publishes nothing.
+    - cron: "23 5 1 * *"
 
 permissions:
   contents: read

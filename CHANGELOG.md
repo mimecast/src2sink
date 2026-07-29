@@ -33,7 +33,9 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   failure stops a release before the irreversible upload rather than after it.
 - A `workflow_dispatch` trigger on the release workflow that builds and generates
   provenance without publishing, for exercising changes to the release path
-  without spending a version number.
+  without spending a version number — and a monthly schedule that runs the same
+  rehearsal unattended, so breakage in the upstream generator surfaces before a
+  release depends on it.
 
 ### Fixed
 
