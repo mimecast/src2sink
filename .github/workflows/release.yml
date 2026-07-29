@@ -56,8 +56,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The environment is half of the trusted-publisher match, and it is where a
-    # required reviewer can be added if you ever want releases gated on approval.
+    # The environment is half of the trusted-publisher match, and it carries the
+    # required reviewer that holds this job until a human approves the upload.
     environment:
       name: pypi
       url: https://pypi.org/p/src2sink
@@ -65,6 +65,14 @@ jobs:
       id-token: write # mint the OIDC token PyPI exchanges for an upload credential
     steps:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          # This job deliberately does not check out the repository — it only
+          # uploads what `build` produced, so the OIDC-privileged step never
+          # touches source. That leaves nothing to cache and an empty working
+          # directory, both of which setup-uv warns about unless told they are
+          # intended.
+          enable-cache: false
+          ignore-empty-workdir: true
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
