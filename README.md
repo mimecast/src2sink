@@ -156,6 +156,24 @@ pull request, and weekly (advisories move even when the code does not):
 checkout. Known false positives carry inline `# nosec` / `# nosemgrep`
 annotations with a stated reason rather than blanket rule exclusions.
 
+### Release gates
+
+A separate workflow, [`.github/workflows/release.yml`](https://github.com/mimecast/src2sink/blob/main/.github/workflows/release.yml),
+runs when a `v*` tag is pushed — and on the 1st of each month as an unattended
+rehearsal that builds and attests without publishing, so upstream breakage
+surfaces before a release depends on it.
+
+| Stage | What it does |
+|---|---|
+| `build` | builds sdist + wheel from the tagged tree, **fails if the tag and the packaged version disagree**, `twine check`s the metadata |
+| `provenance` | generates SLSA provenance in an isolated builder the build steps cannot reach (Build L3) |
+| `publish` | uploads to PyPI over OIDC Trusted Publishing — no API token exists in this repository — after a human approves the deployment |
+| `release` | creates the GitHub release with the version's changelog section as the body, and attaches the artefacts plus the provenance |
+
+Publishing runs only after provenance succeeds, so a failure there stops a
+release before the irreversible step. Permissions are split per job: only
+`publish` can mint an OIDC token, only `release` can write to the repository.
+
 Publishing a version to PyPI: [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md).
 Known small gaps: [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md).
 
