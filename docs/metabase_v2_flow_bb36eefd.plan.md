@@ -48,7 +48,7 @@ todos:
     content: "Phase 2: metabase/scripts/trace.py endpoint-anchored bidirectional flow query (--endpoint, --family) with upstream producer analysis (literal/concat/config/request-input/unknown), downstream sink resolution, partial-leg reporting, and traces/<endpoint-id>.md output incl. mermaid producer→endpoint→sink diagram"
     status: pending
   - id: p2_trace_data_platform_raw_sql
-    content: "Phase 2: produce the first real trace using trace.py against the Data Platform endpoint that accepts raw SQL as a payload field; commit the result as traces/dataplatform-sql-runner.md"
+    content: "Phase 2: produce the first real trace using trace.py against the internal endpoint that accepts raw SQL as a payload field; commit the result as traces/<group>-<repo>.md"
     status: pending
   - id: p3_pii_lifecycle
     content: "Phase 3: PII lifecycle model + graphs/pii-lifecycle.md (collect/process/encrypt/store/transmit/log/delete per classified field across the fleet) keyed on (pii_classification, data_class) so it covers PII and Business-context data classes uniformly; primary illustration uses customer admin phone number"
@@ -339,9 +339,9 @@ Hierarchical summarisation (fixes the 17 MB `pii-sources.md`):
 | email  | 78             | 12                   | 4,217             |
 | ...
 
-# Per-family drill-down — first 50 repos by occurrence
+# Per-family drill-down — first N repos by occurrence
 | Repo | Identifiers | Locations |
-| coreapi/api-authentication | email, given_name, ... | 47 → see sidecar |
+| acme/user-api | email, given_name, ... | <n> → see sidecar |
 
 # Tail summary
 "_178 additional repos with ≤10 occurrences each — see `taint/pii-sources.jsonl` for the raw stream._"
@@ -365,7 +365,7 @@ Full data goes into a `.jsonl` sidecar alongside the `.md`, so SAST tooling has 
 - **`metabase/scripts/trace.py` — endpoint-anchored bidirectional flow query (new)**
   - Invocation:
     ```sh
-    python metabase/scripts/trace.py --endpoint dataplatform/sql-runner:src/main/java/.../SqlRunnerController.java:42
+    python metabase/scripts/trace.py --endpoint acme/sql-runner-api:src/main/java/.../SqlRunnerController.java:42
     # or by family
     python metabase/scripts/trace.py --family raw-code-payload    # trace every raw-SQL endpoint
     ```
@@ -378,37 +378,37 @@ Full data goes into a `.jsonl` sidecar alongside the `.md`, so SAST tooling has 
   - **Downstream pass (sinks):** walks the target endpoint's handler AST to find the SQL execution sink the field reaches. Records: the sink's method (`JdbcTemplate.query`, `EntityManager.createNativeQuery.executeUpdate`, etc.), the resolved datasource bean / config key, the parameterisation posture (raw concat vs `?` binding — always `parameterised=False` for this family by construction), and the DB credentials source (env / KMS / Vault / hardcoded).
   - **Output**: one markdown file per traced endpoint, written to `metabase/traces/<endpoint-id-slug>.md`:
     ```markdown
-    # Trace: dataplatform/sql-runner POST /sql-runner/execute
+    # Trace: acme/sql-runner-api POST /sql-runner/execute
 
     ## Sink (downstream)
-    - Repo: dataplatform/sql-runner
+    - Repo: acme/sql-runner-api
     - Handler: SqlRunnerController.execute (file:line)
     - SQL execution: JdbcTemplate.query (file:line)
-    - Datasource: bean `analyticsDataSource` → URL `jdbc:postgresql://analytics-prod:5432/analytics`
-    - Credentials: env var `ANALYTICS_DB_PASSWORD` (read at startup)
+    - Datasource: bean `exampleDataSource` → URL `jdbc:postgresql://db.example.internal:5432/example`
+    - Credentials: env var `EXAMPLE_DB_PASSWORD` (read at startup)
     - Parameterisation: NO (raw concat of caller-supplied SQL)
     - DB privileges: <pending — manual lookup from secrets-manager metadata>
 
     ## Producers (upstream, 7 callers found across the fleet)
     | Repo | Caller file:line | What it puts in `sql` | Confidence | Verdict |
-    | reporting/exec-dashboard | ExecQueryService.runReport:88 | request input forwarded verbatim | high | CRITICAL |
-    | reporting/scheduled-jobs | NightlyAggregator.aggregate:142 | hardcoded literal | high | INFO |
-    | adminui/data-export | ExportController.download:67 | concat of literal + `request.getParameter("filter")` | high | CRITICAL |
-    | analytics/ad-hoc-runner | AdHocService.run:55 | from config key `analytics.queries.default` (config-driven) | medium | PARTIAL |
+    | acme/exec-dashboard | ExecQueryService.runReport:88 | request input forwarded verbatim | high | CRITICAL |
+    | acme/scheduled-jobs | NightlyAggregator.aggregate:142 | hardcoded literal | high | INFO |
+    | acme/data-export | ExportController.download:67 | concat of literal + `request.getParameter("filter")` | high | CRITICAL |
+    | acme/ad-hoc-runner | AdHocService.run:55 | from config key `example.queries.default` (config-driven) | medium | PARTIAL |
     | ... | ... | ... | ... | ... |
 
     ## Flow diagram
     ```mermaid
     flowchart LR
-        execDash["reporting/exec-dashboard<br/>ExecQueryService:88<br/>(request input)"] --> sqlRunner
-        scheduled["reporting/scheduled-jobs<br/>NightlyAggregator:142<br/>(literal)"] --> sqlRunner
-        adminExport["adminui/data-export<br/>ExportController:67<br/>(concat with request param)"] --> sqlRunner
-        adhoc["analytics/ad-hoc-runner<br/>AdHocService:55<br/>(config-driven)"] --> sqlRunner
-        sqlRunner["dataplatform/sql-runner<br/>JdbcTemplate.query (raw)"] --> db[("PostgreSQL<br/>analytics-prod")]
+        execDash["acme/exec-dashboard<br/>ExecQueryService:88<br/>(request input)"] --> sqlRunner
+        scheduled["acme/scheduled-jobs<br/>NightlyAggregator:142<br/>(literal)"] --> sqlRunner
+        adminExport["acme/data-export<br/>ExportController:67<br/>(concat with request param)"] --> sqlRunner
+        adhoc["acme/ad-hoc-runner<br/>AdHocService:55<br/>(config-driven)"] --> sqlRunner
+        sqlRunner["acme/sql-runner-api<br/>JdbcTemplate.query (raw)"] --> db[("PostgreSQL<br/>db.example.internal")]
     ```
 
     ## Unresolved / partial legs
-    - reporting/legacy-batch: caller assembles SQL via helper `SqlBuilder.build(...)` whose origin we did not follow into. Re-run with `--follow-helpers` to attempt resolution.
+    - acme/legacy-batch: caller assembles SQL via helper `SqlBuilder.build(...)` whose origin we did not follow into. Re-run with `--follow-helpers` to attempt resolution.
     ```
   - **Trace coverage and precision**: the intra-function dataflow analysis is local — it follows the variable backwards within the producer's function only. Cross-function / cross-module forwarding is recorded as "partial / unresolved" rather than silently dropped, with an explicit `--follow-helpers` opt-in that adds a one-level cross-function follow (slower, noisier). This honest "we know what we don't know" posture is deliberate: a silent miss on a SQL-injection trace is far worse than a flagged partial.
   - **Verdict column** is auto-suggested (CRITICAL when producer forwards request input, INFO when literal, PARTIAL otherwise) but final classification is for the human reviewer — same convention as `verdict` elsewhere in this project (AGENTS.md "Verdict and severity vocabulary" section).
@@ -436,7 +436,7 @@ flowchart LR
 Per-PII-field row (illustration uses **customer admin phone number** — see "A note on the example data type" earlier; same template applies to every classification):
 
 | PII field | Classification | Collected at | Processed in | Encrypted? | Stored in | Transmitted to | Logged in | Retention / deletion hook |
-| `phone` | direct-pii | `coreapi/api-authentication` `/admin/users` POST; `accountmgmt/billing-svc` `/contacts` POST; MFA enrolment in `identityplatform/mfa-enroll` `/mfa/totp/setup` | 8 repos (MFA verifier, billing escalation, account-recovery flow) | Yes — in 3 repos (AES-GCM via KMS DEK), No — in 5 repos (plaintext in Postgres `admin_users.phone`, `billing_contacts.phone`) | `admin_users.phone` (Postgres in coreapi tenant DB), `billing_contacts.phone` (Postgres in billing), Redis cache `mfa:session:{id}` (TTL 5 min, plaintext) | Twilio `messages.create` (US sub-processor, **cross-border**), MessageBird `/messages` (EU), internal queue `mfa.sms.outbound` | **31 log call sites across 9 repos** (mostly `logger.info("Sending SMS to {}", phone)` patterns) — flagged as misuse | `@PreRemove` on `AdminUser` entity in coreapi; **no deletion hook** on `billing_contacts`; Redis cache deletes via TTL; **no scheduled retention job** anywhere |
+| `phone` | direct-pii | `acme/user-api` `/users` POST; `acme/billing-api` `/contacts` POST; MFA enrolment in `acme/mfa-service` `/mfa/setup` | several repos (MFA, billing, account recovery) | Yes — in some repos (AES-GCM via KMS DEK), No — in others (plaintext in Postgres `users.phone`, `contacts.phone`) | `users.phone` (Postgres in the user service's database), `contacts.phone` (Postgres in the billing service's database), Redis cache `session:{id}` (TTL 5 min, plaintext) | SMS provider A `messages.create` (non-EU sub-processor, **cross-border**), SMS provider B `/messages` (EU), internal queue `sms.outbound` | **many log call sites across several repos** (mostly `logger.info("Sending SMS to {}", phone)` patterns) — flagged as misuse | `@PreRemove` on the `User` entity in the user service; **no deletion hook** on the billing contacts table; Redis cache deletes via TTL; **no scheduled retention job** anywhere |
 
 What this row demonstrates, mapped to your spec:
 
@@ -444,7 +444,7 @@ What this row demonstrates, mapped to your spec:
 - **Processing**: every repo that consumes a phone-number field from a request, queue payload, or DB read.
 - **Encryption**: the "Yes / No / which repos" answer to "are we encrypting customer phone numbers at rest". This is the highest-impact column — it directly answers a GDPR Article 32 audit question.
 - **Storage**: every persistence sink, with database vendor / table / column and (where detectable) bucket name. Surfaces unexpected stores (e.g. a Redis cache holding plaintext phone numbers with a 5-minute TTL is "storage" for legal purposes).
-- **Transmission**: every outbound HTTP, queue publish, and third-party SDK call that ships the phone number off-box. Twilio / MessageBird / SES become **mandatory ROPA sub-processor entries**; cross-border transfers are flagged automatically (Twilio = US, MessageBird = EU).
+- **Transmission**: every outbound HTTP, queue publish, and third-party SDK call that ships the phone number off-box. Each such provider becomes a **mandatory ROPA sub-processor entry**; cross-border transfers are flagged automatically from the provider's processing region (e.g. a non-EU SMS provider against an EU controller).
 - **Logging**: every log call site whose argument list contains a `phone`-classified identifier. This is the misuse-detection column — for phone numbers in a Organization codebase, the expected value is zero, so the row is a direct bug list.
 - **Deletion / retention**: every `@PreRemove`, `@PrePersist` retention setter, scheduled retention job, TTL config, and right-to-erasure handler. Repos with **none** of those are flagged for Article 17 (right to erasure) gaps.
 
@@ -462,7 +462,7 @@ The ROPA view (`ropa/categories-of-personal-data.md`) is a re-projection of the 
 Replaces the 9-row count table. For each repo:
 
 ```
-### coreapi/api-authentication
+### acme/user-api
 
 - Identity provider(s): jwt (HS256), oauth2 (Google, Microsoft Azure AD)
 - JWT key source: env var `JWT_SECRET`  (⚠ not from secret manager)
@@ -472,7 +472,7 @@ Replaces the 9-row count table. For each repo:
 - Password storage: BCryptPasswordEncoder (strength=10)  ← below recommended 12
 - Session model: stateless (JWT)
 - CSRF posture: disabled (acceptable for stateless API) — confirm via `csrf.disable()`
-- CORS posture: open to `*.organization.com` (allowed origins list)
+- CORS posture: open to `*.example.com` (allowed origins list)
 - Risk indicators: none-algorithm not blocked in JWT parser; bcrypt strength 10
 ```
 
@@ -481,14 +481,14 @@ Ecosystem summary table at the top groups repos by identity provider and flags t
 #### 3c. `conventions/crypto-agility.md` — per-repo cards
 
 ```
-### coreapi/api-authentication
+### acme/user-api
 
 - Algorithms in use: AES-256-GCM (data), bcrypt (passwords), HMAC-SHA256 (signing). Hardcoded.
 - Algorithms via config: TLS cipher suite from `application.yaml: server.ssl.ciphers`
 - Deprecated algorithm uses: MD5 — 2 sites, identifier-only (not security-relevant), classified
 - Key sources:
   - JWT secret: env var `JWT_SECRET`
-  - Database encryption DEK: AWS KMS key `alias/data-encryption`
+  - Database encryption DEK: AWS KMS key `alias/example-data-key`
   - mTLS keystore: file `/etc/ssl/private/client.jks` (path from config)
   - **No keys hardcoded in source.**
 - Rotation hooks: KMS key has alias-based rotation (yes); JWT secret has no rotation mechanism (⚠)
@@ -545,12 +545,12 @@ Concrete examples of what each test asserts (a representative sample):
 - `test_extractors_java::test_concat_into_execute_is_source_AND_sink` — fixture file with `stmt.execute("SELECT * FROM users WHERE id = " + userId)` → expect TWO nodes (source + sink) and ONE intra-file edge between them.
 - `test_extractors_python::test_pii_in_log_outside_test_path_is_detected` — fixture under `src/` → positive. Same fixture under `tests/` → negative. Same fixture under `awsIntTests/` (Gradle camelCase) → negative.
 - `test_aggregators_queues::test_producer_consumer_match` — two repos, one with `kafkaTemplate.send("user.events", ...)`, one with `@KafkaListener(topics = "user.events")` → expect one cross-repo edge.
-- `test_models_pii_lifecycle::test_phone_lifecycle_complete` — synthetic 2-repo fleet: repo A has a `POST /admin/users` endpoint receiving `phoneNumber`, persists to Postgres `admin_users.phone` (plaintext), publishes to queue `mfa.sms.outbound`; repo B `@SqsListener("mfa.sms.outbound")` reads the payload, calls Twilio `messages.create`, and `logger.info("Sending SMS to {}", phone)`. The test asserts a complete lifecycle row: collection in repo A, processing in both, encryption=No, storage in `admin_users.phone`, transmission to Twilio, **logged in repo B (1 site, flagged)**, no `@PreRemove` (retention gap). A second variant adds a `@PreRemove` to repo A's `AdminUser` entity and asserts the retention column flips from "gap" to "present".
+- `test_models_pii_lifecycle::test_phone_lifecycle_complete` — synthetic 2-repo fleet: repo A has a `POST /users` endpoint receiving `phoneNumber`, persists to Postgres `users.phone` (plaintext), publishes to queue `sms.outbound`; repo B `@SqsListener("sms.outbound")` reads the payload, calls the SMS provider's `messages.create`, and `logger.info("Sending SMS to {}", phone)`. The test asserts a complete lifecycle row: collection in repo A, processing in both, encryption=No, storage in `users.phone`, transmission to the SMS provider, **logged in repo B (1 site, flagged)**, no `@PreRemove` (retention gap). A second variant adds a `@PreRemove` to repo A's `User` entity and asserts the retention column flips from "gap" to "present".
 - `test_models_pii_lifecycle::test_classification_template_applies_uniformly` — runs the same lifecycle assembly against a fixture replacing `phoneNumber` with `ipAddress` (quasi-id) and another replacing with `medicalRecord` (special-category-gdpr); asserts the row shape is identical and the `classification` column changes. This is the regression that proves the model is not phone-specific.
 - `test_models_pii_lifecycle::test_data_class_uses_same_lifecycle_row` — runs the lifecycle assembly against a fixture containing a `customer-api-key` flow (issued at `POST /tenants/{id}/api-keys`, stored hashed in `api_keys` table, transmitted in every Authorization header on outbound calls) and asserts the same row shape applies with `data_class="customer-api-key"`, no `pii_classification`. Proves the two-axes model works.
 - `test_extractors_*::test_raw_code_payload_field_detection_positive` — fixtures: a Java handler with `@RequestBody class Req { String sql; }` that reaches `jdbcTemplate.query(req.sql)`; a Python handler with `class Req(BaseModel): query: str` that reaches `cursor.execute(req.query)`. Expect one `FlowNode(family="raw-code-payload", data_class="raw-sql-payload", confidence="high")` per fixture.
 - `test_extractors_*::test_raw_code_payload_field_detection_negative` — fixtures with the same field name but the field never reaches a SQL sink in the handler (e.g. used only for logging metadata). Expect either no node, or `confidence="low", needs_review=True`.
-- `test_trace_tool::test_raw_sql_endpoint_full_trace` — synthetic 3-repo fleet: `dataplatform/sql-runner` exposes `POST /sql-runner/execute` with field `sql` reaching `JdbcTemplate.query`; `reporting/exec-dashboard` calls it with `request.getParameter("filter")` forwarded into the `sql` field (request-input → critical); `reporting/scheduled-jobs` calls it with a hardcoded literal (info). Runs `trace.py --endpoint dataplatform/sql-runner:...` and asserts: (a) exactly two producers found, (b) `exec-dashboard` row has `verdict=CRITICAL` and `what="request input forwarded verbatim"`, (c) `scheduled-jobs` row has `verdict=INFO`, (d) the mermaid diagram contains both producer nodes and the postgres store node.
+- `test_trace_tool::test_raw_sql_endpoint_full_trace` — synthetic 3-repo fleet: `acme/sql-runner-api` exposes `POST /sql-runner/execute` with field `sql` reaching `JdbcTemplate.query`; `acme/exec-dashboard` calls it with `request.getParameter("filter")` forwarded into the `sql` field (request-input → critical); `acme/scheduled-jobs` calls it with a hardcoded literal (info). Runs `trace.py --endpoint acme/sql-runner-api:...` and asserts: (a) exactly two producers found, (b) `exec-dashboard` row has `verdict=CRITICAL` and `what="request input forwarded verbatim"`, (c) `scheduled-jobs` row has `verdict=INFO`, (d) the mermaid diagram contains both producer nodes and the postgres store node.
 - `test_trace_tool::test_partial_leg_is_marked_not_dropped` — adds a third producer that assembles SQL via a helper `SqlBuilder.build(...)`. Without `--follow-helpers`, the trace must include this producer in the "Unresolved / partial legs" section, not silently omit it.
 - `test_regression_real_repos::test_no_extractor_regression` — runs the full pipeline against `repos/` (gated by env var so CI is fast, full-run optional). Compares totals against a committed baseline JSON; fails on > 5% regression in any node-family count.
 
@@ -587,9 +587,9 @@ flowchart TB
 - **Heuristic URL → endpoint matching has false positives/negatives** — mitigated by `confidence` labels + "broken edges" appendices. We never silently drop a non-matching edge.
 - **`pii-sources.md` size regression** — explicit size-bounded test in Phase 4.
 - **Schema break for `--aggregate-only`** — once the per-repo JSON schema changes (Phase 1), the existing `metabase/repos/<group>/<name>.json` files become stale. `build_metabase.py --aggregate-only` will emit a clear "schema_version mismatch, re-run full extract first" error rather than producing garbage.
-- **Per-repo JSON is gitignored** — full re-extract takes ~10 min on this fleet. Phase 1 keeps the existing `multiprocessing` parallelism.
-- **Existing manual stubs under `internal-libraries/<coord>.md`** — these are committed and hand-curated. The Phase 1 rewrite touches the *aggregate* `INDEX.md` only; per-library hand-curated files survive untouched per existing `init_metabase.py` convention.
-- **AGENTS.md severity vocabulary unchanged** — the reviewed-report pipeline (`generate_reviewed_report.py`, `crit_vl_verdicts.json`, `noise_demotions.json`) is **not** touched by this work. The metabase rewrite is upstream of report generation and does not change the verdict/severity columns in `reports/reviewed-fullscan-report.{md,xlsx}`.
+- **Per-repo JSON is gitignored** — full re-extract takes minutes on a fleet of this size. Phase 1 keeps the existing `multiprocessing` parallelism.
+- **Existing manual stubs under `internal-libraries/<coord>.md`** — these are committed and hand-curated. The Phase 1 rewrite touches the *aggregate* `INDEX.md` only; per-library hand-curated files survive untouched per the existing metabase bootstrap convention.
+- **AGENTS.md severity vocabulary unchanged** — the reviewed-report pipeline is **not** touched by this work. The metabase rewrite is upstream of report generation and does not change the verdict/severity columns in the published reports.
 
 ---
 
@@ -599,9 +599,9 @@ To set expectations explicitly so nothing is silently broken:
 
 - `triage/` is untouched (read-only source of truth, AGENTS.md).
 - `reports/` output format (Excel + Markdown) is unchanged. The metabase upgrade benefits future LLM-SAST runs, not the already-published reviewed report.
-- `crit_vl_verdicts.json` and `noise_demotions.json` overlays are unchanged.
-- `init_metabase.py` skeleton bootstrap is unchanged.
-- `clone_gitlab_repos.py` is unchanged.
+- The reviewed-report verdict/demotion overlays are unchanged.
+- The metabase skeleton bootstrap is unchanged.
+- The repo-cloning script is unchanged.
 
 ---
 

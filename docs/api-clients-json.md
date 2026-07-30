@@ -76,7 +76,7 @@ so through a *published client library* (typically a generated Maven client
 JAR). The consuming code only ever does something like:
 
 ```java
-import com.example.dataplatform.queryapi.client.QueryApiClient;
+import com.example.queryapi.client.QueryApiClient;
 ...
 QueryApiClient client = ...;
 client.runQuery(sql);
