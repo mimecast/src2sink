@@ -80,6 +80,20 @@ todos:
 isProject: false
 ---
 
+> **Archived record — not current documentation.**
+> This is the planning session that produced the v2 rewrite, kept for the
+> reasoning behind the design rather than as a guide to the code. It predates the
+> split into this standalone repository, so its paths describe the old parent-repo
+> layout: `metabase/scripts/build_metabase.py` is the v1 script this work
+> replaced, and no file of that name exists here. Links to it are left broken
+> deliberately — repointing them at files that never existed in this repository
+> would misrepresent what was written.
+>
+> For the current picture see [architecture.md](architecture.md),
+> [implementation-plan.md](implementation-plan.md) (the live plan and progress
+> record), and [`SCHEMA.md`](../SCHEMA.md) for the vocabulary this describes
+> designing. The work below shipped in 1.0.0.
+
 ## Metabase v2 — From Counts to Flow
 
 ### Why this rewrite
