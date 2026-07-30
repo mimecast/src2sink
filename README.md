@@ -1,4 +1,4 @@
-![src2sink logo](https://raw.githubusercontent.com/mimecast/src2sink/main/images/src2sink-logo-light.png)
+![src2sink — cross-repository taint tracking, from source to sink](https://raw.githubusercontent.com/mimecast/src2sink/main/images/src2sink-header.png)
 # Source-Code Metabase
 
 [![CI](https://github.com/mimecast/src2sink/actions/workflows/ci.yml/badge.svg)](https://github.com/mimecast/src2sink/actions/workflows/ci.yml)
