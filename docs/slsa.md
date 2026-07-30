@@ -1,7 +1,8 @@
-# Reaching SLSA Build L2 and L3
+# Build provenance: SLSA Build L2 and L3
 
-What src2sink would have to change to make a defensible SLSA claim, in the order
-it should be done. Written against [SLSA v1.0](https://slsa.dev/spec/v1.0/levels),
+What src2sink changed to make a defensible SLSA claim, in the order it was done —
+kept as a record of the reasoning, the evidence, and the two things that cost a
+cycle. Written against [SLSA v1.0](https://slsa.dev/spec/v1.0/levels),
 whose **Build track** is the only track with stable levels; the Source and
 Dependency tracks are still drafts and are out of scope here.
 

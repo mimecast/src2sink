@@ -7,8 +7,8 @@ anywhere in this repository), and attaches the same artefacts to the GitHub
 release. Your job is everything up to the tag.
 
 **The one rule that matters:** a version number on PyPI can never be reused.
-Upload `1.0.1`, notice a mistake, and your only options are to yank it and
-release `1.0.2`. The workflow refuses to publish if the tag and the packaged
+Upload a version, notice a mistake, and your only options are to yank it and
+release the next patch. The workflow refuses to publish if the tag and the packaged
 version disagree, but it cannot check that the *contents* are right — that is
 what step 3 is for.
 
@@ -72,9 +72,13 @@ able to tell from the version alone whether their stored metabase still parses.
 ## 2. Prepare the tree
 
 ```sh
+VERSION=1.0.4                          # the version you are releasing
 git switch main && git pull            # release from main only
 git status --short                     # must be empty
 ```
+
+The rest of this document uses `$VERSION`; keep it exported through the steps
+below.
 
 Add a dated section for the new version at the top of
 [`CHANGELOG.md`](../CHANGELOG.md), plus a `[x.y.z]: .../releases/tag/vx.y.z` link
@@ -113,7 +117,7 @@ rm -rf dist build src2sink.egg-info
 uv build
 uv run --with twine twine check dist/*
 uv run --isolated --no-project --python 3.14 \
-  --with ./dist/src2sink-<version>-py3-none-any.whl src2sink-build --help
+  --with "./dist/src2sink-$VERSION-py3-none-any.whl" src2sink-build --help
 ```
 
 These artefacts are a rehearsal only — the ones that ship are built by the
@@ -122,7 +126,7 @@ workflow from the tag. `dist/` is gitignored.
 ## 4. Commit, push, and wait for green
 
 ```sh
-git commit -am "Release 1.0.1"
+git commit -am "Release $VERSION"
 git push origin main
 gh run watch "$(gh run list --workflow=CI --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
 ```
@@ -132,8 +136,8 @@ This is the last cheap moment to abort. Everything after the tag is public.
 ## 5. Tag — this publishes
 
 ```sh
-git tag -a v1.0.1 -m "src2sink 1.0.1"
-git push origin v1.0.1
+git tag -a "v$VERSION" -m "src2sink $VERSION"
+git push origin "v$VERSION"
 ```
 
 Watch it land:
@@ -202,7 +206,7 @@ slsa-verifier verify-artifact /tmp/rel/src2sink-$VERSION-py3-none-any.whl \
   (`pypi.org` → *Manage* → *Yank*), which hides it from new resolutions while
   leaving existing pins working, then fix forward with a patch version.
 - **Wrong tag, nothing published yet.**
-  `git tag -d v1.0.1 && git push --delete origin v1.0.1`. Once a version is on
+  `git tag -d "v$VERSION" && git push --delete origin "v$VERSION"`. Once a version is on
   PyPI, leave the tag alone — it is the provenance record for what shipped.
 - **The publish job fails with an OIDC/trusted-publisher error.** The four fields
   in §0 must match exactly, including the environment name. A workflow renamed
@@ -228,8 +232,8 @@ uv run --with twine twine check dist/*
 uv run --with pypi-attestations python -m pypi_attestations sign dist/*
 uv publish --dry-run dist/*
 uv publish dist/*
-gh release create v1.0.1 dist/* --title "src2sink 1.0.1" --notes-file <(
-  awk '/^## \[1\.0\.1\]/{f=1; next} /^## \[/{f=0} f' CHANGELOG.md)
+gh release create "v$VERSION" dist/* --title "src2sink $VERSION" --notes-file <(
+  awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/{f=0} f' CHANGELOG.md)
 ```
 
 Rehearsing on TestPyPI first, when the packaging itself has changed:
