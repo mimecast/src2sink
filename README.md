@@ -3,6 +3,7 @@
 
 [![CI](https://github.com/mimecast/src2sink/actions/workflows/ci.yml/badge.svg)](https://github.com/mimecast/src2sink/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mimecast/src2sink/blob/main/LICENSE)
+[![SLSA Build Level 3](https://slsa.dev/images/gh-badge-level3.svg)](https://github.com/mimecast/src2sink/attestations)
 
 A structured, human-readable knowledge base of the analysed source-code
 ecosystem. Designed to be loaded as **context for LLM SAST** so that
@@ -178,6 +179,11 @@ Publishing a version to PyPI: [`docs/releasing.md`](https://github.com/mimecast/
 Known small gaps: [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md).
 
 ### Verifying a release
+
+The SLSA badge above is a claim, like every badge — it links to
+[this repository's attestations](https://github.com/mimecast/src2sink/attestations),
+which is the evidence. Do not take either on trust; the commands below check the
+artefact you actually downloaded.
 
 Releases carry signed build provenance tying each artefact to the source commit,
 tag, and workflow run that produced it — so a file claiming to be src2sink can be
