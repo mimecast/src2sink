@@ -143,7 +143,6 @@ needs a lifecycle:
 
 - [architecture.md](architecture.md) · [threat-model.md](threat-model.md) ·
   [security-privacy-gap-analysis.md](security-privacy-gap-analysis.md) ·
-  [implementation-plan.md](implementation-plan.md) ·
   [api-clients-json.md](api-clients-json.md)
 - Release-side controls: [releasing.md](releasing.md) · [slsa.md](slsa.md) ·
   [todo.md](todo.md)

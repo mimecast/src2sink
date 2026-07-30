@@ -20,7 +20,7 @@ import pytest
 from src2sink import limits, prescreen, safe_paths, sanitize
 
 # The security-critical modules and the floor they must hold. Keep this list in
-# sync with the "security modules" called out in docs/implementation-plan.md §6.
+# sync with the security-critical modules the coverage policy calls out.
 SECURITY_MODULES = (limits, safe_paths, sanitize, prescreen)
 MIN_COVERAGE = 90.0
 

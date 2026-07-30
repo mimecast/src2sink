@@ -9,7 +9,7 @@
 > builds on [architecture.md](architecture.md) and [threat-model.md](threat-model.md)
 > and reuses their finding IDs (`D-1`, `T-1`, `I-4`, `P-1`, …) and the
 > architecture's surfaced requirements (`SEC-NEW-1..6`). It produces the
-> requirement set + SRTM that the [implementation plan](implementation-plan.md)
+> requirement set + SRTM that the delivery plan
 > and the test-engineering phase consume.
 
 ---
@@ -396,7 +396,7 @@ Control: Define/enforce a metabase retention window; emit run-manifest.json
 ## 9. Test Artifacts
 
 > These `TA-xxx` are the security/privacy test specifications the
-> [software-test-engineer phase](implementation-plan.md) will implement
+> test-implementation phase will implement
 > (alongside the general coverage push to >80%). All must run **single-process,
 > tiny fixtures, with a watchdog timeout** (per the lesson already codified in
 > `tests/test_source_map_fix.py`).
@@ -461,6 +461,6 @@ health or cardholder data handled by the tool).
 ## Next steps
 
 All refined requirements and `TA-xxx` tests flow into the
-[implementation plan](implementation-plan.md), which sequences the design-flaw
+delivery plan, which sequences the design-flaw
 fixes first, then the docstrings / cognitive-complexity refactoring, then the
 test build-out to >80% coverage including these security/privacy tests.

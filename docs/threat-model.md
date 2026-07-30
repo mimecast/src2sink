@@ -4,7 +4,7 @@
 > [architecture.md](architecture.md). Findings tagged **Design flaw** feed back
 > to the architecture; new requirements feed the
 > [gap analysis](security-privacy-gap-analysis.md). Severity/likelihood drive
-> the [implementation plan](implementation-plan.md).
+> the delivery plan for these controls.
 
 ## Context & Scope
 
@@ -322,5 +322,5 @@ Add `pip-audit` (or `uv pip audit`) to CI to surface CVEs with IDs/CVSS.
 - Feed **D-1, T-1, T-2, D-2, D-3, I-2, I-3, I-4, P-1, P-2, R-1, SC-1** to the
   [secure-by-design gap analysis](security-privacy-gap-analysis.md) for
   requirement classification + SRTM.
-- The [implementation plan](implementation-plan.md) sequences the fixes
+- The delivery plan sequences the fixes
   (design flaws first) with the coding/refactoring and test work.

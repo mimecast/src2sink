@@ -358,7 +358,7 @@ The architecture review surfaced requirements not implied by functional specs:
 - **SEC-NEW-6:** Observability of config load (fail-loud-but-safe).
 
 These are carried into the [gap analysis](security-privacy-gap-analysis.md) and
-the [implementation plan](implementation-plan.md).
+the phased delivery of those controls.
 
 ---
 

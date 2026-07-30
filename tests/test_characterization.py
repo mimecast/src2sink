@@ -2,7 +2,7 @@
 
 These snapshots exist to make the Phase B security fixes and the Phase C
 cognitive-complexity refactors *provably behavior-preserving* (see
-docs/implementation-plan.md). They capture the current output of the highest-
+the delivery plan). They capture the current output of the highest-
 complexity / most-refactored functions:
 
 * ``build_metabase_v2.analyse_repo_v2``            (whole per-repo extraction)

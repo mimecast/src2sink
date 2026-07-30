@@ -12,7 +12,6 @@ sinks in another, internal libraries that act as transparent pass-
 throughs to dangerous APIs.
 
 **Canonical field definitions:** [`SCHEMA.md`](https://github.com/mimecast/src2sink/blob/main/SCHEMA.md)  
-**Roadmap / gaps:** [`NEXT_STEPS.md`](https://github.com/mimecast/src2sink/blob/main/NEXT_STEPS.md)
 
 ---
 
@@ -75,7 +74,6 @@ about the full path, not a single repo in isolation.
 |------|---------|
 | `SCHEMA.md` | Field and node-family definitions |
 | `README.md` | This file |
-| `NEXT_STEPS.md` | Gaps and follow-ups |
 | `internal-libraries/<coord>.md` | Per-library taint tables (hand-curated) |
 | `conventions/*.md` | Auth, crypto agility, PII naming (mixed) |
 
@@ -347,7 +345,7 @@ Treat **low** as “investigate”, not “confirmed”.
 ## Dependencies
 
 v2 requires **tree-sitter** and per-language grammars (via
-`uv sync`). See `metabase/docs/phase0-probe.md` if resolution fails.
+`uv sync`).
 Do not add public PyPI fallbacks.
 
 ---
@@ -355,7 +353,6 @@ Do not add public PyPI fallbacks.
 ## See also
 
 - [`SCHEMA.md`](https://github.com/mimecast/src2sink/blob/main/SCHEMA.md) — complete v2 node/edge vocabulary.
-- [`docs/implementation-plan.md`](https://github.com/mimecast/src2sink/blob/main/docs/implementation-plan.md) — **phased plan and progress record**.
 - [`docs/architecture.md`](https://github.com/mimecast/src2sink/blob/main/docs/architecture.md) — components, data flow, trust boundaries.
 - [`docs/threat-model.md`](https://github.com/mimecast/src2sink/blob/main/docs/threat-model.md) — STRIDE risk register.
 - [`docs/security-privacy-gap-analysis.md`](https://github.com/mimecast/src2sink/blob/main/docs/security-privacy-gap-analysis.md) — requirements, abuse cases, SRTM.
@@ -366,5 +363,5 @@ Do not add public PyPI fallbacks.
 - [`docs/releasing.md`](https://github.com/mimecast/src2sink/blob/main/docs/releasing.md) — publishing a version to PyPI.
 - [`docs/slsa.md`](https://github.com/mimecast/src2sink/blob/main/docs/slsa.md) — build provenance: what is claimed, how to verify it, and what it does not cover.
 - [`CHANGELOG.md`](https://github.com/mimecast/src2sink/blob/main/CHANGELOG.md) — what shipped in each version.
-- [`NEXT_STEPS.md`](https://github.com/mimecast/src2sink/blob/main/NEXT_STEPS.md) — roadmap · [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md) — known small gaps.
+- [`docs/todo.md`](https://github.com/mimecast/src2sink/blob/main/docs/todo.md) — known small gaps.
 - `/ai-sast-scanner` skill — SAST prompt this metabase feeds.
