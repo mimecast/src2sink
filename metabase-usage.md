@@ -8,6 +8,29 @@ This reference describes:
 3. How to consult it for source/sink resolution, taint propagation, sensitivity tagging, and crypto-agility annotations
 4. How metabase findings interact with the per-vulnerability triage rules
 
+**Handling:** the metabase is classified **RESTRICTED**. It is, by design, a
+concentrated map of where the exploitable weaknesses and personal data are across
+an entire estate. Reason from it and cite it in the analysis you were asked for,
+but do not copy its contents into public issues, external services, or any
+audience wider than that report.
+
+**This document is a snapshot**, written against src2sink 1.0.3
+(`schema_version: 2`). The repository is authoritative: if something here does not
+match what you find, or you need detail this reference does not cover, fetch it.
+These URLs track `main` and return raw Markdown, so they stay current as the
+project changes:
+
+- **Field, node-family and edge definitions** —
+  <https://raw.githubusercontent.com/mimecast/src2sink/main/SCHEMA.md>
+  This document explains how to *use* the outputs; `SCHEMA.md` defines precisely
+  what every field and value means. Fetch it before relying on the exact
+  semantics of `family`, `kind`, `confidence`, or `pii_classification`.
+- **Building and refreshing the metabase** —
+  <https://raw.githubusercontent.com/mimecast/src2sink/main/README.md>
+- **Handling, classification, and retention** —
+  <https://raw.githubusercontent.com/mimecast/src2sink/main/docs/operations-security.md>
+- **Repository** — <https://github.com/mimecast/src2sink>
+
 ---
 
 ## 1. What the metabase contains
@@ -170,7 +193,9 @@ Confirm the metabase is current-generation before relying on it:
 repos/<group>/<name>.json   →  "schema_version": 2   ✓ current
 ```
 
-A file without `schema_version` is a legacy artefact; treat it as absent for machine-readable purposes and read the `.md` sidecar instead.
+A file without `schema_version` is a legacy artefact; treat it as absent for machine-readable purposes and read the `.md` sidecar instead. The node and edge
+vocabulary those files use is defined in `SCHEMA.md`
+(<https://raw.githubusercontent.com/mimecast/src2sink/main/SCHEMA.md>).
 
 ---
 
@@ -247,7 +272,9 @@ The per-family triage rules are written assuming the metabase may or may not be 
 
 ## 5. Updating the metabase
 
-This skill **reads** the metabase; it does not write to it. If during analysis you discover a new sink, a missing library taint entry, an undocumented cross-repo edge, or a sensitivity tag that doesn't match observed code, record it in the report under a **"Metabase Improvements"** section. The metabase is refreshed by running `src2sink-build` (full extract) or `src2sink-build --graphs-only` (re-aggregate from existing per-repo JSONs).
+This skill **reads** the metabase; it does not write to it. If during analysis you discover a new sink, a missing library taint entry, an undocumented cross-repo edge, or a sensitivity tag that doesn't match observed code, record it in the report under a **"Metabase Improvements"** section. The metabase is refreshed by running `src2sink-build` (full extract) or `src2sink-build --graphs-only` (re-aggregate from existing per-repo JSONs); the full
+full set of invocations is in the README
+(<https://raw.githubusercontent.com/mimecast/src2sink/main/README.md>).
 
 To add a new internal client library to the producer index, edit `src2sink/known_api_clients.py` (`ApiClientBinding`) and re-run `src2sink-build --graphs-only`.
 
