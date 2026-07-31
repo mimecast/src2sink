@@ -16,7 +16,7 @@ class FlowNode:
     line: int
     language: str
     framework: str | None
-    kind: str  # source | propagator | sink | store
+    kind: str  # source | propagator | sink | store | reference
     family: str
     detail: dict[str, Any] = dataclasses.field(default_factory=dict)
     pii_classification: str | None = None

@@ -141,13 +141,24 @@ def host_matches_repo(host: str, target_repo: str) -> bool:
 
 
 def build_repo_alias_index(records: list[dict[str, Any]]) -> dict[str, str]:
-    """Map service-name aliases (lowercase) to ``group/name`` repo ids."""
+    """Map service-name aliases (lowercase) to ``group/name`` repo ids.
+
+    Repo-derived aliases come first; configured api-client binding
+    ``service_aliases`` then fill any name they do not already cover, so a
+    DNS/service name that differs from the repo's short name (the usual case for
+    an internal service) still resolves to a repo. Binding aliases never override
+    a real repo name — a repo record is the stronger evidence.
+    """
+    from .known_api_clients import binding_alias_index
+
     mapping: dict[str, str] = {}
     for data in records:
         rid = repo_id(data)
         mapping[data["name"].lower()] = rid
         for alias in repo_name_aliases(data["name"]):
             mapping[alias] = rid
+    for alias, rid in binding_alias_index().items():
+        mapping.setdefault(alias, rid)
     return mapping
 
 
@@ -155,13 +166,20 @@ def resolve_repo_for_host(host: str, alias_to_repo: dict[str, str]) -> str | Non
     """Best-effort repo id from an outbound hostname."""
     if host in SERVICE_GRAPH_NOISE_HOSTS:
         return None
-    tgt = alias_to_repo.get(host.split(".")[0])
-    if tgt:
-        return tgt
+    host_l = host.lower()
+    # Try the full host first (an alias may itself be dotted), then the first
+    # label — `some-service.some-namespace.svc.cluster.local` -> the service.
+    for candidate in (host_l, host_l.split(".")[0]):
+        tgt = alias_to_repo.get(candidate)
+        if tgt:
+            return tgt
     for _alias, rid in alias_to_repo.items():
         if host_matches_repo(host, rid):
             return rid
     return None
+
+
+_MATCH_CONF_RANK = {"high": 3, "medium": 2, "low": 1}
 
 
 def match_path_in_inbound_index(
@@ -169,22 +187,49 @@ def match_path_in_inbound_index(
     inbound: dict[str, list[tuple[Any, ...]]],
     *,
     inbound_path_col: int = 1,
+    memo: dict[str, tuple[list[tuple[Any, ...]], str]] | None = None,
 ) -> tuple[list[tuple[Any, ...]], str]:
-    """Match outbound path to indexed inbound rows; returns (rows, confidence)."""
+    """Match outbound path to indexed inbound rows; returns (rows, confidence).
+
+    An exact normalised-template hit wins outright. Otherwise every indexed route
+    is scored and the **best-confidence** group is returned: the previous version
+    returned the first fuzzy match in dict-iteration order, so an incidental
+    single-segment overlap with an unrelated repo could win over the correct
+    prefix match and the edge pointed at the wrong service.
+
+    ``memo`` optionally caches results by normalised path across calls sharing one
+    ``inbound`` index — the fuzzy pass is O(routes), so memoising matters once
+    there are many nodes to resolve.
+    """
     norm = normalize_path_template(path)
+    if not norm:
+        return [], "high"
+    if memo is not None and norm in memo:
+        return memo[norm]
+
     targets = inbound.get(norm, [])
-    conf = "high"
     if targets:
-        return targets, conf
-    for _in_norm, rows in inbound.items():
-        if not rows:
-            continue
-        row = rows[0]
-        candidate = row[inbound_path_col] if len(row) > inbound_path_col else ""
-        matched = path_templates_match(path, str(candidate))
-        if matched:
-            return rows, matched
-    return [], conf
+        result: tuple[list[tuple[Any, ...]], str] = (list(targets), "high")
+    else:
+        best_conf: str | None = None
+        best_rows: list[tuple[Any, ...]] = []
+        for _in_norm, rows in inbound.items():
+            if not rows:
+                continue
+            row = rows[0]
+            candidate = row[inbound_path_col] if len(row) > inbound_path_col else ""
+            matched = path_templates_match(path, str(candidate))
+            if not matched:
+                continue
+            if best_conf is None or _MATCH_CONF_RANK[matched] > _MATCH_CONF_RANK[best_conf]:
+                best_conf, best_rows = matched, list(rows)
+            elif matched == best_conf:
+                best_rows.extend(rows)
+        result = (best_rows, best_conf or "high")
+
+    if memo is not None:
+        memo[norm] = result
+    return result
 
 
 def store_key_from_node(node: dict[str, Any]) -> str | None:

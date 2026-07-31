@@ -28,13 +28,13 @@ def _records_for_group(group: str, names: list[str]) -> list[dict]:
 
 def test_service_call_edge_synthetic_pair() -> None:
     records = _records_for_group(
-        "dataplatform",
-        ["api-consumer", "query-api-service"],
+        "acme",
+        ["api-consumer", "sql-runner-api"],
     )
     edges, broken = collect_service_edges(records)
     assert any(
-        e.source_repo == "dataplatform/api-consumer"
-        and e.target_repo == "dataplatform/query-api-service"
+        e.source_repo == "acme/api-consumer"
+        and e.target_repo == "acme/sql-runner-api"
         for e in edges
     )
     assert isinstance(broken, list)

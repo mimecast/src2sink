@@ -17,7 +17,7 @@ from src2sink.repo_utils import is_internal_coordinate
 
 def test_default_patterns_classify_example_coordinates() -> None:
     configure_internal_group_patterns(DEFAULT_INTERNAL_GROUP_PATTERN_STRINGS)
-    assert is_internal_coordinate("com.example.dataplatform", "query-api")
+    assert is_internal_coordinate("com.example.acme", "sql-runner-api")
     assert is_internal_coordinate("@example/ui-lib", None)
     assert not is_internal_coordinate("com.google.guava", "guava")
 
@@ -34,7 +34,7 @@ def test_config_file_replaces_defaults(tmp_path: Path) -> None:
     )
     configure_internal_group_patterns(patterns)
     assert is_internal_coordinate("com.acme.shared", "shared-jdbc")
-    assert not is_internal_coordinate("com.example.datawarehouse", "query-api")
+    assert not is_internal_coordinate("com.example.datawarehouse", "sql-runner-api")
 
 
 def test_auto_discover_under_metabase_root(tmp_path: Path) -> None:

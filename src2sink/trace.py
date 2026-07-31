@@ -212,16 +212,35 @@ def _find_upstream_from_nodes(
         if src == target:
             continue
         for node in iter_nodes(data):
-            if node.get("family") != "http-out":
+            family = node.get("family")
+            if family not in ("http-out", "api-client-consumer"):
                 continue
-            raw = (node.get("detail") or {}).get("raw", "")
+            detail = node.get("detail") or {}
+            ref = f"{node.get('file')}:{node.get('line')}"
+            # A binding-resolved node names its target outright: it is the one
+            # kind of caller whose source contains no literal to scan for.
+            if detail.get("target_repo") == target:
+                hits.append(UpstreamHit(
+                    source_repo=src,
+                    kind="api-client-binding",
+                    confidence="high",
+                    evidence=str(
+                        detail.get("target_repo_evidence")
+                        or detail.get("import")
+                        or detail.get("client")
+                        or "api-client binding",
+                    )[:140],
+                    ref=ref,
+                ))
+                continue
+            raw = detail.get("raw", "")
             if raw and _raw_references_target(raw, target, path_filter, path_terms, aliases):
                 hits.append(UpstreamHit(
                     source_repo=src,
                     kind="http-out-raw",
                     confidence="medium",
                     evidence=raw[:140],
-                    ref=f"{node.get('file')}:{node.get('line')}",
+                    ref=ref,
                 ))
     return hits
 
@@ -520,6 +539,12 @@ def main() -> int:
         help="Write markdown report to this path",
     )
     parser.add_argument("--api-clients", default=None, help="Path to api-clients.json")
+    parser.add_argument(
+        "--allow-empty-api-clients",
+        action="store_true",
+        help="Continue when --api-clients loads 0 bindings (otherwise a hard "
+        "error, since it silently disables cross-repo API-client detection).",
+    )
     add_internal_groups_arguments(parser)
     args = parser.parse_args()
 
@@ -529,11 +554,15 @@ def main() -> int:
     apply_internal_groups_from_args(args)
 
     if args.api_clients:
-        from .known_api_clients import load_api_client_bindings, configure_api_client_bindings
-        from .extractors.http_out import configure_http_out_client_patterns
-        bindings = load_api_client_bindings(Path(args.api_clients))
-        configure_api_client_bindings(bindings)
-        configure_http_out_client_patterns(bindings)
+        from .known_api_clients import ApiClientConfigError, configure_from_path
+        try:
+            configure_from_path(
+                args.api_clients,
+                warn=True,
+                allow_empty=args.allow_empty_api_clients,
+            )
+        except ApiClientConfigError as exc:
+            raise SystemExit(f"ERROR: {exc}") from exc
 
     report = run_trace(
         metabase_root,

@@ -11,6 +11,7 @@ from .regex_extractors import (
     extract_http_inbound,
     extract_http_outbound,
     extract_data_class_field_declarations,
+    extract_path_constants,
     extract_pii_field_declarations,
     extract_pii_sinks,
     extract_queue_io,
@@ -50,6 +51,7 @@ def extract_from_file(
     extract_file_sinks(ctx)
     extract_api_client_imports(ctx)
     extract_http_outbound(ctx)
+    extract_path_constants(ctx)
     extract_queue_io(ctx)
     extract_crypto_and_auth(ctx)
     extract_pii_field_declarations(ctx)

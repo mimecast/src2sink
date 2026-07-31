@@ -127,6 +127,7 @@ _REGEX_EXTRACTION_PASSES = (
     regex_extractors.extract_file_sinks,
     regex_extractors.extract_api_client_imports,
     regex_extractors.extract_http_outbound,
+    regex_extractors.extract_path_constants,
     regex_extractors.extract_queue_io,
     regex_extractors.extract_crypto_and_auth,
     regex_extractors.extract_pii_field_declarations,

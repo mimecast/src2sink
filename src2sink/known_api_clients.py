@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+class ApiClientConfigError(RuntimeError):
+    """Raised when an ``--api-clients`` path yields no usable bindings.
+
+    Silently continuing with zero bindings disables every cross-repo client
+    detection path (import nodes, class-pattern call sites, producer index) while
+    still reporting a successful run, so ~all client-library callers vanish with
+    no negative signal. See ADR-011 in docs/architecture.md.
+    """
 
 
 @dataclass(frozen=True)
@@ -86,6 +97,111 @@ def load_api_client_bindings(
     if warn:
         logger.info("loaded %d api-client binding(s) from %r", len(result), path.name)
     return tuple(result)
+
+
+def configure_from_path(
+    path: str | Path,
+    *,
+    warn: bool = False,
+    allow_empty: bool = False,
+) -> tuple[ApiClientBinding, ...]:
+    """Load bindings from ``path`` and configure every consumer that needs them.
+
+    Single entry point for the ``--api-clients`` flag so no CLI can configure the
+    binding registry while forgetting the http-out class patterns (or vice versa).
+
+    Raises:
+        ApiClientConfigError: if the file yields no bindings and ``allow_empty``
+            is false — a misconfigured file must not look like a clean run.
+    """
+    from .extractors.http_out import configure_http_out_client_patterns
+
+    p = Path(path)
+    bindings = load_api_client_bindings(p, warn=warn)
+    if not bindings and not allow_empty:
+        raise ApiClientConfigError(
+            f"api-clients file {p.name!r} loaded 0 bindings (missing, unreadable, "
+            "or malformed). Cross-repo API-client detection would be silently "
+            "disabled. Fix the file, or pass --allow-empty-api-clients to accept "
+            "the reduced coverage."
+        )
+    configure_api_client_bindings(bindings)
+    configure_http_out_client_patterns(bindings)
+    return bindings
+
+
+def _alias_variants(alias: str) -> set[str]:
+    """Return lowercase spelling variants of a service alias.
+
+    A binding alias is a DNS-ish service name (``some-thing-service``) but the
+    same service is referred to in code as ``some_thing_service``,
+    ``somethingservice`` or, with the ``-service`` suffix dropped, ``some_thing``
+    (as in ``get_some_thing_base_url()``). Matching every variant is what lets a
+    base-URL helper or config key resolve to the target repo.
+    """
+    base = alias.strip().lower()
+    if not base:
+        return set()
+    variants = {base}
+    stems = {base}
+    if base.endswith("-service"):
+        stems.add(base[: -len("-service")])
+    for stem in stems:
+        variants.update({stem, stem.replace("-", "_"), stem.replace("-", "")})
+    return {v for v in variants if len(v) >= 4}
+
+
+def binding_alias_index() -> dict[str, str]:
+    """Map every configured binding's service-alias variants to its target repo id."""
+    mapping: dict[str, str] = {}
+    for binding in _BINDINGS:
+        if not binding.target_repo:
+            continue
+        for alias in binding.service_aliases:
+            for variant in _alias_variants(alias):
+                mapping.setdefault(variant, binding.target_repo)
+    return mapping
+
+
+# (bindings identity, combined alias regex, alias -> target repo). Rebuilt only
+# when configure_api_client_bindings swaps the registry, so the per-call-site
+# lookup below stays a single regex search rather than one per alias.
+_ALIAS_MATCHER_CACHE: tuple[
+    tuple[ApiClientBinding, ...], re.Pattern[str] | None, dict[str, str]
+] | None = None
+
+
+def _alias_matcher() -> tuple[re.Pattern[str] | None, dict[str, str]]:
+    """Return the cached (combined alias regex, alias -> target repo) pair."""
+    global _ALIAS_MATCHER_CACHE  # noqa: PLW0603
+    cached = _ALIAS_MATCHER_CACHE
+    if cached is not None and cached[0] is _BINDINGS:
+        return cached[1], cached[2]
+    index = binding_alias_index()
+    rx: re.Pattern[str] | None = None
+    if index:
+        alt = "|".join(re.escape(v) for v in sorted(index, key=len, reverse=True))
+        rx = re.compile(rf"(?<![a-z0-9])({alt})(?![a-z0-9])")
+    _ALIAS_MATCHER_CACHE = (_BINDINGS, rx, index)
+    return rx, index
+
+
+def binding_target_for_text(text: str) -> tuple[str, str] | None:
+    """Return (target_repo, matched_alias) if a binding's service alias appears in ``text``.
+
+    Used to resolve the *service* behind an otherwise-opaque call site — a
+    base-URL helper name (``get_some_service_base_url``) or an injected config key —
+    to a target repo.
+    """
+    if not text:
+        return None
+    rx, index = _alias_matcher()
+    if rx is None:
+        return None
+    m = rx.search(text.lower())
+    if not m:
+        return None
+    return index[m.group(1)], m.group(1)
 
 
 def binding_for_import(line: str) -> ApiClientBinding | None:

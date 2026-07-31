@@ -13,8 +13,12 @@ cov:
 	uv run pytest --cov-report=html --cov-report=term-missing
 
 # Dependency vulnerability audit (TA-011 / SC-1); a CI gate in ci.yml.
+# --frozen: audit the lockfile as committed. Without it uv re-resolves first and
+# rewrites every package URL to whatever index UV_INDEX / UV_DEFAULT_INDEX points
+# at, which on a machine configured for an internal mirror silently replaces all
+# the pypi.org URLs (hashes are preserved, so it is easy to miss in review).
 audit:
-	uv run pip-audit
+	uv run --frozen pip-audit
 
 # Strict type check (targets + settings in pyproject [tool.mypy]).
 typecheck:

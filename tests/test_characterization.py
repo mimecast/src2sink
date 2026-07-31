@@ -106,8 +106,8 @@ def _norm_summary(summary: Any) -> dict[str, Any]:
 @pytest.mark.parametrize(
     ("group", "name"),
     [
-        ("dataplatform", "query-api-service"),
-        ("dataplatform", "api-consumer"),
+        ("acme", "sql-runner-api"),
+        ("acme", "api-consumer"),
         ("notifications", "sms-gateway"),
         ("python", "sms-sender"),
         ("negative", "safe-crud"),
@@ -222,11 +222,11 @@ def test_char_pii_catalogues(tmp_path: Path) -> None:
 
 def test_char_run_trace(tmp_path: Path) -> None:
     records = _records_for(
-        [("dataplatform", "api-consumer"), ("dataplatform", "query-api-service")]
+        [("acme", "api-consumer"), ("acme", "sql-runner-api")]
     )
     report = run_trace(
         tmp_path,
-        "dataplatform/query-api-service",
+        "acme/sql-runner-api",
         records=records,
         producer_indices=[],
     )
@@ -245,4 +245,4 @@ def test_char_run_trace(tmp_path: Path) -> None:
             key=lambda u: (u["source_repo"], u["kind"]),
         ),
     }
-    _assert_snapshot("run_trace_query_api", normalized)
+    _assert_snapshot("run_trace_sql_runner_api", normalized)

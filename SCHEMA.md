@@ -259,9 +259,26 @@ when reviewing for real PII egress.
 
 ### `graphs/service-call-graph.md` (v2)
 
-Cross-repo edges from `http-out` call sites **and** path/URL literals in any
-v2 node `detail` matched to `http-in` templates. Sidecar:
-`graphs/service-call-edges.jsonl`. Confidence: high / medium / low.
+Cross-repo edges from three independent sources:
+
+1. `http-out` call sites matched to `http-in` path templates;
+2. path/URL literals in any v2 node `detail` (config, clients, `path-constant`
+   declarations);
+3. hops declared by an api-client binding — an `api-client-consumer` import or a
+   `class_patterns` call site, where the consumer's own source contains no host
+   or URL to match on at all.
+
+Sidecar: `graphs/service-call-edges.jsonl`. Confidence: **high** = same
+normalised path, or a configured api-client binding; **medium** =
+prefix/template overlap; **low** = hostname hint only; **openapi** = matched to
+a discovered spec. A `target_path` of `*` is a service-level hop whose specific
+route was not resolved.
+
+Outbound call sites that produced *no* edge are written to
+`graphs/service-call-unmatched.jsonl` with a `reason`, and the report reconciles
+every configured binding against the edges it produced — a binding with zero
+edges means client-library detection for that service is broken, which
+previously surfaced only as an empty graph.
 
 ### `graphs/pii-<field>-cross-repo.md` (Phase 3)
 
@@ -346,6 +363,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `propagator` | Data moves through code (auth filter, KMS decrypt, variable pass-through) |
 | `sink` | Dangerous operation (SQL execute, file write, outbound HTTP, log with PII) |
 | `store` | Named persistence from config (JDBC/Mongo/Redis/S3 URLs in YAML/properties) |
+| `reference` | A declaration that *names* an endpoint without being a call site (route constant, path enum member). Feeds cross-repo path matching; never a taint source or sink itself |
 
 ### Node families (selected)
 
@@ -362,7 +380,8 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `crypto-algorithm` | sink | Literal algorithm use |
 | `crypto-key-source` | propagator | Secrets Manager / KMS / Vault |
 | `raw-code-payload` | source | Endpoint accepts `sql`/`query`/… and file has SQL execution sink |
-| `api-client-consumer` | propagator | Import of a registered client library (`known_api_clients.py`) |
+| `api-client-consumer` | propagator | Import of a registered client library (`known_api_clients.py`); carries `target_repo` + declared `paths`, so the hop is graphed even though the consumer's source names no host or URL |
+| `path-constant` | reference | Route-like string constant or enum member (`PATH_QUERY = "/v1/queries"`); recovers call sites that build their URL from a named constant in another file |
 
 ### Classification axes (orthogonal)
 
@@ -404,6 +423,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 |------|---------|
 | `graphs/service-call-graph.md` | Sampled cross-repo HTTP edges |
 | `graphs/service-call-edges.jsonl` | Full edge list: `source_repo`, `target_repo`, `target_path`, `confidence`, `evidence` |
+| `graphs/service-call-unmatched.jsonl` | Outbound call sites that produced no edge, with `reason` — the negative-coverage signal |
 | `graphs/queue-graph.md` + `.jsonl` | Topic → producers / consumers |
 | `graphs/data-store-graph.md` + `.jsonl` | Store key → repos |
 | `graphs/payload-endpoint-producers.md` + `.jsonl` | Producers of registered dangerous-payload APIs |

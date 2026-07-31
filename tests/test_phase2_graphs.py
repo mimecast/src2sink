@@ -28,15 +28,15 @@ def test_service_edge_from_fixture() -> None:
                 "kind": "sink",
                 "file": "Client.java",
                 "line": 10,
-                "detail": {"raw": 'rest.post("https://query-api-service.dev/v1/queries")'},
+                "detail": {"raw": 'rest.post("https://sql-runner-api.dev/v1/queries")'},
             },
         ],
         "edges": [],
     }
     provider = {
         "schema_version": 2,
-        "group": "dataplatform",
-        "name": "query-api-service",
+        "group": "acme",
+        "name": "sql-runner-api",
         "nodes": [
             {
                 "family": "http-in",
@@ -51,7 +51,7 @@ def test_service_edge_from_fixture() -> None:
     edges, _broken = collect_service_edges([consumer, provider])
     assert any(
         e.source_repo == "test/consumer"
-        and e.target_repo == "dataplatform/query-api-service"
+        and e.target_repo == "acme/sql-runner-api"
         for e in edges
     )
 
@@ -73,7 +73,7 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 class C {
   void post() {
-    HttpRequest.newBuilder(URI.create("https://query-api-service.dev/v1/queries")).POST(null).build();
+    HttpRequest.newBuilder(URI.create("https://sql-runner-api.dev/v1/queries")).POST(null).build();
   }
 }
 '''
@@ -99,26 +99,26 @@ def test_payload_producer_index_dep(tmp_path) -> None:
 
     configure_api_client_bindings((
         ApiClientBinding(
-            target_repo="dataplatform/query-api-service",
-            maven_artifact="query-api-service-client",
-            import_prefix="com.example.dataplatform.queryapi.client",
+            target_repo="acme/sql-runner-api",
+            maven_artifact="sql-runner-api-client",
+            import_prefix="com.example.acme.sqlrunner.client",
             paths=("/queries", "/queries/sync", "/queries/{handle}", "/results/{handle}"),
             payload_fields=("sql",),
-            service_aliases=("query-api-service",),
+            service_aliases=("sql-runner-api",),
         ),
     ))
 
     metabase = tmp_path / "metabase"
-    repo_dir = metabase / "repos" / "dataplatform"
+    repo_dir = metabase / "repos" / "acme"
     repo_dir.mkdir(parents=True)
     consumer = {
         "schema_version": 2,
-        "group": "dataplatform",
+        "group": "acme",
         "name": "dp-ato-detections",
         "dependencies_internal": [
             {
-                "groupId": "com.example.dataplatform",
-                "artifactId": "query-api-service-client",
+                "groupId": "com.example.acme",
+                "artifactId": "sql-runner-api-client",
                 "version": "3.6.0",
                 "kind": "internal",
             },
@@ -130,29 +130,29 @@ def test_payload_producer_index_dep(tmp_path) -> None:
         __import__("json").dumps(consumer),
         encoding="utf-8",
     )
-    (repo_dir / "query-api-service.json").write_text(
+    (repo_dir / "sql-runner-api.json").write_text(
         __import__("json").dumps({
             "schema_version": 2,
-            "group": "dataplatform",
-            "name": "query-api-service",
+            "group": "acme",
+            "name": "sql-runner-api",
             "nodes": [],
             "edges": [],
         }),
         encoding="utf-8",
     )
     indices = build_producer_indices(metabase)
-    qas = next(i for i in indices if i.binding.target_repo == "dataplatform/query-api-service")
-    assert any(h.source_repo == "dataplatform/dp-ato-detections" for h in qas.hits)
+    qas = next(i for i in indices if i.binding.target_repo == "acme/sql-runner-api")
+    assert any(h.source_repo == "acme/dp-ato-detections" for h in qas.hits)
 
 
 def test_trace_target_inbound(tmp_path) -> None:
     metabase = tmp_path / "metabase"
-    repo_dir = metabase / "repos" / "dataplatform"
+    repo_dir = metabase / "repos" / "acme"
     repo_dir.mkdir(parents=True)
     data = {
         "schema_version": 2,
-        "group": "dataplatform",
-        "name": "query-api-service",
+        "group": "acme",
+        "name": "sql-runner-api",
         "nodes": [
             {
                 "family": "http-in",
@@ -175,10 +175,10 @@ def test_trace_target_inbound(tmp_path) -> None:
         ],
         "edges": [],
     }
-    (repo_dir / "query-api-service.json").write_text(
+    (repo_dir / "sql-runner-api.json").write_text(
         __import__("json").dumps(data),
         encoding="utf-8",
     )
-    report = run_trace(metabase, "dataplatform/query-api-service", path_filter="/queries")
+    report = run_trace(metabase, "acme/sql-runner-api", path_filter="/queries")
     assert report.inbound
     assert report.raw_payloads

@@ -33,18 +33,18 @@ def _assert_snapshot(name: str, actual: dict) -> None:
     ("name", "repo_id", "rel_path", "language", "source_path"),
     [
         (
-            "java-query-api",
-            "dataplatform/query-api-service",
+            "java-sql-runner-api",
+            "acme/sql-runner-api",
             "src/QueryController.java",
             "java",
-            SYN / "dataplatform/query-api-service/src/QueryController.java",
+            SYN / "acme/sql-runner-api/src/QueryController.java",
         ),
         (
             "java-http-consumer",
-            "dataplatform/api-consumer",
-            "src/QueryClient.java",
+            "acme/api-consumer",
+            "src/RunnerClient.java",
             "java",
-            SYN / "dataplatform/api-consumer/src/QueryClient.java",
+            SYN / "acme/api-consumer/src/RunnerClient.java",
         ),
         (
             "java-safe-crud",

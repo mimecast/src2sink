@@ -5,6 +5,88 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
+## [Unreleased]
+
+Cross-repo caller detection: on a real fleet, a service with roughly two dozen
+callers showed **one** of them in the generated graphs. Six independent causes,
+below. Reproduced end-to-end against the six caller shapes in
+`tests/test_cross_repo_caller_coverage.py`: **1/6 detected before, 6/6 after**.
+
+### Fixed
+
+- **`class_patterns` bindings were dead code.** `regex_extractors` did
+  `from .http_out import _BINDING_CLASS_RX`, which snapshots the empty list at
+  import time; `configure_http_out_client_patterns` rebinds the module global, so
+  the extractor's copy stayed empty forever. Every configured `class_patterns`
+  entry was silently ignored — restoring a correct `api-clients.json` alone would
+  *not* have fixed the reported gap. Callers now go through
+  `get_binding_call_patterns()`.
+- **`api-client-consumer` nodes never became edges.** They carried `target_repo`
+  and declared `paths` but were read only by the payload-producers report, so a
+  repo calling a service purely through its published client library could not
+  appear in `service-call-edges.jsonl` or the OpenAPI edge graph. This is the hop
+  regular SAST cannot see at all: the consumer's source contains no URL, host, or
+  service name.
+- **Outbound call sites were anchored to class names, case-sensitively.**
+  `RestTemplate\.` never matched the ordinary injected-field call
+  `restTemplate.exchange(...)`. Spring patterns are now anchored on the
+  distinctive method name and match any receiver.
+- **Endpoints reached through a constant, enum, or config value were dropped.**
+  The ±3-line literal window saw nothing for `host + PATH_QUERY` or
+  `ApiPaths.SUBMIT_SYNC`. A per-file identifier → literal symbol table now
+  resolves in-file references, and a new `path-constant` reference node covers the
+  cross-file case.
+- **Wrong-target edges from fuzzy path matching.** `match_path_in_inbound_index`
+  returned the first fuzzy match in dict-iteration order, so an incidental
+  single-segment overlap with an unrelated repo could beat the correct prefix
+  match. It now returns the best-confidence candidate, and memoises.
+- **Binding `service_aliases` were ignored by the host index.** They are now
+  merged into `build_repo_alias_index` (repo records still win on conflict), so a
+  service whose DNS name differs from its repo short name resolves.
+- Language hints on call-site patterns had no effect (every hint was in the
+  allow-list), so e.g. Python `requests.` patterns ran against Java sources. Hints
+  now map to real language sets.
+- `src2sink-trace` and `src2sink-trace-batch` duplicated the binding-load logic;
+  all three CLIs now share `known_api_clients.configure_from_path`, and `trace`
+  recognises binding-declared callers as upstream hits.
+- **The dependency audit rewrote the lockfile it was auditing.** `make audit` and
+  `tests/test_dependency_pinning.py` both ran `uv run pip-audit`, which
+  re-resolves the project first and rewrites every entry in `uv.lock` to whatever
+  index `UV_INDEX` / `UV_DEFAULT_INDEX` points at. On a developer machine
+  configured for an internal mirror, a read-only test run silently replaced all
+  900+ `pypi.org` URLs with internal hostnames — staging internal infrastructure
+  names into a public repository, with the hashes preserved so the substitution
+  is easy to miss in review. Both now pass `--frozen`, so the audit runs against
+  the lockfile as committed, and the test asserts the lockfile digest is unchanged
+  across the subprocess so the regression cannot return silently.
+
+### Added
+
+- `--allow-empty-api-clients` on all three CLIs. Passing `--api-clients` with a
+  file that loads **zero** bindings is now a hard error: it disables every
+  cross-repo client-detection path while the run still reports success. Omitting
+  `--api-clients` is unchanged (silently off). See ADR-011.
+- Negative coverage as a first-class output (ADR-012): outbound call sites that
+  resolve to nothing go to `graphs/service-call-unmatched.jsonl` with a `reason`;
+  `service-call-graph.md` reconciles every configured binding against the edges it
+  produced; and `run-manifest.json` records `api_clients_binding_count` alongside
+  the existing `api_clients_configured` boolean, which only ever meant "a path was
+  passed".
+- Context-gated call-site patterns: broad receiver matches (`self.post(`,
+  `client.post(`) fire only in files that also show HTTP-client evidence, so
+  hand-rolled client wrappers are recovered without flagging every `x.get(`.
+- Service-alias resolution from the call context — a base-URL helper name
+  (`get_<service>_base_url`) or a `${<service>.base-url}` config key now resolves
+  to the target repo.
+- New node family `path-constant` and node kind `reference` (see `SCHEMA.md`).
+
+### Changed
+
+- Triage guidance in `metabase-usage.md`: a missing cross-repo edge is no longer
+  sufficient to call a finding DEAD-CODE. The binding count, the binding-coverage
+  table, and the unmatched-call list must all be clean first — absence of an edge
+  is not evidence of absence of a caller.
+
 ## [1.0.3] — 2026-07-29
 
 **No functional changes.** Hardens how releases are built and attested.

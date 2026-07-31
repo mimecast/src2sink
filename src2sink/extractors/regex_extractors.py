@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from ..constants import WEAK_ALGOS
 from .file_context import FileExtractionContext
-from .http_out import HTTP_OUT_CALL_RX, _BINDING_CLASS_RX, enrich_http_out_detail
+from .http_out import (
+    HTTP_OUT_CALL_RX,
+    HTTP_OUT_CONTEXT_CALL_RX,
+    build_path_symbol_table,
+    enrich_http_out_detail,
+    get_binding_call_patterns,
+)
 from .node_factory import make_node
 from .patterns import (
     AUTH_RX,
@@ -173,20 +180,61 @@ def extract_api_client_imports(ctx: FileExtractionContext) -> None:
         ))
 
 
+# Which extractor languages each call-site language hint applies to. The hint
+# names an *ecosystem*, not a file extension: a Spring pattern is equally valid
+# in Kotlin or Scala, and a browser `fetch(` in TSX. The previous membership test
+# (`lang_hint not in ("java", "javascript", "python", "go")`) was always true for
+# every hint in the table, so the filter never excluded anything and e.g. Python
+# `requests.` patterns were run against Java sources.
+_CALL_RX_LANGUAGES: dict[str, frozenset[str]] = {
+    "java": frozenset({"java", "kotlin", "scala"}),
+    "python": frozenset({"python"}),
+    "javascript": frozenset({"javascript", "typescript", "tsx"}),
+    "go": frozenset({"go"}),
+}
+
+
+def _call_rx_applies(lang_hint: str, language: str) -> bool:
+    """True when a call-site pattern's language hint covers this file's language."""
+    if lang_hint == "any":
+        return True
+    return language in _CALL_RX_LANGUAGES.get(lang_hint, frozenset({lang_hint}))
+
+
 def extract_http_outbound(ctx: FileExtractionContext) -> None:
     """Emit http-out sink nodes for outbound HTTP client calls, enriched with URL/path.
 
+    Runs three tiers of call-site patterns: unconditional library patterns,
+    context-gated patterns that need file-level HTTP evidence before a broad
+    receiver match is trusted, and configured api-client `class_patterns` (which
+    additionally stamp the binding's ``target_repo`` onto the node, since the
+    consumer's own source names no host or path at all).
+
     Scans untrusted source text; matches are only recorded, never evaluated.
     """
-    all_rx = list(HTTP_OUT_CALL_RX) + list(_BINDING_CLASS_RX)
-    for pat, lang_hint, purpose in all_rx:
-        if lang_hint != ctx.language and lang_hint not in ("java", "javascript", "python", "go"):
-            continue
+    symbols = build_path_symbol_table(ctx.source)
+
+    def emit(pat: re.Pattern[str], purpose: str, binding: Any = None) -> None:
+        """Emit one http-out node per match of ``pat``, enriched from its context."""
         for m in pat.finditer(ctx.source):
             line = ctx.line_number(m.start())
             raw = m.group(0)
-            detail = enrich_http_out_detail(ctx.source, line, raw, purpose)
-            conf = "high" if detail.get("url") or detail.get("path") else "medium"
+            detail = enrich_http_out_detail(
+                ctx.source, line, raw, purpose, symbols=symbols,
+            )
+            if binding is not None:
+                # The binding is authoritative for where this call lands, so it
+                # overrides any alias guessed from the call context.
+                detail["target_repo"] = binding.target_repo
+                detail["target_repo_evidence"] = f"api-client class {binding.client}"
+                detail["target_repo_confidence"] = "high"
+                detail["client"] = binding.client
+                detail["client_paths"] = list(binding.paths)
+            conf = (
+                "high"
+                if detail.get("url") or detail.get("path") or binding is not None
+                else "medium"
+            )
             ctx.nodes.append(make_node(
                 repo=ctx.repo_id,
                 file=ctx.rel_path,
@@ -196,6 +244,85 @@ def extract_http_outbound(ctx: FileExtractionContext) -> None:
                 family="http-out",
                 detail=detail,
                 confidence=conf,
+            ))
+
+    for pat, lang_hint, purpose in HTTP_OUT_CALL_RX:
+        if _call_rx_applies(lang_hint, ctx.language):
+            emit(pat, purpose)
+
+    for pat, lang_hint, purpose, file_guard in HTTP_OUT_CONTEXT_CALL_RX:
+        if _call_rx_applies(lang_hint, ctx.language) and file_guard.search(ctx.source):
+            emit(pat, purpose)
+
+    for bp in get_binding_call_patterns():
+        if _call_rx_applies(bp.language, ctx.language):
+            emit(bp.pattern, bp.purpose, binding=bp)
+
+
+# Endpoint-ish constant names, used to accept a single-segment path that would
+# otherwise be too generic to be worth a node.
+_ENDPOINT_CONST_NAME_RX = re.compile(
+    r"PATH|URL|URI|ENDPOINT|ROUTE|_API|API_|RESOURCE",
+    re.IGNORECASE,
+)
+# `NAME = "/path"` and Java/Kotlin enum members `NAME("/path")`. Both string runs
+# are length-bounded to keep the patterns linear on hostile input.
+PATH_CONST_RX = re.compile(
+    r"\b([A-Za-z_][A-Za-z0-9_]{0,63})\s*"
+    r"(?::\s*[A-Za-z_][A-Za-z0-9_<>\[\].,? ]{0,63})?"
+    r"\s*(?::?=)\s*[\"'](/[A-Za-z0-9_][A-Za-z0-9_./\-{}]{0,200})[\"']"
+)
+PATH_ENUM_RX = re.compile(
+    r"\b([A-Z][A-Z0-9_]{1,63})\s*\(\s*[\"'](/[A-Za-z0-9_][A-Za-z0-9_./\-{}]{0,200})[\"']"
+)
+# A trailing filename-with-extension means a resource/file path, not a route.
+_FILE_PATH_RX = re.compile(r"/[^/]*\.[A-Za-z0-9]{1,6}$")
+_MAX_PATH_CONSTANTS_PER_FILE = 100
+
+
+def _is_route_like_constant(name: str, path: str) -> bool:
+    """True when a `NAME = "/..."` constant plausibly names an HTTP route."""
+    if _FILE_PATH_RX.search(path):
+        return False
+    segments = [s for s in path.split("/") if s]
+    if not segments:
+        return False
+    # Multi-segment paths stand on their own; a single segment (`/queries`) is
+    # only kept when the constant is explicitly named like an endpoint, so
+    # generic one-word literals do not each become a node.
+    return len(segments) >= 2 or bool(_ENDPOINT_CONST_NAME_RX.search(name))
+
+
+def extract_path_constants(ctx: FileExtractionContext) -> None:
+    """Emit path-constant reference nodes for route-like string constants and enum values.
+
+    A call site that builds its URL from a named constant or enum member
+    (``host + PATH_QUERY``, ``ApiPaths.SUBMIT_SYNC``) carries no literal
+    the ±3-line window can see. In-file uses are resolved directly by
+    ``build_path_symbol_table``; this pass covers the cross-file case by making
+    the declaration itself a node, so the aggregators' path/URL reference scan
+    can match it to an inbound route in another repo.
+
+    Scans untrusted source text; matches are only recorded, never evaluated.
+    """
+    seen: set[str] = set()
+    for rx in (PATH_CONST_RX, PATH_ENUM_RX):
+        for m in rx.finditer(ctx.source):
+            if len(seen) >= _MAX_PATH_CONSTANTS_PER_FILE:
+                return
+            name, path = m.group(1), m.group(2)
+            if path in seen or not _is_route_like_constant(name, path):
+                continue
+            seen.add(path)
+            ctx.nodes.append(make_node(
+                repo=ctx.repo_id,
+                file=ctx.rel_path,
+                line=ctx.line_number(m.start()),
+                language=ctx.language,
+                kind="reference",
+                family="path-constant",
+                detail={"path": path, "symbol": name, "raw": m.group(0)[:120]},
+                confidence="medium",
             ))
 
 

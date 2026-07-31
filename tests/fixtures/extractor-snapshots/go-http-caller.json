@@ -9,7 +9,7 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
-        "field_name": "query"
+        "field_name": "sql"
       },
       "family": "data-class-field",
       "file": "main.go",

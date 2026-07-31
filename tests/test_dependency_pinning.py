@@ -17,6 +17,7 @@ than failing when it is not (e.g. behind a restrictive corporate proxy).
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 import tomllib
@@ -27,6 +28,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCKFILE = REPO_ROOT / "uv.lock"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+
+
+def _lockfile_digest() -> str:
+    """Return a digest of the lockfile, for detecting an accidental rewrite."""
+    return hashlib.sha256(LOCKFILE.read_bytes()).hexdigest()
 
 
 def _load_toml(path: Path) -> dict:
@@ -75,15 +81,26 @@ def test_pip_audit_reports_no_known_vulnerabilities():
     sandbox sits behind a proxy that cannot verify pypi.org's certificate — so
     the check is a hard gate wherever it *can* run (a real CI runner with
     normal internet egress) without making the offline dev loop flaky.
+
+    ``uv run`` is invoked with ``--frozen``: without it, uv re-resolves the
+    project first and rewrites every entry in ``uv.lock`` to whatever index the
+    developer's ``UV_INDEX`` / ``UV_DEFAULT_INDEX`` points at. On a machine
+    configured for an internal mirror that silently replaced all 900+
+    ``pypi.org`` URLs with internal hostnames — a dirty working tree after a
+    read-only test run, and internal infrastructure names staged into a public
+    repository. The hashes are preserved either way, so the substitution is easy
+    to miss in review. ``--frozen`` also means the audit is run against the
+    lockfile as committed, which is what TA-011 is actually asserting.
     """
     if shutil.which("uv") is not None:
-        cmd = ["uv", "run", "pip-audit", "--progress-spinner=off"]
+        cmd = ["uv", "run", "--frozen", "pip-audit", "--progress-spinner=off"]
     elif shutil.which("pip-audit") is not None:
         cmd = ["pip-audit", "--progress-spinner=off"]
     else:
         pytest.skip("neither uv nor pip-audit is available on PATH")
         return
 
+    before = _lockfile_digest()
     try:
         result = subprocess.run(
             cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
@@ -91,6 +108,14 @@ def test_pip_audit_reports_no_known_vulnerabilities():
     except subprocess.TimeoutExpired:
         pytest.skip("pip-audit did not complete within 120s (no network egress?)")
         return
+    finally:
+        # Guard the invariant rather than trusting the flag to keep working: an
+        # auditing test must never mutate the thing it audits.
+        assert _lockfile_digest() == before, (
+            f"{LOCKFILE.name} was rewritten by the audit subprocess — check that "
+            "'uv run --frozen' is still being used; a re-resolve rewrites every "
+            "package URL to the locally configured index"
+        )
 
     network_error_markers = (
         "SSLError", "ConnectionError", "Max retries exceeded",

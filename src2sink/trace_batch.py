@@ -145,6 +145,12 @@ def main() -> int:
         help="Pass through to trace.py for literal repo scan (slow)",
     )
     parser.add_argument("--api-clients", default=None, help="Path to api-clients.json")
+    parser.add_argument(
+        "--allow-empty-api-clients",
+        action="store_true",
+        help="Continue when --api-clients loads 0 bindings (otherwise a hard "
+        "error, since it silently disables cross-repo API-client detection).",
+    )
     add_internal_groups_arguments(parser)
     args = parser.parse_args()
 
@@ -154,11 +160,15 @@ def main() -> int:
     apply_internal_groups_from_args(args)
 
     if args.api_clients:
-        from .known_api_clients import load_api_client_bindings, configure_api_client_bindings
-        from .extractors.http_out import configure_http_out_client_patterns
-        bindings = load_api_client_bindings(Path(args.api_clients))
-        configure_api_client_bindings(bindings)
-        configure_http_out_client_patterns(bindings)
+        from .known_api_clients import ApiClientConfigError, configure_from_path
+        try:
+            configure_from_path(
+                args.api_clients,
+                warn=True,
+                allow_empty=args.allow_empty_api_clients,
+            )
+        except ApiClientConfigError as exc:
+            raise SystemExit(f"ERROR: {exc}") from exc
 
     written, skipped, errors = batch_trace(
         metabase_root,

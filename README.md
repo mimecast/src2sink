@@ -57,7 +57,8 @@ about the full path, not a single repo in isolation.
 | `taint/config-data-stores.md` + `.jsonl` | JDBC/Mongo/Redis/S3 from config |
 | `taint/config-security.md` + `.jsonl` | Security-sensitive config keys |
 | `taint/config-crypto.md` + `.jsonl` | Cipher suites / signing algorithms from config |
-| `graphs/service-call-graph.md` + `service-call-edges.jsonl` | Cross-repo HTTP edges (`http-in` ↔ enriched `http-out`) |
+| `graphs/service-call-graph.md` + `service-call-edges.jsonl` | Cross-repo HTTP edges (`http-in` ↔ enriched `http-out`, plus api-client-binding hops) |
+| `graphs/service-call-unmatched.jsonl` | Outbound calls that resolved to nothing — the negative-coverage signal |
 | `graphs/queue-graph.md` + `.jsonl` | Topic producers / consumers |
 | `graphs/data-store-graph.md` + `.jsonl` | Config-discovered stores ↔ repos |
 | `graphs/payload-endpoint-producers.md` + `.jsonl` | Registered API clients → target services |
@@ -286,8 +287,18 @@ resolved; anything still flagged afterwards has no matching `pom.xml` on disk
 
 ### Register another API client library
 
-Edit `src2sink/known_api_clients.py` (`ApiClientBinding`), then re-run
-`src2sink-build` (or `--graphs-only`).
+Add a binding to `api-clients.json` (see
+[`docs/api-clients-json.md`](https://github.com/mimecast/src2sink/blob/main/docs/api-clients-json.md)
+for the field reference and the `--discover-api-clients` drafting flow), then
+re-run `src2sink-build --api-clients api-clients.json` (or `--graphs-only`).
+
+This is how the tool sees hops that regular SAST cannot: a repo that calls a
+service through its published client library has no URL, host, or service name
+anywhere in its source, so the binding is the only thing that knows the call
+crosses a service boundary. If a supplied `api-clients.json` loads zero bindings
+the build fails rather than quietly producing a client-blind metabase; check
+`api_clients_binding_count` in `run-manifest.json` and the "API-client binding
+coverage" table in `graphs/service-call-graph.md` to confirm detection is live.
 
 ---
 
