@@ -5,11 +5,11 @@
       "crypto-config": 2,
       "data-store": 1
     },
-    "dataplatform/api-consumer": {
+    "acme/api-consumer": {
       "http-out": 2,
       "data-class-field": 4
     },
-    "dataplatform/query-api-service": {
+    "acme/sql-runner-api": {
       "http-in": 1,
       "data-class-field": 4,
       "raw-code-payload": 2,

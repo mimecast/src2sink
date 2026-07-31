@@ -52,11 +52,17 @@ def _append_host_edge(
     tgt_repo: str,
     evidence: str,
     ref: str,
+    conf: str = "low",
 ) -> None:
-    """Append a deduplicated low-confidence host-level call edge unless self-edge."""
+    """Append a deduplicated service-level (``*`` path) call edge unless self-edge.
+
+    Defaults to ``low`` for a hostname hint. A caller with stronger evidence for
+    the hop but no resolved route — an api-client binding, which is explicit
+    configuration — passes its own confidence.
+    """
     if tgt_repo == src:
         return
-    key = (src, tgt_repo, "*", "low")
+    key = (src, tgt_repo, "*", conf)
     if key in seen:
         return
     seen.add(key)
@@ -64,7 +70,7 @@ def _append_host_edge(
         source_repo=src,
         target_repo=tgt_repo,
         target_path="*",
-        confidence="low",
+        confidence=conf,
         evidence=evidence,
         refs=[ref],
     ))
@@ -82,6 +88,31 @@ def _paths_from_http_out_detail(detail: dict[str, Any], raw: str) -> tuple[list[
     return hosts, paths
 
 
+def _declared_target_repo(
+    detail: dict[str, Any], alias_to_repo: dict[str, str]
+) -> tuple[str, str] | None:
+    """Return (target repo, confidence) a node already knows, or None.
+
+    ``target_repo`` is stamped on an http-out node either by an api-client
+    ``class_patterns`` match (a declaration — ``high``) or by a service-alias hit
+    in the call context (a strong hint — ``medium``); the extractor records which
+    in ``target_repo_confidence``. ``config_key`` is an externalised property name
+    (``${some-service.base-url}``) whose dotted segments are matched against the
+    alias index, which is likewise a hint rather than a declaration.
+    """
+    declared = detail.get("target_repo")
+    if isinstance(declared, str) and declared:
+        conf = detail.get("target_repo_confidence")
+        return declared, conf if conf in ("high", "medium", "low") else "medium"
+    config_key = detail.get("config_key")
+    if isinstance(config_key, str) and config_key:
+        for segment in config_key.lower().split("."):
+            tgt = alias_to_repo.get(segment)
+            if tgt:
+                return tgt, "medium"
+    return None
+
+
 def _collect_http_out_edges(
     records: list[dict[str, Any]],
     inbound: dict[str, list[InboundRow]],
@@ -91,6 +122,7 @@ def _collect_http_out_edges(
     broken: list[dict[str, str]],
 ) -> None:
     """Collect edges from http-out sink nodes, recording unmatched refs in broken."""
+    memo: dict[str, tuple[list[Any], str]] = {}
     for data in records:
         src = repo_id(data)
         for node in iter_nodes(data):
@@ -102,8 +134,9 @@ def _collect_http_out_edges(
             hosts, paths = _paths_from_http_out_detail(detail, raw)
 
             matched = False
+            edged_repos: set[str] = set()
             for path in paths:
-                targets, conf = match_path_in_inbound_index(path, inbound)
+                targets, conf = match_path_in_inbound_index(path, inbound, memo=memo)
                 for tgt_repo, tgt_path, _method, _in_ref in targets:
                     _append_path_edge(
                         edges,
@@ -116,6 +149,43 @@ def _collect_http_out_edges(
                         ref=ref,
                     )
                     matched = True
+                    edged_repos.add(tgt_repo)
+
+            # A call site whose target the extractor already resolved does not
+            # need the inbound index at all — this is the hop that carries a
+            # compiled-in client library, where the consumer's source names no
+            # host or path for the index to match. Skipped when the index already
+            # matched that same repo, so one hop is not reported twice at two
+            # confidences.
+            resolved = _declared_target_repo(detail, alias_to_repo)
+            if resolved and resolved[0] in edged_repos:
+                resolved = None
+            if resolved:
+                declared, declared_conf = resolved
+                why = detail.get("target_repo_evidence") or "declared target"
+                if paths:
+                    for path in paths:
+                        _append_path_edge(
+                            edges,
+                            seen,
+                            src=src,
+                            tgt_repo=declared,
+                            tgt_path=path,
+                            conf=declared_conf,
+                            evidence=f"{why}; path {path!r} at call site",
+                            ref=ref,
+                        )
+                else:
+                    _append_host_edge(
+                        edges,
+                        seen,
+                        src=src,
+                        tgt_repo=declared,
+                        evidence=str(why),
+                        ref=ref,
+                        conf=declared_conf,
+                    )
+                matched = True
 
             for host in hosts:
                 tgt_repo = resolve_repo_for_host(host, alias_to_repo)
@@ -126,6 +196,7 @@ def _collect_http_out_edges(
                             "host": host,
                             "ref": ref,
                             "raw": raw[:120],
+                            "reason": "host did not resolve to a known repo",
                         })
                     continue
                 _append_host_edge(
@@ -136,6 +207,66 @@ def _collect_http_out_edges(
                     evidence=f"host {host!r} in http-out",
                     ref=ref,
                 )
+            if not matched and not hosts:
+                # Neither a host nor a route nor a declared target: an outbound
+                # call site that produced no edge at all. Recorded so lost
+                # coverage is visible instead of silently vanishing (§3.4).
+                broken.append({
+                    "source_repo": src,
+                    "host": "",
+                    "ref": ref,
+                    "raw": raw[:120],
+                    "reason": "no host, path, or declared target resolved",
+                })
+
+
+def _collect_api_client_edges(
+    records: list[dict[str, Any]],
+    seen: set[tuple[str, str, str, str]],
+    edges: list[CallEdge],
+) -> None:
+    """Turn api-client-consumer propagator nodes into cross-repo call edges.
+
+    These nodes already carry the binding's ``target_repo`` and declared
+    ``paths``, but nothing downstream of the payload-producers report read them —
+    so a repo that calls a service purely through its published client library
+    could never appear in the service-call graph at all (report §3.2).
+
+    An import proves the hop, not which route it hits, so a binding declaring
+    several paths yields one service-level (``*``) edge; a single declared path is
+    specific enough to emit as a route.
+    """
+    for data in records:
+        src = repo_id(data)
+        for node in iter_nodes(data):
+            if node.get("family") != "api-client-consumer":
+                continue
+            detail = node.get("detail") or {}
+            tgt_repo = detail.get("target_repo")
+            if not tgt_repo:
+                continue
+            ref = f"{node.get('file')}:{node.get('line')}"
+            paths = [p for p in (detail.get("paths") or []) if isinstance(p, str)]
+            client = detail.get("client") or "api-client"
+            evidence = f"api-client binding {client}"
+            if len(paths) == 1:
+                _append_path_edge(
+                    edges, seen,
+                    src=src, tgt_repo=tgt_repo, tgt_path=paths[0],
+                    conf="high",
+                    evidence=f"{evidence} (declared path)",
+                    ref=ref,
+                )
+                continue
+            if paths:
+                evidence += " — declared paths: " + ", ".join(paths[:6])
+            _append_host_edge(
+                edges, seen,
+                src=src, tgt_repo=tgt_repo,
+                evidence=evidence,
+                ref=ref,
+                conf="high",
+            )
 
 
 def _collect_reference_edges(
@@ -146,6 +277,7 @@ def _collect_reference_edges(
     edges: list[CallEdge],
 ) -> None:
     """Match path/URL literals in any node detail (config, tests, clients)."""
+    memo: dict[str, tuple[list[Any], str]] = {}
     for data in records:
         src = repo_id(data)
         for node in iter_nodes(data):
@@ -158,7 +290,7 @@ def _collect_reference_edges(
             ref = f"{node.get('file')}:{node.get('line')}"
             hosts, paths = extract_urls_and_paths(blob)
             for path in paths:
-                targets, conf = match_path_in_inbound_index(path, inbound)
+                targets, conf = match_path_in_inbound_index(path, inbound, memo=memo)
                 for tgt_repo, tgt_path, _, _ in targets:
                     _append_path_edge(
                         edges,
@@ -195,6 +327,7 @@ def collect_service_edges(
 
     _collect_http_out_edges(records, inbound, alias_to_repo, seen, edges, broken)
     _collect_reference_edges(records, inbound, alias_to_repo, seen, edges)
+    _collect_api_client_edges(records, seen, edges)
     return edges, broken
 
 

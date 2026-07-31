@@ -31,27 +31,27 @@ def test_path_templates_match_levels():
 
 
 def test_extract_urls_and_paths():
-    hosts, paths = gc.extract_urls_and_paths('call("http://query-api-service/queries?x=1")')
-    assert "query-api-service" in hosts
+    hosts, paths = gc.extract_urls_and_paths('call("http://sql-runner-api/queries?x=1")')
+    assert "sql-runner-api" in hosts
     assert "/queries" in paths
 
 
 def test_repo_name_aliases_and_host_match():
-    aliases = gc.repo_name_aliases("query-api-service")
-    assert "query-api" in aliases and "query_api_service" in aliases
-    assert gc.host_matches_repo("query-api-service.internal", "dp/query-api-service")
-    assert not gc.host_matches_repo("unrelated", "dp/query-api-service")
+    aliases = gc.repo_name_aliases("sql-runner-api")
+    assert "sql-runner-api" in aliases and "sql_runner_api" in aliases
+    assert gc.host_matches_repo("sql-runner-api.internal", "acme/sql-runner-api")
+    assert not gc.host_matches_repo("unrelated", "acme/sql-runner-api")
 
 
 def test_alias_index_and_resolve():
-    records = [{"group": "dp", "name": "query-api-service", "nodes": []}]
+    records = [{"group": "acme", "name": "sql-runner-api", "nodes": []}]
     idx = gc.build_repo_alias_index(records)
-    assert gc.resolve_repo_for_host("query-api-service.svc", idx) == "dp/query-api-service"
+    assert gc.resolve_repo_for_host("sql-runner-api.svc", idx) == "acme/sql-runner-api"
     assert gc.resolve_repo_for_host("localhost", idx) is None
 
 
 def test_match_path_in_inbound_index():
-    inbound = {"/queries": [("dp/svc", "/queries")]}
+    inbound = {"/queries": [("acme/svc", "/queries")]}
     rows, conf = gc.match_path_in_inbound_index("/queries", inbound)
     assert rows and conf == "high"
     rows2, _ = gc.match_path_in_inbound_index("/api/v1/queries", inbound)

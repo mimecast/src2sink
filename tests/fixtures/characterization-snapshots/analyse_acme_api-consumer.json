@@ -20,7 +20,7 @@
         "field_name": "sql"
       },
       "family": "data-class-field",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "source",
       "language": "java",
@@ -31,10 +31,10 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
-        "field_name": "query"
+        "field_name": "sql"
       },
       "family": "data-class-field",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "source",
       "language": "java",
@@ -48,7 +48,7 @@
         "field_name": "sql"
       },
       "family": "data-class-field",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "source",
       "language": "java",
@@ -62,7 +62,7 @@
         "field_name": "sql"
       },
       "family": "data-class-field",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "source",
       "language": "java",
@@ -73,7 +73,7 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
-        "host": "query-api-service.dev",
+        "host": "sql-runner-api.dev",
         "http_method": "POST",
         "path": "/v1/queries",
         "paths": [
@@ -81,10 +81,10 @@
         ],
         "purpose": "client-call",
         "raw": "HttpRequest.newBuilder",
-        "url": "https://query-api-service.dev/v1/queries"
+        "url": "https://sql-runner-api.dev/v1/queries"
       },
       "family": "http-out",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "sink",
       "language": "java",
@@ -95,7 +95,7 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
-        "host": "query-api-service.dev",
+        "host": "sql-runner-api.dev",
         "http_method": "POST",
         "path": "/v1/queries",
         "paths": [
@@ -103,10 +103,10 @@
         ],
         "purpose": "client-call",
         "raw": "URI.create(",
-        "url": "https://query-api-service.dev/v1/queries"
+        "url": "https://sql-runner-api.dev/v1/queries"
       },
       "family": "http-out",
-      "file": "src/QueryClient.java",
+      "file": "src/RunnerClient.java",
       "framework": null,
       "kind": "sink",
       "language": "java",

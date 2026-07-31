@@ -95,9 +95,9 @@ def test_phone_cross_repo_flow_on_synthetic_pair() -> None:
     )
 
 
-def test_query_api_has_raw_payload_not_safe_crud() -> None:
+def test_sql_runner_api_has_raw_payload_not_safe_crud() -> None:
     for repo_id, expect_raw in (
-        ("dataplatform/query-api-service", True),
+        ("acme/sql-runner-api", True),
         ("negative/safe-crud", False),
     ):
         group, name = repo_id.split("/", 1)

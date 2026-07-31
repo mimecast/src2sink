@@ -42,6 +42,7 @@ from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
 from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
 from .extractors.config import extract_from_config, is_config_path
 from .extractors.unified import extract_from_file
+from .known_api_clients import get_bindings
 from .renderers.markdown import merge_with_manual, render_repo_md_v2
 from .schema import SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
 
@@ -357,8 +358,7 @@ def _worker_init(
 ) -> None:
     """Multiprocessing pool initializer: configure this worker's global scan settings."""
     from .internal_groups import configure_internal_group_patterns
-    from .known_api_clients import load_api_client_bindings, configure_api_client_bindings
-    from .extractors.http_out import configure_http_out_client_patterns
+    from .known_api_clients import configure_from_path
     global _MAX_FILES_PER_REPO  # noqa: PLW0603
     _MAX_FILES_PER_REPO = max_files_per_repo
     _apply_max_file_bytes(max_file_bytes)
@@ -366,9 +366,9 @@ def _worker_init(
     prescreen.configure_indicators(prescreen_indicators)
     configure_internal_group_patterns(pattern_strings)
     if api_clients_path:
-        bindings = load_api_client_bindings(Path(api_clients_path))
-        configure_api_client_bindings(bindings)
-        configure_http_out_client_patterns(bindings)
+        # The parent already validated the file and reported any problem; a
+        # worker must not duplicate the warning or fail the pool.
+        configure_from_path(api_clients_path, allow_empty=True)
 
 
 def _tool_version() -> str:
@@ -414,6 +414,11 @@ def _write_run_manifest(
             "repo_filter": args.repo or None,
             "limit": args.limit or None,
             "api_clients_configured": bool(args.api_clients),
+            # The boolean above only records that a path was passed. The count is
+            # what tells you detection was actually enabled — a run with the flag
+            # set and 0 bindings loaded looked identical to a healthy one before
+            # (report §2).
+            "api_clients_binding_count": len(get_bindings()),
             "prescreen_indicators_configured": bool(args.prescreen_indicators),
         },
         "counts": {
@@ -525,6 +530,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     add_internal_groups_arguments(parser)
     parser.add_argument("--api-clients", default=None, help="Path to api-clients.json")
     parser.add_argument(
+        "--allow-empty-api-clients",
+        action="store_true",
+        help="Continue when --api-clients loads 0 bindings. Without this, an "
+        "empty/malformed bindings file is a hard error, because it silently "
+        "disables all cross-repo API-client detection.",
+    )
+    parser.add_argument(
         "--discover-api-clients",
         action="store_true",
         help="After aggregation, draft candidate api-client bindings into "
@@ -540,23 +552,35 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _configure_api_clients(api_clients_path: str | None) -> None:
-    """Load and globally configure API-client bindings from an optional config file."""
+def _configure_api_clients(
+    api_clients_path: str | None, *, allow_empty: bool = False
+) -> int:
+    """Load and globally configure API-client bindings; return the binding count.
+
+    A file that yields zero bindings is a hard error unless ``allow_empty``: it
+    silently disables every cross-repo client-detection path while the run still
+    reports success, which is how ~24 of 25 callers of one service went missing
+    (report §3.1). ``--allow-empty-api-clients`` is the explicit opt-out.
+    """
     if not api_clients_path:
-        return
-    from .known_api_clients import load_api_client_bindings, configure_api_client_bindings
-    from .extractors.http_out import configure_http_out_client_patterns
+        return 0
+    from .known_api_clients import ApiClientConfigError, configure_from_path
     # warn=True only here (the single top-level load) so a malformed sensitive
     # config is surfaced once, not silently ignored (I-3) and not per-worker.
-    bindings = load_api_client_bindings(Path(api_clients_path), warn=True)
+    try:
+        bindings = configure_from_path(
+            api_clients_path, warn=True, allow_empty=allow_empty
+        )
+    except ApiClientConfigError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
     if not bindings:
         print(
             f"WARNING: api-clients file '{Path(api_clients_path).name}' loaded "
-            "0 bindings (missing, unreadable, or malformed)",
+            "0 bindings; cross-repo API-client detection is disabled "
+            "(--allow-empty-api-clients)",
             file=sys.stderr,
         )
-    configure_api_client_bindings(bindings)
-    configure_http_out_client_patterns(bindings)
+    return len(bindings)
 
 
 def _discover_repos(
@@ -730,7 +754,9 @@ def main() -> int:
     # Skip when promoting: that flow *writes* --api-clients, so pre-loading the
     # not-yet-created file would emit a spurious "0 bindings loaded" warning.
     if not args.promote_api_clients:
-        _configure_api_clients(args.api_clients)
+        _configure_api_clients(
+            args.api_clients, allow_empty=args.allow_empty_api_clients
+        )
 
     if not repos_root.is_dir():
         print(f"repos-root not a directory: {repos_root}", file=sys.stderr)

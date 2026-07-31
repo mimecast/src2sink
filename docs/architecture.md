@@ -315,12 +315,39 @@ needs a per-task timeout (bulkhead) and tests must never drive the pool branch
 unguarded (already codified: keep test fixtures <4 repos / workers=1).
 
 ### ADR-002: Silent-fail config loading
-**Status:** Accepted (existing). **Context:** optional config files. **Decision:**
-`load_api_client_bindings` returns `()` on any error, never raises.
+**Status:** Superseded by ADR-011. **Context:** optional config files.
+**Decision:** `load_api_client_bindings` returns `()` on any error, never raises.
 **Consequences:** availability-safe, but **misconfiguration is invisible** —
 a malformed `api-clients.json` silently disables all binding-based edges.
 **Security implication:** recommend a one-line diagnostic (count loaded /
 warn on parse failure) without echoing file contents.
+
+### ADR-011: Fail the run when a supplied bindings file loads nothing
+**Status:** Accepted. **Context:** ADR-002's silent-fail behaviour was realised in
+production: an `api-clients.json` containing `"bindings": []` disabled all
+cross-repo client detection, and the run reported success with
+`api_clients_configured: true`. One of ~25 real callers of a service appeared in
+the graphs. **Decision:** `load_api_client_bindings` keeps its never-raise
+contract, but the new single entry point `known_api_clients.configure_from_path`
+raises `ApiClientConfigError` when a *supplied* path yields zero bindings; all
+three CLIs turn that into a non-zero exit unless `--allow-empty-api-clients` is
+passed. Omitting `--api-clients` is still silently off — the user asked for
+nothing. **Consequences:** a misconfiguration now costs a failed run instead of a
+plausible-looking but hollow metabase. **Security implication:** the failure
+message names only the file's basename and the count, never its contents (I-2 /
+I-3).
+
+### ADR-012: Negative coverage is a first-class output
+**Status:** Accepted. **Context:** an empty edge list is ambiguous — "this
+service has no callers" and "detection for this service is broken" looked
+identical, and downstream triage guidance treated the former as a DEAD-CODE
+signal. **Decision:** outbound call sites that resolve to nothing are written to
+`graphs/service-call-unmatched.jsonl` with a `reason`, every configured binding is
+reconciled against the edges it produced in `service-call-graph.md`, and the
+loaded binding count goes into `run-manifest.json`. **Consequences:** three
+independent places to check before believing an absence. **Security
+implication:** prevents a false FALSE-POSITIVE/DEAD-CODE verdict founded on lost
+coverage rather than on evidence.
 
 ### ADR-003: Incremental build via git-SHA skip
 **Status:** Accepted (existing). **Decision:** skip repos whose `.git` SHA

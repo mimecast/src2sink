@@ -20,8 +20,13 @@ end-to-end procedure:
    ```bash
    cp api-clients.example.json api-clients.json
    ```
-   A minimal valid file is `{ "bindings": [] }` — an empty/absent file is inert
-   (the loader returns nothing and the feature is simply off; it never raises).
+   Omitting `--api-clients` entirely turns the feature off. But passing
+   `--api-clients` with a file that loads **zero** bindings is now a hard error:
+   it silently disables every cross-repo client-detection path while the run
+   still reports success, which is exactly how almost every caller of one service
+   once went missing from a real fleet's graphs (ADR-011 in
+   [`architecture.md`](architecture.md)). Use `--allow-empty-api-clients` if you
+   genuinely want to accept that.
 
 2. **Scan once without bindings** to produce the metabase, which surfaces the
    candidates:
@@ -76,9 +81,9 @@ so through a *published client library* (typically a generated Maven client
 JAR). The consuming code only ever does something like:
 
 ```java
-import com.example.queryapi.client.QueryApiClient;
+import com.example.acme.sqlrunner.client.SqlRunnerApiClient;
 ...
-QueryApiClient client = ...;
+SqlRunnerApiClient client = ...;
 client.runQuery(sql);
 ```
 
@@ -93,15 +98,21 @@ API paths, carrying **these** payload fields (e.g. `sql`)."*
 
 ### Where bindings are consumed
 
-Bindings are loaded once per worker at scan start (`build_metabase_v2._worker_init`
-→ `load_api_client_bindings` → `configure_api_client_bindings` +
-`configure_http_out_client_patterns`) and then drive three things:
+Bindings are loaded once per process at scan start via the single entry point
+`known_api_clients.configure_from_path()` (used by `src2sink-build`,
+`src2sink-trace` and `src2sink-trace-batch`), which configures the binding
+registry *and* the http-out class patterns together — no caller can wire up one
+and forget the other. They then drive:
 
 | Consumer | Function | Effect |
 |---|---|---|
 | Import scan | `binding_for_import()` in `extractors/regex_extractors.py::extract_api_client_imports` | Import lines matching `import_prefix` become `propagator` nodes, family `api-client-consumer`, tagged with `target_repo`, `paths`, and `data_class="raw-sql-payload"`. |
-| Call-site scan | `_BINDING_CLASS_RX` (built from `class_patterns`) in `extractors/http_out.py` + `extract_http_outbound` | Uses of the concrete client classes become `http-out` / `api-client-consumer` nodes. |
+| Call-site scan | `get_binding_call_patterns()` (built from `class_patterns`) in `extractors/http_out.py` + `extract_http_outbound` | Uses of the concrete client classes become `http-out` nodes stamped with the binding's `target_repo` and `client_paths`. |
+| Service-alias resolution | `binding_target_for_text()`, called from `enrich_http_out_detail` | A call site with no host literal still resolves if the surrounding code *names* the service — a base-URL helper (`get_<service>_base_url`) or a `${<service>.base-url}` config key. |
+| Host index | `binding_alias_index()` merged in `graph_common.build_repo_alias_index` | `service_aliases` resolve outbound hostnames whose DNS name differs from the repo short name. Repo records still win on conflict. |
+| Service-call graph | `_collect_api_client_edges` in `aggregators/service_call_collect.py` | `api-client-consumer` nodes become cross-repo `CallEdge`s (`high` confidence; `target_path="*"` when the binding declares several routes) and appear in `service-call-edges.jsonl` and the OpenAPI edge graph. |
 | Cross-repo aggregation | `binding_for_coordinate()` + `get_bindings()` in `aggregators/payload_producers.py` | Stitches consumer-repo → `target_repo` edges and emits the **payload-endpoint-producers** report (who sends raw SQL / dangerous payloads to which service). |
+| Coverage reconciliation | `_render_binding_coverage` in `aggregators/service_call_report.py` | Every configured binding is reconciled against the edges it produced; a binding with **zero** edges is reported as a detection failure rather than an empty graph. |
 
 ### Why it is gitignored
 
@@ -109,9 +120,13 @@ Real bindings expose internal service topology and artifact names, so
 `api-clients.json` is **gitignored and must not be committed**. The committed
 template is `api-clients.example.json`. Activate bindings by passing
 `--api-clients api-clients.json` to `src2sink-build`, `src2sink-trace`, and
-`src2sink-trace-batch`. If the flag is omitted or the file is missing/invalid,
-`load_api_client_bindings` returns an empty tuple and the feature is simply
-inert (never raises).
+`src2sink-trace-batch`. Omitting the flag leaves the feature off. Passing it with
+a missing/invalid/empty file is a hard error on all three CLIs (override with
+`--allow-empty-api-clients`), because the alternative — a successful-looking run
+with every cross-repo client hop missing — is far more expensive than a failed
+one. `load_api_client_bindings` itself still never raises; the decision lives in
+`configure_from_path`, and the loaded count is recorded in `run-manifest.json` as
+`api_clients_binding_count`.
 
 ---
 

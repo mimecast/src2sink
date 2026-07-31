@@ -12,13 +12,13 @@ from src2sink.known_api_clients import ApiClientBinding
 
 def _binding():
     return ApiClientBinding(
-        target_repo="dp/query-api-service",
-        maven_artifact="query-api-client",
-        import_prefix="com.example.dp.queryapi.client",
+        target_repo="acme/sql-runner-api",
+        maven_artifact="sql-runner-api-client",
+        import_prefix="com.example.acme.sqlrunner.client",
         paths=("/queries",),
         payload_fields=("sql",),
-        service_aliases=("query-api-service",),
-        class_patterns=("QueryApiClient",),
+        service_aliases=("sql-runner-api",),
+        class_patterns=("SqlRunnerApiClient",),
     )
 
 
@@ -41,14 +41,14 @@ def test_build_and_write_producer_index(tmp_path):
             "nodes": [
                 {"family": "api-client-consumer", "kind": "propagator",
                  "file": "C.java", "line": 3, "confidence": "high",
-                 "detail": {"client": "query-api-client", "target_repo": "dp/query-api-service",
-                            "import": "import com.example.dp.queryapi.client.QueryApiClient",
+                 "detail": {"client": "sql-runner-api-client", "target_repo": "acme/sql-runner-api",
+                            "import": "import com.example.acme.sqlrunner.client.SqlRunnerApiClient",
                             "paths": ["/queries"]}},
             ],
         }
         jsons = _write_records(tmp_path, [consumer])
         indices = build_producer_indices(tmp_path, json_paths=jsons)
-        assert any(idx.binding.target_repo == "dp/query-api-service" for idx in indices)
+        assert any(idx.binding.target_repo == "acme/sql-runner-api" for idx in indices)
 
         write_payload_producer_index(tmp_path, jsons)
         out = tmp_path / "graphs" / "payload-endpoint-producers.jsonl"
@@ -64,13 +64,13 @@ def test_build_producer_indices_scans_repos(tmp_path):
         consumer = tmp_path / "apps" / "consumer"
         consumer.mkdir(parents=True)
         (consumer / "Client.java").write_text(
-            "import com.example.dp.queryapi.client.QueryApiClient;\n"
-            "class Client { QueryApiClient c; }\n",
+            "import com.example.acme.sqlrunner.client.SqlRunnerApiClient;\n"
+            "class Client { SqlRunnerApiClient c; }\n",
             encoding="utf-8",
         )
         (consumer / "pom.xml").write_text(
             "<project><dependencies><dependency>"
-            "<artifactId>query-api-client</artifactId></dependency></dependencies></project>",
+            "<artifactId>sql-runner-api-client</artifactId></dependency></dependencies></project>",
             encoding="utf-8",
         )
         indices = build_producer_indices(tmp_path, repos_root=tmp_path, json_paths=[])

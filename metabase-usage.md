@@ -87,7 +87,8 @@ Every node has:
 | `crypto-algorithm` | sink | `algorithm`, `mode`, `key_source`, `agility` | Weak/non-agile crypto |
 | `crypto-key-source` | propagator | `source_type` (KMS/env/hardcoded/…) | Key provenance |
 | `raw-code-payload` | source | `endpoint_path`, `field_line`, `sink_line`, `sink_symbol` | HTTP endpoint accepts SQL/code payload and has in-file SQL execution sink — highest-priority injection finding class |
-| `api-client-consumer` | propagator | `coordinate`, `import_prefix` | Import of a registered internal client library |
+| `api-client-consumer` | propagator | `client`, `target_repo`, `import`, `paths` | Import of a registered internal client library. The **only** evidence of the hop when the endpoint is compiled into the client — regular SAST sees an import and a method call and cannot know they cross a service boundary |
+| `path-constant` | reference | `path`, `symbol` | Route-like constant / enum member (`PATH_QUERY = "/v1/queries"`). Resolves call sites that build their URL from a named constant declared in another file |
 | `config-store` | store | `kind`, `url_key` | JDBC/Mongo/Redis/S3 from config files |
 | `config-security` | store | `key`, `value`, `severity_signal` | Security-sensitive config flags |
 | `config-crypto` | store | `key`, `algorithm` | Cipher suites / signing algorithms from config |
@@ -137,6 +138,7 @@ At `graphs/`:
 |------|---------|
 | `graphs/service-call-graph.md` | Sampled cross-repo HTTP edges |
 | `graphs/service-call-edges.jsonl` | Full edge list: `source_repo`, `target_repo`, `target_path`, `confidence`, `evidence` |
+| `graphs/service-call-unmatched.jsonl` | Outbound call sites that produced **no** edge, with `reason`. Read this before concluding a service has no callers — an empty edge list can mean "no callers" or "detection failed", and only this file tells you which |
 | `graphs/queue-graph.md` + `.jsonl` | Topic → producers / consumers with queue system type |
 | `graphs/data-store-graph.md` + `.jsonl` | Store → repos that read/write it |
 | `graphs/payload-endpoint-producers.md` + `.jsonl` | Registered API client → target service dangerous endpoints |
@@ -208,7 +210,7 @@ Before walking the source code, do this in order:
 1. **Find the per-repo entry.** Read `repos/<group>/<name>.json` (machine) and `repos/<group>/<name>.md` (human summary). Check `schema_version: 2`.
 2. **Survey the node families present.** Look at what families appear in `nodes[]`. A repo with `raw-code-payload` nodes is a top-priority target. A repo with no `http-in` nodes is not a direct entry point.
 3. **For each internal dependency** in `dependencies_internal[]`, read `internal-libraries/<coord>.md` to resolve taint roles. If the file exists and a method is marked `sink` or `propagator`, callers in the source must be treated as taint sinks even if they look like clean helper calls.
-4. **Check the cross-repo call graph** — `graphs/service-call-edges.jsonl` filtered to this repo as `source_repo` or `target_repo` — to understand what data crosses repo boundaries. An `http-out` node whose host matches another repo's `http-in` path is a cross-repo taint edge.
+4. **Check the cross-repo call graph** — `graphs/service-call-edges.jsonl` filtered to this repo as `source_repo` or `target_repo` — to understand what data crosses repo boundaries. An `http-out` node whose host matches another repo's `http-in` path is a cross-repo taint edge; so is an edge whose evidence names an api-client binding, where the caller's source contains no URL at all. Then check `graphs/service-call-unmatched.jsonl` for this repo: those are outbound calls whose target could **not** be resolved, i.e. hops that are real but unmapped.
 5. **Check queue topology** — `graphs/queue-graph.jsonl` filtered to this repo — to find upstream producers and downstream consumers.
 6. **Check PII sensitivity** — `taint/pii-sources.jsonl` filtered to this repo — for field-level classifications. Cross-reference against how the repo handles those fields (logged, stored, transmitted).
 
@@ -224,7 +226,7 @@ For each input finding:
    - **Metabase has no `sql` node at that location, or the node has `parameterised=true`** → examine whether an internal wrapper is involved. Check `internal-libraries/` for the callee's taint role. If the wrapper parameterises, downgrade to FALSE-POSITIVE with the metabase citation as evidence.
    - **Metabase has no entry for this repo** → fall back to the per-family triage rule and note the gap.
 3. Check whether taint can actually reach the sink given the cross-repo flow:
-   - If no cross-repo edge in `service-call-edges.jsonl` points to the alleged sink repo+path, the finding may be DEAD-CODE — verify then mark accordingly.
+   - If no cross-repo edge in `service-call-edges.jsonl` points to the alleged sink repo+path, the finding *may* be DEAD-CODE — but **absence of an edge is not evidence of absence of a caller**. Before concluding that, confirm coverage was not simply lost: check `run-manifest.json` for a non-zero `api_clients_binding_count`, the "API-client binding coverage" table in `service-call-graph.md` for bindings that produced no edges, and `service-call-unmatched.jsonl` for unresolved outbound calls from candidate caller repos. Only mark DEAD-CODE once those three are clean.
    - If the cross-repo edge exists but terminates at a node with `parameterised=true` or a `sanitiser`-role library method, the path is FALSE-POSITIVE *for the alleged route* — but check whether the same source feeds any other sink before clearing it.
 
 ### When deep-tracing a HIGH/CRITICAL finding (Mode C)

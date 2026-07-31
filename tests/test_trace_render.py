@@ -6,8 +6,8 @@ from src2sink.sanitize import UNTRUSTED_CONTENT_NOTICE
 from src2sink.trace import TraceReport, UpstreamHit, render_trace_markdown, run_trace
 
 TARGET = {
-    "group": "dp",
-    "name": "query-api-service",
+    "group": "acme",
+    "name": "sql-runner-api",
     "nodes": [
         {"family": "http-in", "kind": "source", "file": "C.java", "line": 1,
          "framework": "spring", "detail": {"path": "/queries", "method": "POST"}},
@@ -24,14 +24,14 @@ CONSUMER = {
     "name": "consumer",
     "nodes": [
         {"family": "http-out", "kind": "sink", "file": "Cl.java", "line": 5,
-         "detail": {"raw": 'client.post("http://query-api-service/queries", body)'}},
+         "detail": {"raw": 'client.post("http://sql-runner-api/queries", body)'}},
     ],
 }
 
 
 def test_render_trace_markdown_all_sections():
     report = TraceReport(
-        target_repo="dp/query-api-service",
+        target_repo="acme/sql-runner-api",
         path_filter="/queries",
         inbound=[{"path": "/queries", "method": "POST", "file": "C.java", "line": 1}],
         raw_payloads=[{"endpoint": "/queries", "field_line": 3, "sink_symbol": "x", "file": "C.java"}],
@@ -55,11 +55,11 @@ def test_render_trace_markdown_empty_sections():
 def test_run_trace_collects_facts_and_upstream(tmp_path):
     report = run_trace(
         tmp_path,
-        "dp/query-api-service",
+        "acme/sql-runner-api",
         records=[TARGET, CONSUMER],
         producer_indices=[],
     )
-    assert report.target_repo == "dp/query-api-service"
+    assert report.target_repo == "acme/sql-runner-api"
     assert any(h["path"] == "/queries" for h in report.inbound)
     assert report.sql_sinks and report.stores
     # The consumer's http-out raw references the target path → upstream hit.
@@ -68,15 +68,15 @@ def test_run_trace_collects_facts_and_upstream(tmp_path):
 
 def test_run_trace_scan_repos_source_literal(tmp_path):
     # Target must exist as a directory; a sibling consumer references it by name.
-    (tmp_path / "dp" / "query-api-service").mkdir(parents=True)
+    (tmp_path / "acme" / "sql-runner-api").mkdir(parents=True)
     consumer_src = tmp_path / "apps" / "consumer"
     consumer_src.mkdir(parents=True)
     (consumer_src / "Client.java").write_text(
-        'String url = "http://query-api-service/queries";', encoding="utf-8"
+        'String url = "http://sql-runner-api/queries";', encoding="utf-8"
     )
     report = run_trace(
         tmp_path,  # metabase_root (unused since records passed)
-        "dp/query-api-service",
+        "acme/sql-runner-api",
         records=[TARGET],
         producer_indices=[],
         scan_repos=True,
@@ -92,16 +92,16 @@ def test_source_literal_evidence_is_pii_redacted(tmp_path):
     The matched quoted string is read straight off an untrusted file and never
     passes through the build-time redaction, so redact_literals must run here.
     """
-    (tmp_path / "dp" / "query-api-service").mkdir(parents=True)
+    (tmp_path / "acme" / "sql-runner-api").mkdir(parents=True)
     consumer_src = tmp_path / "apps" / "consumer"
     consumer_src.mkdir(parents=True)
     # A quoted literal that references the target AND embeds a sample email + SSN.
     (consumer_src / "Client.java").write_text(
-        'String u = "query-api-service admin@example.com ssn 123-45-6789";',
+        'String u = "sql-runner-api admin@example.com ssn 123-45-6789";',
         encoding="utf-8",
     )
     report = run_trace(
-        tmp_path, "dp/query-api-service", records=[TARGET], producer_indices=[],
+        tmp_path, "acme/sql-runner-api", records=[TARGET], producer_indices=[],
         scan_repos=True, repos_root=tmp_path,
     )
     lit = next(u for u in report.upstream if u.kind == "source-literal")

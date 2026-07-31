@@ -4,12 +4,12 @@
   "raw_payload_count": 2,
   "sql_sink_count": 1,
   "store_count": 0,
-  "target_repo": "dataplatform/query-api-service",
+  "target_repo": "acme/sql-runner-api",
   "upstream": [
     {
       "confidence": "low",
       "kind": "http-out-graph",
-      "source_repo": "dataplatform/api-consumer"
+      "source_repo": "acme/api-consumer"
     }
   ]
 }

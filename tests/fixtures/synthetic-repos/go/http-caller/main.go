@@ -4,6 +4,6 @@ import (
 	"net/http"
 )
 
-func callQueryAPI() {
-	http.Get("https://query-api-service.example/v1/queries")
+func callSqlRunnerApi() {
+	http.Get("https://sql-runner-api.example/v1/queries")
 }
