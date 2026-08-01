@@ -26,6 +26,10 @@ htmlcov/
 
 archive/
 
+# Local analysis notes. These are written against real fleets and name real
+# repos, packages and hosts — exactly what must not reach this public repo.
+notes/
+
 # ----------------------------------------------------------------------
 # Metabase: auto-generated subtrees produced by build_metabase_v2.py.
 # All output directories are created by the script at runtime.

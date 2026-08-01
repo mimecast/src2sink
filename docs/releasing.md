@@ -72,7 +72,7 @@ able to tell from the version alone whether their stored metabase still parses.
 ## 2. Prepare the tree
 
 ```sh
-VERSION=1.0.4                          # the version you are releasing
+VERSION=1.1.0                          # the version you are releasing
 git switch main && git pull            # release from main only
 git status --short                     # must be empty
 ```

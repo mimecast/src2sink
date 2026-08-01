@@ -5,7 +5,7 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
-## [Unreleased]
+## [1.1.0] — 2026-08-01
 
 Cross-repo caller detection: on a real fleet, a service with roughly two dozen
 callers showed **one** of them in the generated graphs. Six independent causes,
@@ -316,6 +316,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[1.1.0]: https://github.com/mimecast/src2sink/releases/tag/v1.1.0
 [1.0.3]: https://github.com/mimecast/src2sink/releases/tag/v1.0.3
 [1.0.2]: https://github.com/mimecast/src2sink/releases/tag/v1.0.2
 [1.0.1]: https://github.com/mimecast/src2sink/releases/tag/v1.0.1
