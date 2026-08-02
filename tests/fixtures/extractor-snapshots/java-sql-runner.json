@@ -74,8 +74,9 @@
       "data_class": null,
       "detail": {
         "execution": true,
-        "parameterised": false,
+        "parameterised": "unknown",
         "raw": "jdbcTemplate.query(req.getSql())",
+        "receiver": "jdbcTemplate",
         "symbol": "query"
       },
       "family": "sql",

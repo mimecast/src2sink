@@ -34,12 +34,105 @@ SQL_EXECUTION_CALL_HINTS = (
     "db.execute",
 )
 
+# Receivers that identify a call as database work regardless of the method name.
+# Matched against the *tokens* of the trailing identifier, so `readOnlyJdbcTemplate`
+# and `this.userDao` hit while `restTemplate` and `itemClient` do not — a plain
+# substring test would match "template" in `restTemplate` and "em" in `itemClient`.
+SQL_RECEIVER_NAMES = frozenset({
+    "jdbctemplate", "namedparameterjdbctemplate", "entitymanager", "em",
+    "session", "sqlsession", "cursor", "conn", "connection", "stmt",
+    "statement", "preparedstatement", "callablestatement", "db", "dao",
+    "repository", "tx", "datasource", "querydsl",
+})
+
+# File-level evidence that a module really does SQL, used to admit a bare
+# `execute`/`query`/`update` whose receiver is unrecognised. Both alternatives are
+# deliberately about *SQL itself* — a keyword inside a string literal, or a
+# database library import.
+#
+# Neither may be satisfied by a field merely named `sql`: OI-7's fabricated
+# `raw-code-payload` findings came from an HTTP proxy that had exactly that and no
+# SQL anywhere. String runs are length-bounded (see tests/test_redos_bounds.py).
+# Group 1 is the statement text *including* everything up to the closing quote, so
+# `sql_parameterisation` can look for placeholders that follow the keyword.
+SQL_LITERAL_RX = re.compile(
+    r"[\"']([^\"'\n]{0,200}?\b(?:SELECT\b|INSERT\s+INTO\b|DELETE\s+FROM\b"
+    r"|UPDATE\s+\w{1,64}\s+SET\b|MERGE\s+INTO\b|UPSERT\b|CREATE\s+TABLE\b"
+    r"|TRUNCATE\s+TABLE\b|ALTER\s+TABLE\b)[^\"'\n]{0,400})",
+    re.IGNORECASE,
+)
+SQL_DB_IMPORT_RX = re.compile(
+    r"\b(?:java\.sql|javax\.sql|jakarta\.persistence|javax\.persistence"
+    r"|org\.springframework\.jdbc|org\.springframework\.data"
+    r"|org\.hibernate|org\.jooq|mybatis|jakarta\.jdo"
+    r"|sqlalchemy|psycopg2?|pymysql|sqlite3|asyncpg|aiomysql|pyodbc"
+    r"|database/sql|gorm\.io|jmoiron/sqlx"
+    r"|knex|typeorm|sequelize|pg-promise|better-sqlite3)\b",
+)
+
+# Placeholder styles that make a SQL statement parameterised: JDBC `?`, named
+# `:param`, printf-style `%s`, and PostgreSQL `$1`.
+SQL_PLACEHOLDER_RX = re.compile(r"\?|:[A-Za-z_]\w{0,63}|%\(?[a-z_]*\)?s|\$\d{1,3}")
+
+# Split an identifier into lowercase word tokens across camelCase and snake_case.
+_IDENT_TOKEN_RX = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+")
+
 SQL_SOURCE_RX = [
     (re.compile(r'["\'][^"\']*(?:SELECT|INSERT|UPDATE|DELETE)\b[^"\']*["\']\s*\+'), "concatenated"),
     (re.compile(r"\+\s*['\"][^'\"]*(?:SELECT|INSERT|UPDATE|DELETE)"), "concatenated"),
     (re.compile(r'f["\'][^"\']*(?:SELECT|INSERT|UPDATE|DELETE)'), "python-fstring"),
     (re.compile(r"\$\{[^}]+\}.*(?:SELECT|INSERT|UPDATE|DELETE)", re.I), "template"),
 ]
+
+def receiver_is_database(receiver: str | None) -> bool:
+    """True when a call's receiver names a database handle rather than any object.
+
+    Matches the trailing identifier of a qualified receiver (``this.userDao`` ->
+    ``userDao``) against :data:`SQL_RECEIVER_NAMES`, comparing whole identifier,
+    single word tokens, and adjacent token pairs. The pair check is what lets
+    ``readOnlyJdbcTemplate`` hit on ``jdbctemplate`` while ``restTemplate`` — whose
+    only pair is ``resttemplate`` — correctly does not.
+    """
+    if not receiver:
+        return False
+    trailing = receiver.rsplit(".", 1)[-1].strip()
+    if not trailing:
+        return False
+    if trailing.lower() in SQL_RECEIVER_NAMES:
+        return True
+    tokens = [t.lower() for t in _IDENT_TOKEN_RX.findall(trailing)]
+    if any(t in SQL_RECEIVER_NAMES for t in tokens):
+        return True
+    return any(
+        a + b in SQL_RECEIVER_NAMES for a, b in zip(tokens, tokens[1:])
+    )
+
+
+def file_has_sql_evidence(source: str) -> bool:
+    """True when the file contains SQL text or imports a database library.
+
+    Used to admit a SQL-verb call whose receiver is unrecognised. Deliberately
+    *not* satisfied by an identifier named ``sql``: OI-7's false positives came
+    from an HTTP proxy with a ``sql`` field and no SQL in it.
+    """
+    return bool(SQL_LITERAL_RX.search(source) or SQL_DB_IMPORT_RX.search(source))
+
+
+def sql_parameterisation(call_text: str, source: str) -> bool | str:
+    """Classify a SQL call as parameterised, raw, or ``"unknown"``.
+
+    Returns ``"unknown"`` when no SQL statement is in scope — there is nothing to
+    be parameterised or not. 1.1.0 tested ``"?" in call_text or ":" in call_text``,
+    which labelled calls containing no SQL at all as *unparameterised* and so made
+    OI-7's false positives read like findings.
+    """
+    statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(call_text)]
+    if not statements:
+        statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(source)]
+    if not statements:
+        return "unknown"
+    return any(SQL_PLACEHOLDER_RX.search(s) for s in statements)
+
 
 FILE_SINK_RX: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Files\.(write|writeString|delete|move|copy)\s*\("), "java-nio"),

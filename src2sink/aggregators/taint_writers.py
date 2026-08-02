@@ -42,6 +42,10 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+# `detail.parameterised` -> the posture label reported in the SQL sink catalogue.
+_PARAM_POSTURE: dict[Any, str] = {True: "parameterised", False: "raw"}
+
+
 def write_sql_catalogues(taint_dir: Path, buckets: TaintCatalogueBuckets) -> None:
     """Write SQL sources, execution sinks, and legacy sql-sinks stub catalogues."""
     src_by_kind = Counter(r.get("detail", {}).get("pattern", "?") for r in buckets.sql_sources)
@@ -66,8 +70,12 @@ def write_sql_catalogues(taint_dir: Path, buckets: TaintCatalogueBuckets) -> Non
     _write_jsonl(taint_dir / "sql-sources.jsonl", buckets.sql_sources)
     (taint_dir / "sql-sources.md").write_text("\n".join(md), encoding="utf-8")
 
+    # `parameterised` is tri-state: True / False / "unknown" (no SQL statement in
+    # scope to judge). Truthiness would file "unknown" under `parameterised` — the
+    # safe-looking bucket — which is precisely the claim the tri-state exists to
+    # stop making (OI-7).
     sink_param = Counter(
-        "parameterised" if r.get("detail", {}).get("parameterised") else "raw"
+        _PARAM_POSTURE.get(r.get("detail", {}).get("parameterised"), "unknown")
         for r in buckets.sql_sinks
     )
     md = _hierarchical_section(

@@ -1,0 +1,68 @@
+{
+  "edge_count": 0,
+  "families": [
+    "data-class-field",
+    "http-in"
+  ],
+  "node_count": 4,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 11,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 12,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 19,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "POST",
+        "path": "/v1/forward",
+        "raw": "@PostMapping(\"/v1/forward\""
+      },
+      "family": "http-in",
+      "file": "src/StockForwarder.java",
+      "framework": "spring",
+      "kind": "source",
+      "language": "java",
+      "line": 29,
+      "pii_classification": null
+    }
+  ]
+}
