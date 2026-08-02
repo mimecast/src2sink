@@ -424,6 +424,7 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 | OI-7 | 7 | `sql` family matches on method name alone | low–medium | withdraws fabricated high-confidence injection findings | **P0** |
 | OI-1 | 1 | Version prefixes outrank route names | low | fixes wrong edges, not just missing ones | **P0** |
 | OI-10 | 10 | `parameterised` claims a safety property it cannot establish | low (with OI-8) | withdraws a false *safe* label from injectable call sites | **P0** |
+| OI-11 | 11 | A base-query constant hides the concatenation appended to it | medium | misses a common injection shape *and* labels it safe | **P0** |
 | OI-8 | 8 | SQL built by formatting is undetected | low | a confirmed injection currently produces no node | P1 |
 | OI-3 | 3 | Gradle version catalogs unparsed | low | restores discovery input for affected repos | P1 |
 | OI-2 | 2 | Context guards miss custom wrappers | low–medium | recovers hand-rolled callers | P1 |
@@ -437,13 +438,19 @@ outranks issue 1 because its wrong output is a *security finding*: a wrong servi
 edge misleads, a fabricated injection endpoint sends someone to audit code that was
 never vulnerable.
 
-Issue 10 is the mirror image and is the one to weigh most carefully. A false
-finding costs a reviewer time and is self-correcting — someone reads the code and
-closes it. A false **safe** label costs nothing and is never revisited, because
-nothing draws attention back to a call site the tool has already cleared. It is
-ranked alongside the P0s despite being cheap to fix, and it is deliberately
-sequenced *after* OI-8 rather than before, since the fix depends on detection OI-8
-provides.
+Issues 10 and 11 are the mirror image and are the ones to weigh most carefully. A
+false finding costs a reviewer time and is self-correcting — someone reads the code
+and closes it. A false **safe** label costs nothing and is never revisited, because
+nothing draws attention back to a call site the tool has already cleared. Both are
+ranked alongside the P0s, and 10 is deliberately sequenced *after* OI-8 rather than
+before, since its fix depends on detection OI-8 provides.
+
+Issue 11 is the worst of the set on the evidence available: the shape it misses —
+a base-query constant with a clause concatenated onto it — is how most hand-written
+DAOs build a filtered query, and it fails in both directions at once, emitting no
+finding *and* certifying the call site as safe. It is P0 despite being the most
+expensive to fix, because the two cheaper fixes either side of it (OI-8, OI-10)
+leave it untouched.
 
 ### Issue ids and lifecycle
 
@@ -778,3 +785,80 @@ A narrower change gets the false *safe* label out without waiting for symbol res
 ### Residual not covered
 
 Whether the bound arguments actually match the placeholders, and whether a `PreparedStatement`'s `setX` calls are ever made, both need dataflow the extractor does not have. `mixed` and `unknown` are the honest labels for what a regex pass can establish.
+
+A statement whose SQL keyword lives in a constant and whose *appended* fragments carry the user input is missed entirely — see `OI-11`.
+
+---
+
+## 11. A base-query constant hides the concatenation appended to it  `OI-11`
+
+**Severity:** High — misses a common injection shape *and* labels it safe.
+
+**Found:** while fixing `OI-10`; not closed by `OI-8` or `OI-10`.
+
+### Symptom
+
+The "base query plus conditional clause" shape, which is how most hand-written Java DAOs build a filtered query:
+
+```java
+// fulfilment/stock-dao — StockDao.java
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> find(String ref, long id) {
+        String sql = SAFE + " AND ref = '" + ref + "'";
+        return jdbcTemplate.query(sql, mapper, id);
+    }
+}
+```
+
+Measured:
+
+```
+keyword-bearing literals in file: ['SELECT ref FROM stock WHERE id = ?']
+file detected as constructing SQL: False
+sql source nodes:                 []
+sink posture:                     parameterised
+```
+
+Both halves are wrong. The concatenation produces **no `sql` source node**, and the sink is then labelled **`parameterised`** — the safe posture — on the strength of the base constant's `?`.
+
+### Root cause
+
+One cause, two symptoms. Every pattern in `SQL_SOURCE_RX` anchors on a SQL keyword *inside the literal adjacent to the operator*:
+
+```python
+(re.compile(rf"{lit}{q}\s*\+"), "concatenated"),   # "SELECT …" +
+(re.compile(rf"\+\s*{lit}"), "concatenated"),      # + "SELECT …"
+```
+
+Here the keyword is in `SAFE`, and the fragments actually concatenated — `" AND ref = '"`, `"'"` — carry none. Nothing matches, so:
+
+* no `sql` source node is emitted (`OI-8`'s widening does not help: the shapes it added are also keyword-anchored); and
+* `sql_parameterisation` sees no construction, finds exactly one candidate statement, and attributes it — yielding `parameterised` (`OI-10`'s single-candidate rule is satisfied, because the *other* fragments were never candidates).
+
+`OI-10` is therefore correct as specified and still wrong in this case: its guard against misattribution counts only keyword-bearing literals.
+
+### Proposed fix
+
+**Symbol resolution**, which `OI-10` already identifies as the proper remedy for its own fallback. `extractors/http_out.py` has the pattern to copy: `build_path_symbol_table` maps identifier → endpoint-like literal per file, and `_resolved_symbol_text` substitutes the identifiers referenced near a call so a constant-mediated path resolves.
+
+The SQL equivalent:
+
+1. build a per-file map of identifier → SQL-shaped string literal (the same shape as `build_path_symbol_table`, with a SQL-literal predicate in place of `_ENDPOINTISH_RX`);
+2. when an expression concatenates an identifier that resolves to a SQL statement, treat the whole expression as the statement — so `SAFE + " AND ref = '" + ref` is a constructed SQL statement;
+3. feed that resolved statement to both `extract_sql_string_sources` (emitting the missing `sql` source) and `sql_parameterisation` (yielding `mixed`, since the base constant's `?` and the appended concatenation are both present).
+
+Bound the map as `build_path_symbol_table` does (`_MAX_SYMBOLS_PER_FILE`), and record only SQL-shaped literals so the table stays small.
+
+### Suggested tests
+
+* The example above: one `sql` source node, and sink posture `mixed`.
+* The same with no placeholder in the base constant → posture `raw`.
+* A constant that is *not* concatenated (`jdbcTemplate.query(SAFE, mapper, id)`) → still `parameterised`. The recall guard for `OI-10`'s constant-mediated case.
+* An identifier that resolves to a non-SQL literal must not make an unrelated concatenation into SQL. The precision guard.
+* A constant defined in another file is out of reach — assert `unknown`, not a guess.
+
+### Residual not covered
+
+Cross-file constants, and a base query assembled through a `StringBuilder` across several statements, both need more than a per-file symbol map. `OI-8`'s residual (multi-statement `sb.append` construction) is the same gap seen from the other side.

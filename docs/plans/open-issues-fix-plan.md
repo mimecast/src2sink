@@ -222,6 +222,7 @@ producing *wrong* output.
 | **WI-7** | **Gate the sql family on receiver / SQL evidence** | **OI-7** | `fix/sql-sink-receiver-gate` |
 | **WI-8** | **SQL sources via format / template / concatenation** | **OI-8** | `fix/sql-source-formatting` |
 | **WI-8b** | **The `parameterised` posture** | **OI-10** | same branch as WI-8 |
+| **WI-16** | **SQL symbol resolution** | **OI-11** | `fix/sql-symbol-resolution` |
 | **WI-9** | **`sql-payload-out` family** | **OI-9** | `feat/sql-payload-out` |
 
 WI-1 and WI-2 ship together: the tie-break is only meaningful once the confidence
@@ -234,7 +235,7 @@ trimmed.
 item that fabricates *high-confidence security findings*, and §5's own argument —
 "a confidently wrong edge is worse than a missing one" — applies with more force
 to a fabricated injection endpoint than to a wrong service edge. Recommended
-order: WI-7, WI-1+2, WI-8, WI-8b, WI-3, WI-4, WI-9, WI-5.
+order: WI-7, WI-1+2, WI-8, WI-8b, WI-16, WI-3, WI-4, WI-9, WI-5.
 
 Cite issues by their stable `OI-n` id everywhere — test docstrings, commits, code
 comments. Section numbers do not survive an issue's move to
@@ -683,6 +684,46 @@ above.
 restored; `any()` restored in place of the per-statement judgement; concatenation
 evidence ignored. Each maps to one of the tests above.
 
+### WI-16 — SQL symbol resolution (OI-11, P0)
+
+**Files:** `src2sink/extractors/patterns.py`, `regex_extractors.py`, and a symbol
+table alongside `extractors/http_out.py`'s
+
+Every `SQL_SOURCE_RX` pattern anchors on a SQL keyword *inside the literal next to
+the operator*. When the keyword lives in a constant and only the appended
+fragments are dynamic — `SAFE + " AND ref = '" + ref + "'"`, the standard
+base-query-plus-clause shape — nothing matches, so no `sql` source is emitted
+**and** `sql_parameterisation` sees no construction and reports `parameterised`.
+The two cheap fixes either side of it (WI-8's widened patterns, WI-8b's posture)
+both leave it untouched, because both count only keyword-bearing literals.
+
+Copy the mechanism already proven for paths: `build_path_symbol_table` in
+`extractors/http_out.py` maps identifier → endpoint-like literal per file, and
+`_resolved_symbol_text` substitutes identifiers referenced near a call. The SQL
+version records SQL-shaped literals instead, and feeds the resolved statement to
+**both** consumers — the source pass and the posture — so the same resolution
+fixes the missing finding and the false safe label together.
+
+Bounded like its sibling (`_MAX_SYMBOLS_PER_FILE`), and SQL-shaped literals only,
+so the table stays small and cannot invent a statement absent from the source.
+
+**Red tests** — `tests/test_sql_source_construction.py`, `tests/test_sql_sink_evidence.py`
+
+* `test_constant_base_query_with_appended_clause_is_a_source` — one `sql` source.
+* `test_constant_base_query_with_appended_clause_is_mixed` — the same file's sink
+  posture, since the base constant's `?` and the appended concatenation coexist.
+* `test_appended_clause_without_a_placeholder_is_raw`.
+* `test_unconcatenated_constant_is_still_parameterised` — WI-8b's recall guard
+  must survive.
+* `test_non_sql_constant_does_not_make_a_concatenation_sql` — the precision guard:
+  resolving `GREETING + name` must not manufacture SQL.
+* `test_constant_from_another_file_is_unknown` — out of reach of a per-file map,
+  and `unknown` is the honest answer rather than a guess.
+
+**Mutants** — symbol table emptied; the SQL-shaped predicate dropped so any
+literal is recorded; resolution wired to the source pass but not the posture (the
+half-finished-plumbing case, which is how the two would drift apart again).
+
 ### WI-9 — `sql-payload-out` family (OI-9, P2)
 
 **Files:** `extractors/regex_extractors.py` + a new `link_sql_payload_out(ctx)` in
@@ -993,14 +1034,15 @@ Per release:
 | WI-1 + WI-2 | ~0.5 d | ~0.5 d | 1 d |
 | WI-8 | ~0.5 d | ~0.5 d | 1 d |
 | WI-8b (OI-10 posture) | ~0.25 d | ~0.25 d | 0.5 d |
+| WI-16 (OI-11 symbol resolution) | ~0.5 d | ~1 d | 1.5 d |
 | WI-3 | ~0.5 d | ~0.5 d | 1 d |
 | WI-4 | ~0.5 d | ~0.5 d | 1 d |
 | Mutation harness | — | ~0.5 d | 0.5 d |
 | WI-9 | ~0.5 d | ~1.5 d (mostly family plumbing) | 2 d |
 | WI-5 | ~1 d | ~1.5 d | 2.5 d |
 
-WI-7, WI-1+2, WI-8, WI-8b, WI-3, WI-4 plus the harness is ~6.5 days and closes
-every defect — both the wrong-output ones and the missed-detection ones. WI-9 and WI-5
+WI-7, WI-1+2, WI-8, WI-8b, WI-16, WI-3, WI-4 plus the harness is ~8 days and
+closes every defect — both the wrong-output ones and the missed-detection ones. WI-9 and WI-5
 are capability additions and can ship separately as 1.3.0 without weakening the
 rest.
 
