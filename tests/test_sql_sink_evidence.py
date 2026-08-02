@@ -291,10 +291,16 @@ def test_parameterised_is_unknown_without_a_sql_literal() -> None:
     assert sinks[0].detail["parameterised"] == "unknown"
 
 
-def test_parameterised_is_true_for_a_placeholder_query() -> None:
-    """A `?` placeholder in a SQL literal in scope is a genuine parameterised call."""
+def test_placeholder_query_is_parameterised() -> None:
+    """A `?` placeholder in a statement with no construction is genuinely parameterised.
+
+    OI-10 turned this field from a tri-state boolean into a posture, so the value
+    is now the label `"parameterised"` rather than `True`. The statement here is a
+    file-level constant, which is only trusted because the file builds no SQL
+    dynamically and holds exactly one candidate.
+    """
     sinks = _sql_sinks(_nodes(JAVA_JDBC_TEMPLATE))
-    assert sinks[0].detail["parameterised"] is True
+    assert sinks[0].detail["parameterised"] == "parameterised"
 
 
 def test_unknown_parameterisation_is_not_reported_as_parameterised(tmp_path) -> None:
@@ -316,6 +322,177 @@ def test_unknown_parameterisation_is_not_reported_as_parameterised(tmp_path) -> 
                 "detail": {"symbol": "execute", "parameterised": "unknown"},
             },
         ],
+    )
+    write_sql_catalogues(tmp_path, buckets)
+    md = (tmp_path / "sql-execution-sinks.md").read_text(encoding="utf-8")
+    assert "unknown" in md
+    assert "parameterised" not in md
+
+
+# --------------------------------------------------------------------------
+# OI-10: `parameterised` is a posture, not a safety verdict
+# --------------------------------------------------------------------------
+
+JAVA_SAFE_CONSTANT_PLUS_BUILT_QUERY = """
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> search(String clause) {
+        String sql = "SELECT * FROM stock WHERE " + clause;
+        return jdbcTemplate.query(sql, mapper);
+    }
+}
+"""
+
+JAVA_MIXED_STATEMENT = """
+public class StockDao {
+    List<Stock> find(String ref, long id) {
+        return jdbcTemplate.query(
+            "SELECT * FROM stock WHERE ref = '" + ref + "' AND id = ?", mapper, id);
+    }
+}
+"""
+
+JAVA_MIXED_STATEMENT_REVERSED = """
+public class StockDao {
+    List<Stock> find(String ref, long id) {
+        return jdbcTemplate.query(
+            "SELECT * FROM stock WHERE id = ? AND ref = '" + ref + "'", mapper, id);
+    }
+}
+"""
+
+JAVA_UNRESOLVABLE_STATEMENT = """
+import java.sql.PreparedStatement;
+
+public class StockJob {
+    void run(Runner runner, PreparedStatement statement) {
+        runner.execute(statement);
+    }
+}
+"""
+
+
+def test_unrelated_safe_constant_does_not_certify_a_built_statement() -> None:
+    """OI-10: a placeholder elsewhere in the file is not evidence about this call.
+
+    The call executes a concatenated string. The scan already reports that as a
+    `sql` source with `pattern=concatenated`; labelling the sink `parameterised`
+    on the strength of an unrelated constant makes the output contradict itself,
+    and a reviewer filtering for raw statements never sees the call site.
+    """
+    nodes = _nodes(JAVA_SAFE_CONSTANT_PLUS_BUILT_QUERY)
+    assert any(n.family == "sql" and n.kind == "source" for n in nodes), (
+        "fixture must contain a detectably constructed statement"
+    )
+    sinks = _sql_sinks(nodes)
+    assert sinks
+    assert sinks[0].detail["parameterised"] != "parameterised"
+    assert sinks[0].detail["parameterised"] is not True
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        ("concat-then-placeholder", JAVA_MIXED_STATEMENT),
+        ("placeholder-then-concat", JAVA_MIXED_STATEMENT_REVERSED),
+    ],
+)
+def test_concatenated_and_parameterised_is_mixed(name: str, source: str) -> None:
+    """A placeholder does not undo a concatenation in the same statement.
+
+    Both operand orders must agree. Before the posture existed the answer
+    depended on which fragment the literal pattern happened to match, so
+    `"… ref = '" + ref + "' AND id = ?"` read as raw and its mirror as
+    parameterised — right once, by luck.
+    """
+    sinks = _sql_sinks(_nodes(source))
+    assert sinks, f"{name} produced no sql sink"
+    assert sinks[0].detail["parameterised"] == "mixed"
+
+
+def test_unresolvable_statement_is_unknown_not_parameterised() -> None:
+    """No statement in scope means no posture — never the safe one."""
+    sinks = _sql_sinks(_nodes(JAVA_UNRESOLVABLE_STATEMENT))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "unknown"
+
+
+def test_mixed_is_not_counted_as_parameterised_in_the_catalogue(tmp_path) -> None:
+    """The writer must keep `mixed` distinct from the safe-looking posture."""
+    from src2sink.aggregators.taint_buckets import TaintCatalogueBuckets
+    from src2sink.aggregators.taint_writers import write_sql_catalogues
+
+    buckets = TaintCatalogueBuckets(
+        sql_sinks=[{
+            "repo": "test/sample", "file": "src/Sample.java", "line": 4,
+            "detail": {"symbol": "query", "parameterised": "mixed"},
+        }],
+    )
+    write_sql_catalogues(tmp_path, buckets)
+    md = (tmp_path / "sql-execution-sinks.md").read_text(encoding="utf-8")
+    assert "mixed" in md
+    assert "parameterised" not in md
+
+
+JAVA_SINGLE_CONSTRUCTED_STATEMENT = """
+public class StockDao {
+    List<Stock> search(String clause) {
+        String sql = "SELECT * FROM stock WHERE " + clause;
+        return jdbcTemplate.query(sql, mapper);
+    }
+}
+"""
+
+JAVA_TERNARY_IN_CALL = """
+public class StockDao {
+    List<Stock> find(String ref) {
+        return jdbcTemplate.query(
+            "SELECT * FROM stock WHERE ref = '" + (ref != null ? ref : "") + "'", mapper);
+    }
+}
+"""
+
+
+def test_single_constructed_statement_is_attributable_as_raw() -> None:
+    """One unambiguous candidate is attributable even when it is constructed.
+
+    `unknown` would be safe but needlessly vague: there is exactly one statement
+    in the file, it is concatenated, and it is what this call runs.
+    """
+    sinks = _sql_sinks(_nodes(JAVA_SINGLE_CONSTRUCTED_STATEMENT))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "raw"
+
+
+def test_a_question_mark_outside_a_literal_is_not_a_placeholder() -> None:
+    """A ternary in the call is not a bind parameter.
+
+    Placeholders are only counted inside string literals; searching the whole
+    call text would read `ref != null ? ref : ""` as parameterisation and
+    upgrade an injectable statement from `raw` to `mixed`.
+    """
+    sinks = _sql_sinks(_nodes(JAVA_TERNARY_IN_CALL))
+    assert sinks
+    assert "?" in sinks[0].detail["raw"], "fixture must contain a non-placeholder ?"
+    assert sinks[0].detail["parameterised"] == "raw"
+
+
+def test_legacy_boolean_posture_is_reported_as_unknown(tmp_path) -> None:
+    """A metabase written before OI-10 stored True/False; neither is a posture.
+
+    Re-reading old output must not translate `True` into `parameterised` — the
+    old boolean was computed by the very heuristic OI-10 removed, so carrying it
+    forward would re-import the claim rather than the data.
+    """
+    from src2sink.aggregators.taint_buckets import TaintCatalogueBuckets
+    from src2sink.aggregators.taint_writers import write_sql_catalogues
+
+    buckets = TaintCatalogueBuckets(
+        sql_sinks=[{
+            "repo": "test/sample", "file": "src/Legacy.java", "line": 1,
+            "detail": {"symbol": "query", "parameterised": True},
+        }],
     )
     write_sql_catalogues(tmp_path, buckets)
     md = (tmp_path / "sql-execution-sinks.md").read_text(encoding="utf-8")

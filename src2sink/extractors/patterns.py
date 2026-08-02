@@ -73,6 +73,8 @@ SQL_DB_IMPORT_RX = re.compile(
 # Placeholder styles that make a SQL statement parameterised: JDBC `?`, named
 # `:param`, printf-style `%s`, and PostgreSQL `$1`.
 SQL_PLACEHOLDER_RX = re.compile(r"\?|:[A-Za-z_]\w{0,63}|%\(?[a-z_]*\)?s|\$\d{1,3}")
+# Any quoted literal, used to confine the placeholder search to string contents.
+_STRING_LITERAL_RX = re.compile(r'"[^"\n]{0,400}"|\'[^\'\n]{0,400}\'')
 
 # Split an identifier into lowercase word tokens across camelCase and snake_case.
 _IDENT_TOKEN_RX = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+")
@@ -168,20 +170,56 @@ def file_has_sql_evidence(source: str) -> bool:
     return bool(SQL_LITERAL_RX.search(source) or SQL_DB_IMPORT_RX.search(source))
 
 
-def sql_parameterisation(call_text: str, source: str) -> bool | str:
-    """Classify a SQL call as parameterised, raw, or ``"unknown"``.
+def _statement_is_constructed(region: str) -> bool:
+    """True if ``region`` shows SQL being assembled rather than used verbatim."""
+    return any(pat.search(region) for pat, _kind in SQL_SOURCE_RX)
 
-    Returns ``"unknown"`` when no SQL statement is in scope — there is nothing to
-    be parameterised or not. 1.1.0 tested ``"?" in call_text or ":" in call_text``,
-    which labelled calls containing no SQL at all as *unparameterised* and so made
-    OI-7's false positives read like findings.
+
+def sql_parameterisation(call_text: str, source: str) -> str:
+    """Classify the posture of the SQL statement executed at this call site.
+
+    ``parameterised`` is not a safety verdict, because a placeholder does not undo
+    a concatenation in the same statement — ``"… ref = '" + ref + "' AND id = ?"``
+    is injectable despite the ``?``. So two independent facts are reported as one
+    posture (OI-10):
+
+    ==================  ============  =========================
+    posture             placeholders  constructed
+    ==================  ============  =========================
+    ``parameterised``   yes           no
+    ``mixed``           yes           yes
+    ``raw``             no            yes
+    ``static``          no            no
+    ``unknown``         statement not attributable to this call site
+    ==================  ============  =========================
+
+    The governing rule is that **weak evidence may downgrade a posture, never
+    establish the safe one.** A statement found at the call site is a fact about
+    this call; a literal found elsewhere in the file is a guess, so it is only
+    trusted when the file builds no SQL dynamically *and* holds exactly one
+    candidate statement. Anything less resolves to ``unknown``.
     """
-    statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(call_text)]
-    if not statements:
-        statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(source)]
-    if not statements:
-        return "unknown"
-    return any(SQL_PLACEHOLDER_RX.search(s) for s in statements)
+    if SQL_LITERAL_RX.search(call_text):
+        region = call_text
+    else:
+        # The call executes a variable. Constant-mediated SQL is the normal Java
+        # shape, so the file is worth consulting — but only when it cannot
+        # mislead. One candidate statement is attributable; several are a guess
+        # about which one runs here, and that guess is what let an unrelated safe
+        # constant certify an injectable call site (OI-10).
+        candidates = SQL_LITERAL_RX.findall(source)
+        if len(candidates) != 1:
+            return "unknown"
+        region = source
+
+    # Placeholders are looked for inside string literals only: a bare `?` in the
+    # surrounding code is as likely to be a ternary as a bind parameter.
+    placeholders = any(
+        SQL_PLACEHOLDER_RX.search(lit) for lit in _STRING_LITERAL_RX.findall(region)
+    )
+    if _statement_is_constructed(region):
+        return "mixed" if placeholders else "raw"
+    return "parameterised" if placeholders else "static"
 
 
 FILE_SINK_RX: list[tuple[re.Pattern[str], str]] = [

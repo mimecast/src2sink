@@ -390,7 +390,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `symbol` | the invoked method name (`query`, `execute`, `find`, …) |
 | `receiver` | the expression the call was made on (`jdbcTemplate`, `this.stockRepository`), or `""` for an unqualified call |
 | `execution` | `true` for JDBC/JPA/native execution, `false` for ORM helpers |
-| `parameterised` | `true` / `false` / `"unknown"` — see below |
+| `parameterised` | a posture: `parameterised`, `mixed`, `raw`, `static`, `unknown` — see below |
 
 `execute`, `query` and `update` are ordinary method names, so a `sql` sink is
 emitted only when one positive signal supports it: a database-ish `receiver`, an
@@ -400,10 +400,29 @@ deliberately not evidence — matching on the method name alone catalogued
 `httpClient.execute(request)` and `messageDigest.update(data)` as SQL execution
 sinks, and let an HTTP proxy fabricate a `raw-code-payload` finding (issue `OI-7`).
 
-`parameterised` is **tri-state**. `"unknown"` means no SQL statement was in scope
-to judge — the query text arrives from elsewhere — and must not be read as either
-safe or unsafe. Earlier versions reported `false` in that case, which labelled
-calls containing no SQL at all as *unparameterised*.
+`parameterised` is a **posture, not a safety verdict**, because a placeholder does
+not undo a concatenation in the same statement: `"… ref = '" + ref + "' AND id = ?"`
+is injectable despite the `?`. Two independent facts about the statement executed
+at the call site are reported as one label:
+
+| Posture | Placeholders | Statement constructed | Read it as |
+|---|---|---|---|
+| `parameterised` | yes | no | bound parameters, nothing concatenated |
+| `mixed` | yes | yes | **partially parameterised — still injectable** |
+| `raw` | no | yes | assembled from parts |
+| `static` | no | no | a constant statement; no input reaches it |
+| `unknown` | — | — | no statement attributable to this call site |
+
+`mixed` and `unknown` must never be read as safe. The governing rule is that weak
+evidence may downgrade a posture but never establish `parameterised`: a statement
+found at the call site is a fact about that call, while a literal found elsewhere
+in the file is a guess, so it is only trusted when the file holds exactly one
+candidate statement.
+
+Before 1.2.0 this field was a boolean derived from `"?" in call_text`, which
+labelled calls containing no SQL at all as *unparameterised* and calls next to an
+unrelated safe constant as *parameterised*. Values from an older metabase are
+reported as `unknown` rather than translated.
 
 ### Classification axes (orthogonal)
 

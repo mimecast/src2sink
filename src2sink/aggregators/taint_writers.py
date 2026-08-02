@@ -42,8 +42,10 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-# `detail.parameterised` -> the posture label reported in the SQL sink catalogue.
-_PARAM_POSTURE: dict[Any, str] = {True: "parameterised", False: "raw"}
+# Postures a sql sink may report (see extractors.patterns.sql_parameterisation).
+# Anything else — including the True/False of a pre-1.2.0 metabase — is reported
+# as `unknown` rather than guessed at.
+_PARAM_POSTURES = frozenset({"parameterised", "mixed", "raw", "static", "unknown"})
 
 
 def write_sql_catalogues(taint_dir: Path, buckets: TaintCatalogueBuckets) -> None:
@@ -70,12 +72,14 @@ def write_sql_catalogues(taint_dir: Path, buckets: TaintCatalogueBuckets) -> Non
     _write_jsonl(taint_dir / "sql-sources.jsonl", buckets.sql_sources)
     (taint_dir / "sql-sources.md").write_text("\n".join(md), encoding="utf-8")
 
-    # `parameterised` is tri-state: True / False / "unknown" (no SQL statement in
-    # scope to judge). Truthiness would file "unknown" under `parameterised` — the
-    # safe-looking bucket — which is precisely the claim the tri-state exists to
-    # stop making (OI-7).
+    # `parameterised` is a posture, not a boolean. `mixed` (a placeholder in a
+    # statement that is also concatenated) and `unknown` must stay out of the
+    # safe-looking bucket — collapsing either into `parameterised` is the claim
+    # the posture exists to stop making (OI-7, OI-10).
     sink_param = Counter(
-        _PARAM_POSTURE.get(r.get("detail", {}).get("parameterised"), "unknown")
+        posture
+        if (posture := r.get("detail", {}).get("parameterised")) in _PARAM_POSTURES
+        else "unknown"
         for r in buckets.sql_sinks
     )
     md = _hierarchical_section(

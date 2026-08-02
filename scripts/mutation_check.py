@@ -108,14 +108,18 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        # Re-derived when OI-10 rewrote sql_parameterisation. The original snippet
+        # (`if not statements: return "unknown"`) is gone; the defect it guarded
+        # against — a call with no attributable statement being given a definite
+        # posture — now lives at the fallback's unknown return.
         id="OI7-M5",
         file="src2sink/extractors/patterns.py",
-        old='    if not statements:\n        return "unknown"',
-        new="    if not statements:\n        return False",
+        old='        if len(candidates) != 1:\n            return "unknown"',
+        new='        if len(candidates) != 1:\n            return "parameterised"',
         selector="tests/test_sql_sink_evidence.py",
         note=(
-            "Tri-state collapsed back to False — reports a call with no SQL in "
-            "scope as *unparameterised*, half of what made OI-7 read like findings."
+            "A call with no attributable statement reported as safe rather than "
+            "unknown — the sharpest form of claiming more than the evidence carries."
         ),
     ),
     Mutant(
@@ -265,12 +269,47 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI7-M7",
         file="src2sink/aggregators/taint_writers.py",
-        old='_PARAM_POSTURE: dict[Any, str] = {True: "parameterised", False: "raw"}',
-        new='_PARAM_POSTURE: dict[Any, str] = {True: "parameterised", False: "raw", "unknown": "parameterised"}',
+        old='        if (posture := r.get("detail", {}).get("parameterised")) in _PARAM_POSTURES\n        else "unknown"',
+        new='        if (posture := r.get("detail", {}).get("parameterised")) in _PARAM_POSTURES\n        else "parameterised"',
         selector="tests/test_sql_sink_evidence.py",
         note=(
-            "`unknown` filed under the safe-looking posture in the SQL catalogue — "
-            "the downstream half of the OI-7 claim-more-than-you-know defect."
+            "An unrecognised posture filed under the safe-looking bucket in the "
+            "SQL catalogue — the downstream half of the claim-more-than-you-know "
+            "defect (OI-7, OI-10)."
+        ),
+    ),
+    # --- OI-10: `parameterised` is a posture, not a safety verdict ----------
+    Mutant(
+        id="OI10-M2",
+        file="src2sink/extractors/patterns.py",
+        old='        candidates = SQL_LITERAL_RX.findall(source)\n        if len(candidates) != 1:\n            return "unknown"\n',
+        new="",
+        selector="tests/test_sql_sink_evidence.py",
+        note=(
+            "Ambiguous file-level attribution allowed — several candidate "
+            "statements, any one of which may be the executed one."
+        ),
+    ),
+    Mutant(
+        id="OI10-M3",
+        file="src2sink/extractors/patterns.py",
+        old='    if _statement_is_constructed(region):\n        return "mixed" if placeholders else "raw"',
+        new='    if _statement_is_constructed(region):\n        return "parameterised" if placeholders else "raw"',
+        selector="tests/test_sql_sink_evidence.py",
+        note=(
+            "`mixed` collapsed into `parameterised` — a concatenated statement "
+            "carrying a placeholder read as safe, which is the whole of OI-10."
+        ),
+    ),
+    Mutant(
+        id="OI10-M4",
+        file="src2sink/extractors/patterns.py",
+        old="        SQL_PLACEHOLDER_RX.search(lit) for lit in _STRING_LITERAL_RX.findall(region)",
+        new="        SQL_PLACEHOLDER_RX.search(lit) for lit in [region]",
+        selector="tests/test_sql_sink_evidence.py tests/test_sql_source_construction.py",
+        note=(
+            "Placeholder search widened from string literals to the whole call "
+            "text, so a ternary `?` or a `$1` in code counts as a bind parameter."
         ),
     ),
 )

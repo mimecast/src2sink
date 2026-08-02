@@ -39,7 +39,7 @@
       "data_class": null,
       "detail": {
         "execution": true,
-        "parameterised": false,
+        "parameterised": "unknown",
         "raw": "jdbcTemplate.query(byReference(ref), mapper)",
         "receiver": "jdbcTemplate",
         "symbol": "query"
