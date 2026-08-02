@@ -66,6 +66,35 @@ def test_run_trace_collects_facts_and_upstream(tmp_path):
     assert any(u.source_repo == "apps/consumer" for u in report.upstream)
 
 
+VERSIONED_TARGET = {
+    "group": "commerce",
+    "name": "warehouse-service",
+    "nodes": [
+        {"family": "http-in", "kind": "source", "file": "C.java", "line": 1,
+         "framework": "spring", "detail": {"path": "/v1/stock", "method": "POST"}},
+    ],
+}
+
+
+def test_trace_path_filter_keeps_version_prefix_semantics(tmp_path):
+    """`--path /v1` must still select `/v1/stock` (finding F2).
+
+    The OI-1 fix makes `path_templates_match("/v1/stock", "/v1")` return None,
+    because a bare `/v1` names no destination for *routing*. `trace --path` asks a
+    different question — "show me everything under this prefix" — so it uses
+    `path_filter_matches` instead. Sharing one predicate would have silently
+    emptied this filter.
+    """
+    report = run_trace(
+        tmp_path,
+        "commerce/warehouse-service",
+        path_filter="/v1",
+        records=[VERSIONED_TARGET],
+        producer_indices=[],
+    )
+    assert [h["path"] for h in report.inbound] == ["/v1/stock"]
+
+
 def test_run_trace_scan_repos_source_literal(tmp_path):
     # Target must exist as a directory; a sibling consumer references it by name.
     (tmp_path / "acme" / "sql-runner-api").mkdir(parents=True)
