@@ -423,18 +423,27 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 |---|---|---|---|---|---|
 | OI-7 | 7 | `sql` family matches on method name alone | low–medium | withdraws fabricated high-confidence injection findings | **P0** |
 | OI-1 | 1 | Version prefixes outrank route names | low | fixes wrong edges, not just missing ones | **P0** |
+| OI-10 | 10 | `parameterised` claims a safety property it cannot establish | low (with OI-8) | withdraws a false *safe* label from injectable call sites | **P0** |
 | OI-8 | 8 | SQL built by formatting is undetected | low | a confirmed injection currently produces no node | P1 |
 | OI-3 | 3 | Gradle version catalogs unparsed | low | restores discovery input for affected repos | P1 |
 | OI-2 | 2 | Context guards miss custom wrappers | low–medium | recovers hand-rolled callers | P1 |
 | OI-9 | 9 | No `sql-payload-out` family | medium | a whole sink class is unrepresented | P2 |
 | OI-4 | 4 | Demand-side discovery | medium | generates the field that cannot be inferred otherwise | P2 |
 
-Issues 7 and 1 are first because they are the two producing **incorrect output**.
-The others reduce recall; these reduce precision, and a confidently wrong result is
-worse than a missing one — nothing downstream distinguishes it from a real finding.
-Issue 7 outranks issue 1 because its wrong output is a *security finding*: a wrong
-service edge misleads, a fabricated injection endpoint sends someone to audit code
-that was never vulnerable.
+Issues 7, 1 and 10 are first because they produce **incorrect output**. The others
+reduce recall; these reduce precision, and a confidently wrong result is worse than
+a missing one — nothing downstream distinguishes it from a real finding. Issue 7
+outranks issue 1 because its wrong output is a *security finding*: a wrong service
+edge misleads, a fabricated injection endpoint sends someone to audit code that was
+never vulnerable.
+
+Issue 10 is the mirror image and is the one to weigh most carefully. A false
+finding costs a reviewer time and is self-correcting — someone reads the code and
+closes it. A false **safe** label costs nothing and is never revisited, because
+nothing draws attention back to a call site the tool has already cleared. It is
+ranked alongside the P0s despite being cheap to fix, and it is deliberately
+sequenced *after* OI-8 rather than before, since the fix depends on detection OI-8
+provides.
 
 ### Issue ids and lifecycle
 
@@ -667,3 +676,105 @@ Field detection must cover setters (`setSql(`), builders (`.sql(`), assignment (
 ### Residual not covered
 
 `raw-code-payload` and `sql-payload-out` are the two ends of one cross-repo hop — *"this service accepts SQL"* and *"this service sends SQL"*. Joining them across repos in the aggregation phase is the obvious follow-on and is deliberately out of scope here.
+
+---
+
+## 10. `parameterised` is reported as a safety property it cannot establish  `OI-10`
+
+**Severity:** High — a false *safe* label is more dangerous than a false finding.
+
+**Introduced by:** the OI-7 fix (commit `1339b60`, 1.2.0-dev). The 1.1.0 field was differently wrong (`"?" in call_text or ":" in call_text`); this section is about the replacement, not the original.
+
+### Symptom
+
+A placeholder somewhere in the file is taken as evidence that *this* call site is parameterised:
+
+```java
+// fulfilment/stock-dao — StockDao.java
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> search(String clause) {
+        String sql = "SELECT * FROM stock WHERE " + clause;   // injectable
+        return jdbcTemplate.query(sql, mapper);
+    }
+}
+```
+
+```
+sql source pattern=concatenated          <- the danger is detected ...
+sql sink   parameterised=True            <- ... and then contradicted
+```
+
+The scan reports both facts about the same file and they disagree. A reviewer filtering the SQL catalogue for raw statements never sees this call site.
+
+### Root cause
+
+`patterns.sql_parameterisation`:
+
+```python
+statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(call_text)]
+if not statements:
+    statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(source)]   # (1)
+if not statements:
+    return "unknown"
+return any(SQL_PLACEHOLDER_RX.search(s) for s in statements)             # (2)
+```
+
+Three distinct errors:
+
+1. **(1) file-level fallback.** When the call executes a variable, any SQL literal anywhere in the file stands in for the statement actually executed. Unrelated code certifies this call site.
+2. **(2) `any`.** One parameterised statement among several marks the call parameterised, even when the executed one is not.
+3. **Concatenation is ignored entirely.** A statement may be *both* concatenated and parameterised — `"... WHERE ref = '" + ref + "' AND id = ?"` — which is injectable despite the placeholder. The presence of a placeholder is not the absence of concatenation, and only the second is a safety property.
+
+A fourth, milder case: a `?` with no bound arguments is reported parameterised. That is usually a runtime error rather than a vulnerability, but it is the same overclaim.
+
+Note also that error 3 is currently masked by luck. In the mixed example the literal fragments split around the concatenation, so `SQL_LITERAL_RX` matches only `"SELECT * FROM stock WHERE ref = '"` — which has no placeholder, giving the right answer for the wrong reason. Reverse the operands (`"... AND id = ? AND ref = '" + ref`) and it reports `True`.
+
+### Proposed fix
+
+`parameterised` should stop being a safety verdict and become a *posture* derived from two independent facts about the statement executed at the call site:
+
+| Posture | Placeholders | Concatenation / interpolation |
+|---|---|---|
+| `parameterised` | yes | no |
+| `mixed` | yes | yes | 
+| `raw` | no | yes |
+| `unknown` | — | statement not identifiable at the call site |
+
+`mixed` is the case this section exists for and must not collapse into either neighbour.
+
+The governing rule: **weak evidence may downgrade a posture, never upgrade it.** File-level evidence can move a call to `mixed` or `raw`; it can never establish `parameterised`, which requires the statement to be identified at the call site. Concretely, drop the file-level fallback at (1), replace `any` at (2) with a per-statement judgement, and consult the concatenation evidence the `sql` *source* pass already produces for the same file.
+
+### Dependency
+
+The concatenation half of this is only as good as `SQL_SOURCE_RX`, which `OI-8` shows misses `String.format`, template interpolation, and — most relevantly here — concatenation containing an embedded quote, which is exactly the shape of the mixed example. **This issue should be fixed with `OI-8`, not before it**: a posture built on today's concatenation detection would mark genuinely mixed statements `parameterised` and re-create the defect one level up.
+
+### Why the fallback cannot simply be deleted
+
+Constant-mediated SQL is the normal shape in Java, and the fallback is what handles it:
+
+```java
+private static final String FIND = "SELECT ref FROM stock WHERE id = ?";
+List<Stock> find(long id) {
+    return jdbcTemplate.query(FIND, mapper, id);   // call text holds no literal
+}
+```
+
+Deleting (1) makes this `unknown` and loses a correct verdict. The proper fix is **symbol resolution** — the same shape as `build_path_symbol_table` in `extractors/http_out.py`, which already resolves `host + SUBMIT_PATH` for outbound paths — mapping the identifier at the call site to the literal it was assigned. That is what turns a file-level guess into a statement-level fact.
+
+### Interim
+
+A narrower change gets the false *safe* label out without waiting for symbol resolution: **keep the fallback only when the file shows no concatenation evidence.** If a file contains a concatenated SQL statement, no unattributed literal in it may certify a call site, so the posture becomes `unknown`. The `search` example above is then `unknown` while the `FIND` example stays `parameterised`.
+
+### Suggested tests
+
+* The `search` example above: posture is not `parameterised`. This is the symptom test.
+* `"... WHERE ref = '" + ref + "' AND id = ?"` → `mixed`, and the same statement with the operands reversed → also `mixed` (the luck-masking case).
+* A file containing one safe constant and one built statement: each call site is judged on its own statement.
+* A call executing a variable that cannot be resolved → `unknown`, never `parameterised`.
+* A genuine `jdbcTemplate.query("SELECT ... WHERE id = ?", mapper, id)` → `parameterised`. The recall guard.
+
+### Residual not covered
+
+Whether the bound arguments actually match the placeholders, and whether a `PreparedStatement`'s `setX` calls are ever made, both need dataflow the extractor does not have. `mixed` and `unknown` are the honest labels for what a regex pass can establish.

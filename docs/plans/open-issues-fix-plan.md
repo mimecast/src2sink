@@ -221,6 +221,7 @@ producing *wrong* output.
 | WI-10–15 | Phase 2 — hardening the existing surface (§9) | — | separable, ships as 1.3.0 |
 | **WI-7** | **Gate the sql family on receiver / SQL evidence** | **OI-7** | `fix/sql-sink-receiver-gate` |
 | **WI-8** | **SQL sources via format / template / concatenation** | **OI-8** | `fix/sql-source-formatting` |
+| **WI-8b** | **The `parameterised` posture** | **OI-10** | same branch as WI-8 |
 | **WI-9** | **`sql-payload-out` family** | **OI-9** | `feat/sql-payload-out` |
 
 WI-1 and WI-2 ship together: the tie-break is only meaningful once the confidence
@@ -233,7 +234,7 @@ trimmed.
 item that fabricates *high-confidence security findings*, and §5's own argument —
 "a confidently wrong edge is worse than a missing one" — applies with more force
 to a fabricated injection endpoint than to a wrong service edge. Recommended
-order: WI-7, WI-1+2, WI-8, WI-3, WI-4, WI-9, WI-5.
+order: WI-7, WI-1+2, WI-8, WI-8b, WI-3, WI-4, WI-9, WI-5.
 
 Cite issues by their stable `OI-n` id everywhere — test docstrings, commits, code
 comments. Section numbers do not survive an issue's move to
@@ -580,7 +581,7 @@ each was genuinely not SQL**. A large green diff here is the deliverable, but on
 if someone has looked at it. If the `detail` shape changes (new `receiver`,
 tri-state `parameterised`), `SCHEMA.md` changes with it.
 
-### WI-8 — SQL sources via format, template and concatenation (OI-8, P1)
+### WI-8 — SQL sources via format, template and concatenation (OI-8, P1; WI-8b closes OI-10)
 
 **File:** `src2sink/extractors/patterns.py` (`SQL_SOURCE_RX`)
 
@@ -616,6 +617,71 @@ table so each row is a named case:
 **Regression test** — a `dao/format-injection` fixture reproducing the confirmed
 injection from the report (sanitised), asserting one `sql` source node with the
 right `pattern` label, plus its snapshot.
+
+#### WI-8b — the `parameterised` posture (OI-10)
+
+Folded in here rather than given its own work item, because it consumes exactly
+the detection WI-8 adds: a posture built on today's concatenation patterns would
+mark genuinely mixed statements `parameterised` and re-create the defect one level
+up. **Do WI-8 first, then this, in the same branch.**
+
+`parameterised` stops being a safety verdict and becomes a posture over two
+independent facts about the statement executed *at the call site*:
+
+| Posture | Placeholders | Concatenation / interpolation |
+|---|---|---|
+| `parameterised` | yes | no |
+| `mixed` | yes | yes |
+| `raw` | no | yes |
+| `unknown` | — | statement not identifiable at the call site |
+
+Three changes in `patterns.sql_parameterisation`, plus the writer:
+
+1. **Replace the file-level fallback with symbol resolution.** An unrelated literal
+   elsewhere in the file must not stand in for the statement being executed. But
+   the fallback cannot simply be deleted: constant-mediated SQL
+   (`private static final String FIND = "…?"; jdbcTemplate.query(FIND, …)`) is the
+   normal Java shape and the fallback is what handles it, so deleting it loses a
+   correct verdict. Resolve the identifier at the call site to its literal instead
+   — the same shape as `build_path_symbol_table` in `extractors/http_out.py`,
+   which already does this for outbound paths, and reusable with a SQL-shaped
+   `_ENDPOINTISH_RX` equivalent.
+
+   **Interim, if OI-10 needs to land before symbol resolution:** keep the fallback
+   only when the file shows *no* concatenation evidence. That removes the false
+   *safe* label (the `search` example becomes `unknown`) while keeping the
+   constant-mediated case correct, and needs nothing WI-8 has not already built.
+2. **Replace `any()` with a per-statement judgement**, so one safe statement among
+   several cannot certify the others.
+3. **Consult concatenation evidence** for the same statement, yielding `mixed`.
+
+The governing rule, which is what makes the result sound: **weak evidence may
+downgrade a posture, never upgrade it.** File-level evidence can move a call to
+`mixed` or `raw`; only a statement identified at the call site can establish
+`parameterised`.
+
+`taint_writers._PARAM_POSTURE` gains `mixed` and must not fold it into
+`parameterised`; `SCHEMA.md`'s tri-state description is replaced by the table
+above.
+
+**Red tests** — `tests/test_sql_sink_evidence.py`
+
+* `test_unrelated_safe_constant_does_not_certify_a_built_statement` — the OI-10
+  symptom: a file with one safe constant and one concatenated statement, where the
+  call executes the latter. Posture must not be `parameterised`.
+* `test_concatenated_and_parameterised_is_mixed` — `"… ref = '" + ref + "' AND id = ?"`.
+* `test_mixed_posture_does_not_depend_on_operand_order` — the same statement with
+  the operands reversed. Today's result is right by luck: the literal fragments
+  split around the concatenation so the placeholder falls outside the matched
+  fragment. Reversing it flips the answer.
+* `test_unresolvable_statement_is_unknown_not_parameterised`.
+* `test_placeholder_query_is_still_parameterised` — the recall guard.
+* `test_mixed_is_not_counted_as_parameterised_in_the_catalogue` — the writer half,
+  mirroring the `unknown` test added for OI-7.
+
+**Mutants** — `mixed` collapsed to `parameterised`; the file-level fallback
+restored; `any()` restored in place of the per-statement judgement; concatenation
+evidence ignored. Each maps to one of the tests above.
 
 ### WI-9 — `sql-payload-out` family (OI-9, P2)
 
@@ -926,14 +992,15 @@ Per release:
 | WI-7 | ~0.5 d | ~0.5 d + ~0.5 d baseline review | 1.5 d |
 | WI-1 + WI-2 | ~0.5 d | ~0.5 d | 1 d |
 | WI-8 | ~0.5 d | ~0.5 d | 1 d |
+| WI-8b (OI-10 posture) | ~0.25 d | ~0.25 d | 0.5 d |
 | WI-3 | ~0.5 d | ~0.5 d | 1 d |
 | WI-4 | ~0.5 d | ~0.5 d | 1 d |
 | Mutation harness | — | ~0.5 d | 0.5 d |
 | WI-9 | ~0.5 d | ~1.5 d (mostly family plumbing) | 2 d |
 | WI-5 | ~1 d | ~1.5 d | 2.5 d |
 
-WI-7, WI-1+2, WI-8, WI-3, WI-4 plus the harness is ~6 days and closes every
-defect — both the wrong-output ones and the missed-detection ones. WI-9 and WI-5
+WI-7, WI-1+2, WI-8, WI-8b, WI-3, WI-4 plus the harness is ~6.5 days and closes
+every defect — both the wrong-output ones and the missed-detection ones. WI-9 and WI-5
 are capability additions and can ship separately as 1.3.0 without weakening the
 rest.
 
