@@ -77,12 +77,62 @@ SQL_PLACEHOLDER_RX = re.compile(r"\?|:[A-Za-z_]\w{0,63}|%\(?[a-z_]*\)?s|\$\d{1,3
 # Split an identifier into lowercase word tokens across camelCase and snake_case.
 _IDENT_TOKEN_RX = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+")
 
-SQL_SOURCE_RX = [
-    (re.compile(r'["\'][^"\']*(?:SELECT|INSERT|UPDATE|DELETE)\b[^"\']*["\']\s*\+'), "concatenated"),
-    (re.compile(r"\+\s*['\"][^'\"]*(?:SELECT|INSERT|UPDATE|DELETE)"), "concatenated"),
-    (re.compile(r'f["\'][^"\']*(?:SELECT|INSERT|UPDATE|DELETE)'), "python-fstring"),
-    (re.compile(r"\$\{[^}]+\}.*(?:SELECT|INSERT|UPDATE|DELETE)", re.I), "template"),
-]
+_SQL_KW = r"(?:SELECT|INSERT|UPDATE|DELETE)"
+_MAX_SQL_LITERAL = 400
+# Markers that a literal is being interpolated rather than used verbatim:
+# Kotlin/JS `${expr}` and `$ident`, printf `%s`/`%(name)s`, and `{}`/`{name}`.
+_INTERPOLATION = (
+    r"(?:\$\{[^}\n]{1,120}\}"
+    r"|\$[A-Za-z_]\w{0,63}"
+    r"|%\(?[A-Za-z_]{0,63}\)?[sd]"
+    r"|\{[A-Za-z_0-9]{0,63}\})"
+)
+
+
+def _sql_literal(quote: str) -> str:
+    """A quoted literal containing a SQL keyword, bounded on both sides.
+
+    The body excludes only the delimiter *in use*. 1.1.0 excluded both quote
+    characters, so a double-quoted literal containing an apostrophe could not be
+    spanned — and `"… WHERE ref = '" + ref + "'"` is precisely how a
+    string-built query with a quoted parameter looks, which is the shape the
+    pattern most needed to catch (OI-8).
+    """
+    body = rf"[^{quote}\n]{{0,{_MAX_SQL_LITERAL}}}"
+    return rf"{quote}{body}?\b{_SQL_KW}\b{body}"
+
+
+def _sql_source_patterns() -> list[tuple[re.Pattern[str], str]]:
+    """Build the dynamic-SQL patterns for each quote style.
+
+    Generated per delimiter so the bounded literal body is defined once rather
+    than repeated (and mis-repeated) across a dozen literal regexes.
+    """
+    out: list[tuple[re.Pattern[str], str]] = []
+    for q in ('"', "'"):
+        lit = _sql_literal(q)
+        body = rf"[^{q}\n]{{0,{_MAX_SQL_LITERAL}}}"
+        out += [
+            # "SELECT …" + x   /   x + "SELECT …"
+            (re.compile(rf"{lit}{q}\s*\+"), "concatenated"),
+            (re.compile(rf"\+\s*{lit}"), "concatenated"),
+            (re.compile(rf"f{lit}"), "python-fstring"),
+            # String.format("SELECT …", x) / MessageFormat.format(…)
+            (re.compile(rf"(?:String|MessageFormat)\.format\s*\(\s*{lit}"), "format-call"),
+            # "SELECT …".formatted(x) / "SELECT …".format(x)
+            (re.compile(rf"{lit}{q}\s*\.\s*format(?:ted)?\s*\("), "format-call"),
+            # "SELECT …" % x
+            (re.compile(rf"{lit}{q}\s*%\s*[(A-Za-z_]"), "format-percent"),
+            # A keyword and an interpolation inside one literal, in either order.
+            # 1.1.0 required the interpolation first, so `"SELECT … ${id}"` — the
+            # way templates are actually written — never matched.
+            (re.compile(rf"{q}{body}?\b{_SQL_KW}\b{body}?{_INTERPOLATION}"), "template"),
+            (re.compile(rf"{q}{body}?{_INTERPOLATION}{body}?\b{_SQL_KW}\b"), "template"),
+        ]
+    return out
+
+
+SQL_SOURCE_RX = _sql_source_patterns()
 
 def receiver_is_database(receiver: str | None) -> bool:
     """True when a call's receiver names a database handle rather than any object.

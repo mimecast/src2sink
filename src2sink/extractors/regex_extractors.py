@@ -116,16 +116,30 @@ def extract_http_inbound(ctx: FileExtractionContext) -> None:
 
 
 def extract_sql_string_sources(ctx: FileExtractionContext) -> None:
-    """Emit sql source nodes for string-concatenated query patterns.
+    """Emit sql source nodes for dynamically constructed query strings.
+
+    Covers concatenation, format calls (`String.format`, `.formatted`, `%`,
+    `.format`), f-strings and template interpolation.
+
+    At most one node per line: the patterns deliberately overlap — a
+    keyword-bearing literal that is both preceded and followed by `+`, or a
+    format call whose literal also contains `%s`, matches several — and emitting
+    a node each would make one constructed statement look like a cluster of
+    findings.
 
     Scans untrusted source text; matches are only recorded, never evaluated.
     """
+    seen_lines: set[int] = set()
     for pat, kind in SQL_SOURCE_RX:
         for m in pat.finditer(ctx.source):
+            line = ctx.line_number(m.start())
+            if line in seen_lines:
+                continue
+            seen_lines.add(line)
             ctx.nodes.append(make_node(
                 repo=ctx.repo_id,
                 file=ctx.rel_path,
-                line=ctx.line_number(m.start()),
+                line=line,
                 language=ctx.language,
                 kind="source",
                 family="sql",

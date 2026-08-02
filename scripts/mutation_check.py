@@ -126,6 +126,56 @@ CATALOGUE: tuple[Mutant, ...] = (
         selector="tests/test_sql_sink_evidence.py",
         note="JDBC `?` placeholder dropped — a parameterised query reads as raw.",
     ),
+    # --- OI-8: SQL assembled by formatting must be detected -----------------
+    Mutant(
+        id="OI8-M1",
+        file="src2sink/extractors/patterns.py",
+        old=r'    body = rf"[^{quote}\n]{{0,{_MAX_SQL_LITERAL}}}"',
+        new='    body = rf"[^\\"\'\\n]{{0,{_MAX_SQL_LITERAL}}}"',
+        selector="tests/test_sql_source_construction.py",
+        note=(
+            "Literal body excludes both quote characters again, so "
+            "`\"… ref = '\" + ref` — the canonical injection shape — stops matching."
+        ),
+    ),
+    Mutant(
+        id="OI8-M2",
+        file="src2sink/extractors/patterns.py",
+        old='            (re.compile(rf"(?:String|MessageFormat)\\.format\\s*\\(\\s*{lit}"), "format-call"),\n',
+        new="",
+        selector="tests/test_sql_source_construction.py",
+        note="`String.format`/`MessageFormat.format` coverage removed.",
+    ),
+    Mutant(
+        id="OI8-M3",
+        file="src2sink/extractors/patterns.py",
+        old='            (re.compile(rf"{q}{body}?\\b{_SQL_KW}\\b{body}?{_INTERPOLATION}"), "template"),\n',
+        new="",
+        selector="tests/test_sql_source_construction.py",
+        note=(
+            "Keyword-then-interpolation dropped, reinstating 1.1.0's requirement "
+            "that the interpolation precede the SQL keyword."
+        ),
+    ),
+    Mutant(
+        id="OI8-M4",
+        file="src2sink/extractors/patterns.py",
+        old='            (re.compile(rf"(?:String|MessageFormat)\\.format\\s*\\(\\s*{lit}"), "format-call"),',
+        new='            (re.compile(rf"(?:String|MessageFormat)\\.format\\s*\\(\\s*"), "format-call"),',
+        selector="tests/test_sql_source_construction.py",
+        note="Any format call treated as SQL — the format string need not carry a keyword.",
+    ),
+    Mutant(
+        id="OI8-M5",
+        file="src2sink/extractors/regex_extractors.py",
+        old="            if line in seen_lines:\n                continue\n            seen_lines.add(line)\n",
+        new="",
+        selector="tests/test_sql_source_construction.py",
+        note=(
+            "Per-line de-duplication removed — overlapping patterns inflate one "
+            "constructed statement into a cluster of findings."
+        ),
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",
