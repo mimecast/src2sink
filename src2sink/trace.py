@@ -26,7 +26,7 @@ from .graph_common import (
     iter_nodes,
     load_v2_repo_records,
     normalize_path_template,
-    path_templates_match,
+    path_filter_matches,
     repo_id,
     repo_name_aliases,
     store_key_from_node,
@@ -69,10 +69,15 @@ def _target_record(
 
 
 def _path_matches(candidate: str, path_filter: str | None, want: str | None) -> bool:
-    """True if a candidate path satisfies the (optional) path filter."""
+    """True if a candidate path satisfies the (optional) path filter.
+
+    Uses the *filter* predicate, not the routing one: `--path /v1` means "show me
+    everything under /v1", which `path_templates_match` deliberately no longer
+    answers (OI-1 / finding F2).
+    """
     if not want:
         return True
-    if path_templates_match(candidate, path_filter or "") is not None:
+    if path_filter_matches(candidate, path_filter):
         return True
     return normalize_path_template(candidate) == want
 
@@ -154,7 +159,7 @@ def _find_upstream_from_graph(
         if edge.target_repo != target:
             continue
         if want and edge.target_path != "*":
-            if path_templates_match(edge.target_path, path_filter or "") is None:
+            if not path_filter_matches(edge.target_path, path_filter):
                 if normalize_path_template(edge.target_path) != want:
                     continue
         hits.append(UpstreamHit(
@@ -171,7 +176,7 @@ def _path_hits_target(paths: list[str], path_filter: str | None, path_terms: set
     """True if any extracted path matches the path filter or a known target path term."""
     for p in paths:
         if path_filter:
-            if path_templates_match(p, path_filter) or p in path_terms:
+            if path_filter_matches(p, path_filter) or p in path_terms:
                 return True
         elif path_terms and any(
             p.rstrip("/").endswith(pt.split("{")[0].rstrip("/")) for pt in path_terms
@@ -365,7 +370,7 @@ def _merge_producer_indices(
             continue
         for phit in index.hits:
             if path_filter and phit.path not in ("*", "") and path_filter not in phit.path:
-                if path_templates_match(phit.path, path_filter) is None:
+                if not path_filter_matches(phit.path, path_filter):
                     continue
             key = (phit.source_repo, f"producer-index:{phit.kind}")
             if key not in upstream:

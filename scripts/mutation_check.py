@@ -126,6 +126,92 @@ CATALOGUE: tuple[Mutant, ...] = (
         selector="tests/test_sql_sink_evidence.py",
         note="JDBC `?` placeholder dropped — a parameterised query reads as raw.",
     ),
+    # --- OI-1 / OI-1 companion: version prefixes are not route names --------
+    Mutant(
+        id="OI1-M1",
+        file="src2sink/graph_common.py",
+        old="        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS",
+        new="        if s",
+        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py",
+        note="Significance filtering removed — `/v1` becomes a destination again.",
+    ),
+    Mutant(
+        id="OI1-M2",
+        file="src2sink/graph_common.py",
+        old="        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS",
+        new="        if s and not _VERSION_SEGMENT_RX.match(s)",
+        selector="tests/test_graph_common.py",
+        note="Generic segments (`/api`, `/service`) treated as route names again.",
+    ),
+    Mutant(
+        id="OI1-M3",
+        file="src2sink/graph_common.py",
+        old="    if not op or not ip:\n        return None\n    if op == ip:\n        return \"medium\"",
+        new="    if not op or not ip:\n        return \"low\"\n    if op == ip:\n        return \"medium\"",
+        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py",
+        note="A side with no significant segment matches weakly instead of not at all.",
+    ),
+    Mutant(
+        id="OI1-M4",
+        file="src2sink/graph_common.py",
+        old="    if op == ip:\n        return \"medium\"",
+        new="    if op == ip:\n        return \"high\"",
+        selector="tests/test_graph_common.py",
+        note=(
+            "Version-stripped equality promoted to `high` — two services may "
+            "legitimately version differently and both expose `/stock`, and these "
+            "edges carry no host to disambiguate."
+        ),
+    ),
+    Mutant(
+        id="OI1-M5",
+        file="src2sink/graph_common.py",
+        old="    if longer[: len(shorter)] == shorter:\n        # One is a child route of the other: /stock/dispatch against /stock.\n        return \"medium\"",
+        new="    if longer[: len(shorter)] == shorter:\n        return None",
+        selector="tests/test_graph_common.py",
+        note=(
+            "Child-route (prefix) matching deleted — the regression the issue "
+            "document's own proposed implementation would have introduced."
+        ),
+    ),
+    Mutant(
+        id="OI1-M6",
+        file="src2sink/graph_common.py",
+        old="        # common segment may name a sub-resource that many services expose.\n        return \"low\"",
+        new="        return \"medium\"",
+        selector="tests/test_graph_common.py",
+        note="Tail-only overlap promoted to `medium`, level with a real route match.",
+    ),
+    Mutant(
+        id="OI1-M7",
+        file="src2sink/graph_common.py",
+        old="    if not path_filter:\n        return True\n    c = normalize_path_template(candidate)",
+        new="    if not path_filter:\n        return True\n    return path_templates_match(candidate, path_filter) is not None\n    c = normalize_path_template(candidate)",
+        selector="tests/test_graph_common.py tests/test_trace_render.py",
+        note=(
+            "`--path` filtering delegated back to the routing predicate, silently "
+            "emptying `trace --path /v1` (finding F2)."
+        ),
+    ),
+    Mutant(
+        id="OI2-M2",
+        file="src2sink/graph_common.py",
+        old="                -abs(len(cand_sig) - len(query_sig)),",
+        new="                0,",
+        selector="tests/test_graph_common.py",
+        note=(
+            "Specificity dropped entirely — the query then reaches parent and "
+            "child routes of itself as readily as the route it names."
+        ),
+    ),
+    Mutant(
+        id="OI2-M3",
+        file="src2sink/graph_common.py",
+        old="                sorted(row for _label, rows in winners for row in rows),",
+        new="                [row for _label, rows in winners for row in rows],",
+        selector="tests/test_graph_common.py",
+        note="Deterministic ordering removed — output depends on index build order.",
+    ),
     Mutant(
         id="OI7-M7",
         file="src2sink/aggregators/taint_writers.py",

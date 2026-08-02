@@ -84,22 +84,86 @@ def normalize_path_template(path: str) -> str:
     return p.rstrip("/") or "/"
 
 
+_VERSION_SEGMENT_RX = re.compile(r"^v\d+$", re.I)
+_GENERIC_SEGMENTS = frozenset({"api", "rest", "internal", "public", "service", "services"})
+
+
+def _significant_segments(path: str) -> list[str]:
+    """Return the segments of a normalised path that actually name a destination.
+
+    `/v1` and `/api` are not destinations — they say which edition of an API you
+    are addressing, not what you are addressing. Dropping them is what stops a
+    repo exposing a bare `/v1` from matching every `/v1/...` path in the fleet.
+    """
+    return [
+        s for s in path.split("/")
+        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS
+    ]
+
+
 def path_templates_match(outbound: str, inbound: str) -> str | None:
-    """Return confidence label if templates align, else None."""
+    """Return a confidence label if two route templates denote the same endpoint.
+
+    Confidence reflects how much *meaning* matched, not which structural rule
+    fired. 1.1.0 graded by rule — any prefix relation scored `medium` and any
+    suffix relation `low` — so a bare `/v1` route beat the service that actually
+    exposed `/stock`, and `match_path_in_inbound_index` then discarded the correct
+    candidate rather than ranking it second (OI-1).
+
+    The relation is symmetric: a caller hitting a child route and a service
+    declaring the parent are the same evidence whichever way round they arrive.
+
+    This is a *routing* predicate. For "show me everything under this prefix",
+    which is a different question, use :func:`path_filter_matches`.
+    """
     o = normalize_path_template(outbound)
     i = normalize_path_template(inbound)
     if not o or not i:
         return None
     if o == i:
         return "high"
-    if o.startswith(i + "/") or i.startswith(o + "/"):
+
+    op = _significant_segments(o)
+    ip = _significant_segments(i)
+    # A side that reduces to nothing names a version or a layer, not a route.
+    if not op or not ip:
+        return None
+    if op == ip:
         return "medium"
-    # segment overlap: /api/v1/queries vs /queries
-    o_parts = [s for s in o.split("/") if s]
-    i_parts = [s for s in i.split("/") if s]
-    if len(o_parts) >= 2 and len(i_parts) >= 1 and o_parts[-len(i_parts):] == i_parts:
+
+    shorter, longer = (op, ip) if len(op) < len(ip) else (ip, op)
+    if longer[: len(shorter)] == shorter:
+        # One is a child route of the other: /stock/dispatch against /stock.
+        return "medium"
+    if longer[-len(shorter):] == shorter:
+        # Only the tail is shared: /orders/{}/lines against /lines. Weak — the
+        # common segment may name a sub-resource that many services expose.
         return "low"
     return None
+
+
+def path_filter_matches(candidate: str, path_filter: str | None) -> bool:
+    """True if ``candidate`` satisfies a user-supplied ``--path`` filter.
+
+    Filtering and routing ask different questions. "Show me everything under
+    `/v1`" is a legitimate filter, while `/v1` denotes no endpoint for routing
+    purposes, so :func:`path_templates_match` returns None for it. Keeping one
+    predicate for both would have silently emptied `trace --path /v1` when OI-1
+    was fixed; this preserves the looser, prefix-tolerant behaviour filters need.
+    """
+    if not path_filter:
+        return True
+    c = normalize_path_template(candidate)
+    f = normalize_path_template(path_filter)
+    if not c or not f:
+        return False
+    if c == f:
+        return True
+    if c.startswith(f + "/") or f.startswith(c + "/"):
+        return True
+    c_parts = [s for s in c.split("/") if s]
+    f_parts = [s for s in f.split("/") if s]
+    return len(c_parts) >= 2 and len(f_parts) >= 1 and c_parts[-len(f_parts):] == f_parts
 
 
 def extract_urls_and_paths(raw: str) -> tuple[list[str], list[str]]:
@@ -192,10 +256,16 @@ def match_path_in_inbound_index(
     """Match outbound path to indexed inbound rows; returns (rows, confidence).
 
     An exact normalised-template hit wins outright. Otherwise every indexed route
-    is scored and the **best-confidence** group is returned: the previous version
-    returned the first fuzzy match in dict-iteration order, so an incidental
-    single-segment overlap with an unrelated repo could win over the correct
-    prefix match and the edge pointed at the wrong service.
+    is scored and the best group is returned, ranked first by confidence and then
+    by **specificity** — a route whose significant segments equal the query's beats
+    one that merely contains them, so `/v1/stock/dispatch` resolves to the service
+    declaring `/stock/dispatch` rather than also reaching the one declaring
+    `/stock`. Only candidates tying on both are returned together, and they are
+    ordered deterministically so the output does not depend on how the index was
+    built.
+
+    1.1.0 ranked by confidence alone, which resolved equal-confidence ties
+    arbitrarily; before that it took the first fuzzy match in dict-iteration order.
 
     ``memo`` optionally caches results by normalised path across calls sharing one
     ``inbound`` index — the fuzzy pass is O(routes), so memoising matters once
@@ -211,8 +281,9 @@ def match_path_in_inbound_index(
     if targets:
         result: tuple[list[tuple[Any, ...]], str] = (list(targets), "high")
     else:
-        best_conf: str | None = None
-        best_rows: list[tuple[Any, ...]] = []
+        query_sig = _significant_segments(norm)
+        # (confidence rank, specificity) -> the label and rows scoring it.
+        scored: list[tuple[tuple[int, int], str, list[tuple[Any, ...]]]] = []
         for _in_norm, rows in inbound.items():
             if not rows:
                 continue
@@ -221,11 +292,26 @@ def match_path_in_inbound_index(
             matched = path_templates_match(path, str(candidate))
             if not matched:
                 continue
-            if best_conf is None or _MATCH_CONF_RANK[matched] > _MATCH_CONF_RANK[best_conf]:
-                best_conf, best_rows = matched, list(rows)
-            elif matched == best_conf:
-                best_rows.extend(rows)
-        result = (best_rows, best_conf or "high")
+            cand_sig = _significant_segments(normalize_path_template(str(candidate)))
+            score = (
+                _MATCH_CONF_RANK[matched],
+                # Prefer the nearest relative. Distance 0 means the same
+                # significant route, which is why no separate equality term is
+                # needed: two lists that match by prefix or suffix and have the
+                # same length are necessarily equal.
+                -abs(len(cand_sig) - len(query_sig)),
+            )
+            scored.append((score, matched, rows))
+
+        if scored:
+            best = max(score for score, _label, _rows in scored)
+            winners = [(label, rows) for score, label, rows in scored if score == best]
+            result = (
+                sorted(row for _label, rows in winners for row in rows),
+                winners[0][0],
+            )
+        else:
+            result = ([], "high")
 
     if memo is not None:
         memo[norm] = result
