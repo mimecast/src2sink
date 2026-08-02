@@ -117,6 +117,15 @@ func Load(ref string) {
 """
 
 
+JAVA_JDBC_TEMPLATE_NO_FILE_EVIDENCE = """
+public class StockDao {
+    List<Stock> findDynamic(String clause) {
+        return jdbcTemplate.query(clause, mapper);
+    }
+}
+"""
+
+
 def test_jdbc_template_query_is_still_a_sql_sink() -> None:
     """The receiver vocabulary must keep real JDBC execution — the recall guard."""
     sinks = _sql_sinks(_nodes(JAVA_JDBC_TEMPLATE))
@@ -125,9 +134,71 @@ def test_jdbc_template_query_is_still_a_sql_sink() -> None:
     assert sinks[0].confidence == "high"
 
 
+def test_receiver_alone_admits_a_call_with_no_other_evidence() -> None:
+    """A database receiver is sufficient on its own — no SQL literal, no import.
+
+    Isolating the receiver signal matters: the fixture above also carries a SQL
+    literal, so it stays green even if receiver matching breaks entirely. A
+    mutation run caught exactly that (catalogue `OI7-M4`) — the recall guard was
+    passing for the wrong reason.
+    """
+    source = JAVA_JDBC_TEMPLATE_NO_FILE_EVIDENCE
+    assert "SELECT" not in source and "import" not in source, "fixture must isolate the receiver"
+    sinks = _sql_sinks(_nodes(source))
+    assert len(sinks) == 1
+    assert sinks[0].detail["receiver"] == "jdbcTemplate"
+
+
+JAVA_PREFIXED_RECEIVER = """
+public class StockDao {
+    Stock load(long id) {
+        return readOnlyEntityManager.find(Stock.class, id);
+    }
+}
+"""
+
+JAVA_REST_TEMPLATE = """
+public class StockClient {
+    Stock fetch(String ref) {
+        return restTemplate.get(ref, Stock.class);
+    }
+}
+"""
+
+
 def test_qualified_receiver_is_matched_on_its_trailing_identifier() -> None:
     """`this.stockRepository.query(...)` is a database receiver despite the qualifier."""
     assert _sql_sinks(_nodes(JAVA_FIELD_ACCESS_RECEIVER))
+
+
+def test_prefixed_receiver_is_matched_on_its_token_pairs() -> None:
+    """`readOnlyEntityManager` is an EntityManager — a read-replica handle is common.
+
+    Whole-identifier and single-token matching both miss it (`entity` and `manager`
+    are not vocabulary entries alone); only the adjacent-pair check resolves it.
+
+    The fixture is chosen so that *no other signal* can carry the test: the call
+    text matches no library hint, and the file has no SQL literal or import. An
+    earlier version used `readOnlyJdbcTemplate`, which passes via the
+    `JdbcTemplate` hint and so never exercised the pair branch at all — mutation
+    catalogue `OI7-M4` is what exposed that.
+    """
+    from src2sink.extractors.patterns import SQL_EXECUTION_CALL_HINTS
+
+    assert not any(hint in JAVA_PREFIXED_RECEIVER for hint in SQL_EXECUTION_CALL_HINTS), (
+        "fixture must isolate the receiver signal — no call-text hint may match"
+    )
+    assert _sql_sinks(_nodes(JAVA_PREFIXED_RECEIVER))
+
+
+def test_rest_template_is_not_a_database_receiver() -> None:
+    """The negative that token-pair matching must preserve.
+
+    `restTemplate` splits to rest+template exactly as `jdbcTemplate` splits to
+    jdbc+template; the pair check must accept one and reject the other, which is
+    why matching is on pairs rather than on the `template` token alone.
+    """
+    assert _sql_sinks(_nodes(JAVA_REST_TEMPLATE)) == []
 
 
 def test_python_cursor_execute_is_a_sql_sink() -> None:
@@ -224,3 +295,29 @@ def test_parameterised_is_true_for_a_placeholder_query() -> None:
     """A `?` placeholder in a SQL literal in scope is a genuine parameterised call."""
     sinks = _sql_sinks(_nodes(JAVA_JDBC_TEMPLATE))
     assert sinks[0].detail["parameterised"] is True
+
+
+def test_unknown_parameterisation_is_not_reported_as_parameterised(tmp_path) -> None:
+    """The catalogue must not file `unknown` under the safe-looking posture.
+
+    Downstream half of the same defect: a truthiness test on the tri-state counts
+    "we could not tell" as "parameterised", which is the claim the tri-state exists
+    to stop making. Caught by catalogue mutant `OI7-M7`.
+    """
+    from src2sink.aggregators.taint_buckets import TaintCatalogueBuckets
+    from src2sink.aggregators.taint_writers import write_sql_catalogues
+
+    buckets = TaintCatalogueBuckets(
+        sql_sinks=[
+            {
+                "repo": "test/sample",
+                "file": "src/Sample.java",
+                "line": 4,
+                "detail": {"symbol": "execute", "parameterised": "unknown"},
+            },
+        ],
+    )
+    write_sql_catalogues(tmp_path, buckets)
+    md = (tmp_path / "sql-execution-sinks.md").read_text(encoding="utf-8")
+    assert "unknown" in md
+    assert "parameterised" not in md
