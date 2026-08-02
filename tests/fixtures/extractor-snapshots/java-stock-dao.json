@@ -1,0 +1,88 @@
+{
+  "edge_count": 0,
+  "families": [
+    "data-class-field",
+    "sql"
+  ],
+  "node_count": 5,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 27,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "execution": true,
+        "parameterised": false,
+        "raw": "jdbcTemplate.query(byReference(ref), mapper)",
+        "receiver": "jdbcTemplate",
+        "symbol": "query"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 27,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "pattern": "format-call",
+        "snippet": "String.format(\"SELECT * FROM stock WHERE ref = '%s'",
+        "subkind": "string-concat"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 19,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "pattern": "concatenated",
+        "snippet": "\"SELECT * FROM stock WHERE location = '\" +",
+        "subkind": "string-concat"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 23,
+      "pii_classification": null
+    }
+  ]
+}

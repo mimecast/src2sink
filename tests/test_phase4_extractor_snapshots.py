@@ -93,6 +93,15 @@ def _assert_snapshot(name: str, actual: dict) -> None:
             "java",
             SYN / "fulfilment/stock-proxy/src/StockForwarder.java",
         ),
+        # OI-8: SQL built by String.format and by concatenation containing an
+        # embedded quote. Both produced no node at all before the rewrite.
+        (
+            "java-stock-dao",
+            "fulfilment/stock-dao",
+            "src/StockQueryBuilder.java",
+            "java",
+            SYN / "fulfilment/stock-dao/src/StockQueryBuilder.java",
+        ),
     ],
 )
 def test_extractor_file_snapshot(
