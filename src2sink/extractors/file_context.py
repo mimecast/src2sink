@@ -20,6 +20,9 @@ class FileExtractionContext:
     # Cross-pass links for raw-code-payload (endpoint + sql field + execution sink).
     http_sources: list[FlowNode] = field(default_factory=list)
     sql_execution_sinks: list[FlowNode] = field(default_factory=list)
+    # Outbound calls, for correlating a SQL payload bound into the request body
+    # with the request that carries it (sql-payload-out).
+    http_out_sinks: list[FlowNode] = field(default_factory=list)
     raw_sql_field_lines: list[int] = field(default_factory=list)
 
     def line_number(self, pos: int) -> int:

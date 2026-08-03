@@ -21,6 +21,9 @@ class TaintCatalogueBuckets:
     pii_sinks: list[dict[str, Any]] = field(default_factory=list)
     crypto_ops: list[dict[str, Any]] = field(default_factory=list)
     raw_payload: list[dict[str, Any]] = field(default_factory=list)
+    # Outbound requests carrying SQL — the dual of raw_payload, which is
+    # inbound (OI-9).
+    sql_payload_out: list[dict[str, Any]] = field(default_factory=list)
     config_stores: list[dict[str, Any]] = field(default_factory=list)
     config_security: list[dict[str, Any]] = field(default_factory=list)
     crypto_config: list[dict[str, Any]] = field(default_factory=list)
@@ -48,6 +51,7 @@ _SIMPLE_FAMILY_BUCKET = {
     "data-class-field": "data_class_fields",
     "crypto-algorithm": "crypto_ops",
     "raw-code-payload": "raw_payload",
+    "sql-payload-out": "sql_payload_out",
     "config-security": "config_security",
     "crypto-config": "crypto_config",
 }

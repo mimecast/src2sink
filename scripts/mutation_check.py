@@ -225,6 +225,59 @@ CATALOGUE: tuple[Mutant, ...] = (
             "parameterised."
         ),
     ),
+    # --- OI-9: the outbound end of a SQL hop --------------------------------
+    Mutant(
+        id="OI9-M1",
+        file="src2sink/extractors/ts_extractors.py",
+        old="    if not ctx.http_out_sinks:\n        return\n",
+        new="",
+        selector="tests/test_sql_payload_out.py",
+        note=(
+            "The outbound-call precondition removed, so every data class "
+            "declaring a `sql` field becomes a sink — the DTO-flooding mistake."
+        ),
+    ),
+    Mutant(
+        id="OI9-M2",
+        file="src2sink/extractors/patterns.py",
+        old='        rf"\\.\\s*set({alt})\\s*\\("        # body.setSql(x)\n',
+        new="",
+        selector="tests/test_sql_payload_out.py",
+        note="Setter binding dropped — `body.setSql(x)` stops being recognised.",
+    ),
+    Mutant(
+        id="OI9-M3",
+        file="src2sink/extractors/patterns.py",
+        old='    declared = frozenset(f for b in get_bindings() for f in b.payload_fields if f)',
+        new="    declared = frozenset()",
+        selector="tests/test_sql_payload_out.py",
+        note=(
+            "Binding-declared payload fields ignored, so a service declaring "
+            "`payload_fields: [\"dql\"]` is neither recognised nor rated high."
+        ),
+    ),
+    Mutant(
+        id="OI9-M4",
+        file="src2sink/extractors/ts_extractors.py",
+        old='            confidence="high" if by_binding else "medium",',
+        new='            confidence="high",',
+        selector="tests/test_sql_payload_out.py",
+        note=(
+            "A generic vocabulary guess rated as highly as a binding "
+            "declaration — claiming more than the evidence carries."
+        ),
+    ),
+    Mutant(
+        id="OI9-M5",
+        file="src2sink/aggregators/taint_buckets.py",
+        old='    "sql-payload-out": "sql_payload_out",\n',
+        new="",
+        selector="tests/test_sql_payload_out.py",
+        note=(
+            "Family not routed to a bucket: it exists in the per-repo JSON and "
+            "nowhere a reviewer looks — the half-finished-plumbing case."
+        ),
+    ),
     # --- OI-2: a custom HTTP wrapper must not be invisible ------------------
     Mutant(
         id="OI2b-M1",

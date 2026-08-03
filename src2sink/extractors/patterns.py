@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 from .symbols import build_symbol_table, iter_concatenated_symbols
 
@@ -170,6 +171,57 @@ def file_has_sql_evidence(source: str) -> bool:
     from an HTTP proxy with a ``sql`` field and no SQL in it.
     """
     return bool(SQL_LITERAL_RX.search(source) or SQL_DB_IMPORT_RX.search(source))
+
+
+def payload_field_names() -> tuple[frozenset[str], frozenset[str]]:
+    """Return (vocabulary fields, binding-declared fields) for outbound payloads.
+
+    The strict vocabulary is a generic guess; a binding's ``payload_fields`` is a
+    *declaration* that this particular service treats that field as executable
+    input, which is why the two are kept apart — the second earns higher
+    confidence than the first.
+    """
+    from ..known_api_clients import get_bindings
+    from ..vocabulary import RAW_SQL_PAYLOAD_FIELD_NAMES
+
+    declared = frozenset(f for b in get_bindings() for f in b.payload_fields if f)
+    return frozenset(RAW_SQL_PAYLOAD_FIELD_NAMES), declared
+
+
+def iter_bound_payload_fields(source: str) -> Iterator[tuple[int, str, bool]]:
+    """Yield ``(offset, field_name, declared_by_binding)`` for payload fields being set.
+
+    The existing field passes recognise *declarations* (``private String sql;``),
+    so ``body.setSql(sqlText)`` contributed nothing at all (OI-9). A payload is
+    populated at the call site, in one of four shapes::
+
+        body.setSql(x)    builder().sql(x)    body.sql = x    {"sql": x}
+
+    Matching the binding-declared names separately is what lets a service that
+    declares ``payload_fields: ["dql"]`` be recognised without widening the
+    vocabulary for every other repo in the fleet.
+    """
+    vocabulary, declared = payload_field_names()
+    names = vocabulary | declared
+    if not names:
+        return
+    alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+    rx = re.compile(
+        rf"\.\s*set({alt})\s*\("        # body.setSql(x)
+        rf"|\.\s*({alt})\s*\("          # builder().sql(x)
+        rf"|\.\s*({alt})\s*="           # body.sql = x
+        rf"|[\"']({alt})[\"']\s*:",     # {"sql": x}
+        re.IGNORECASE,
+    )
+    # `setSql` carries the field as `Sql`, so matching is case-insensitive and the
+    # canonical spelling is reported — otherwise the same field appears under two
+    # names depending on how it happened to be bound.
+    canonical = {n.lower(): n for n in names}
+    declared_lower = {d.lower() for d in declared}
+    for m in rx.finditer(source):
+        matched = next(g for g in m.groups() if g is not None)
+        lowered = matched.lower()
+        yield m.start(), canonical.get(lowered, matched), lowered in declared_lower
 
 
 def sql_symbol_table(source: str) -> dict[str, str]:

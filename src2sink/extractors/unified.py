@@ -18,7 +18,11 @@ from .regex_extractors import (
     extract_raw_sql_field_markers,
     extract_sql_string_sources,
 )
-from .ts_extractors import extract_tree_sitter_calls, link_raw_code_payload_endpoints
+from .ts_extractors import (
+    extract_tree_sitter_calls,
+    link_raw_code_payload_endpoints,
+    link_sql_payload_out,
+)
 from ..schema import FlowEdge, FlowNode
 
 
@@ -62,5 +66,6 @@ def extract_from_file(
     # AST pass + correlate endpoints that accept SQL-shaped fields.
     extract_tree_sitter_calls(ctx)
     link_raw_code_payload_endpoints(ctx)
+    link_sql_payload_out(ctx)
 
     return ctx.nodes, ctx.edges
