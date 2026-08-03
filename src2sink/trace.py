@@ -39,6 +39,13 @@ from .sanitize import UNTRUSTED_CONTENT_NOTICE, redact_literals
 
 @dataclass
 class UpstreamHit:
+    """One repo found calling the trace target, and why we believe it does.
+
+    ``kind`` names the evidence path (graph edge, raw source literal, producer
+    index) and ``ref`` locates it, so a reader can check the claim rather than
+    take it.
+    """
+
     source_repo: str
     kind: str
     confidence: str
@@ -48,6 +55,12 @@ class UpstreamHit:
 
 @dataclass
 class TraceReport:
+    """Everything a trace found for one target service, ready to render.
+
+    Facts about the target itself (inbound endpoints, raw payloads, SQL sinks,
+    data stores) plus the upstream callers that reach it.
+    """
+
     target_repo: str
     path_filter: str | None
     inbound: list[dict[str, Any]] = field(default_factory=list)

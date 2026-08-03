@@ -53,8 +53,13 @@ def for_table_cell(value: object) -> str:
 # extracted around a match can incidentally capture a literal value (a sample
 # SSN/email/card in a test fixture). We mask value-shaped tokens while leaving
 # code structure (SQL keywords, symbol names, short numbers/dates) intact.
-_EMAIL_RX = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-_DIGIT_RUN_RX = re.compile(r"\d[\d\s.\-]{7,}\d")
+# Every run is length-bounded (RFC 5321: 64-char local part, 255-char domain).
+# Unbounded `+` runs either side of the `@` made this quadratic on hostile input —
+# 20k characters of `aaa…@bbb…` with no trailing dot took 1.1s, and this pattern
+# runs over *untrusted scanned source* on the redaction path (D-2, TA-005). It sat
+# outside the bounded-regex gate until the harvest-completeness check found it.
+_EMAIL_RX = re.compile(r"[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,255}\.[A-Za-z]{2,24}")
+_DIGIT_RUN_RX = re.compile(r"\d[\d\s.\-]{7,255}\d")
 
 
 def _mask_long_digits(match: re.Match[str]) -> str:

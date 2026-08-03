@@ -10,6 +10,14 @@ SCHEMA_VERSION = 2
 
 @dataclasses.dataclass
 class FlowNode:
+    """One point of interest in a repo's data flow — a source, sink or propagator.
+
+    The unit every extractor emits and every aggregator consumes. ``family`` names
+    what kind of thing it is (``http-in``, ``sql``, ``sql-payload-out``, …) and
+    ``detail`` carries the per-family payload; see SCHEMA.md, which documents both
+    and must be updated alongside this class.
+    """
+
     id: str
     repo: str
     file: str
@@ -26,6 +34,13 @@ class FlowNode:
 
 @dataclasses.dataclass
 class FlowEdge:
+    """A directed link between two :class:`FlowNode` ids.
+
+    ``kind`` records how far the link reaches — within a file, within a repo, or
+    across repos — because a cross-repo edge is the claim the tool exists to make
+    and is held to a higher evidence bar than the other two.
+    """
+
     src_id: str
     dst_id: str
     kind: str  # intra-file | intra-repo | cross-repo

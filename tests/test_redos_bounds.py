@@ -20,10 +20,27 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 import pytest
 
-from src2sink import constants, graph_common, library_taint_java, vocabulary
+from src2sink import (
+    constants,
+    graph_common,
+    internal_groups as internal_groups_mod,
+    library_taint_java,
+    repo_utils,
+    sanitize,
+    trace_batch,
+    vocabulary,
+)
+from src2sink.aggregators import (
+    openapi_discovery,
+    payload_producers,
+    pii_touchpoint_utils,
+    traces_index,
+)
+from src2sink.extractors import config as config_extractor
 from src2sink.extractors import http_out, patterns, regex_extractors, symbols
 from src2sink.extractors.file_context import FileExtractionContext
 from src2sink.internal_groups import DEFAULT_INTERNAL_GROUP_PATTERN_STRINGS
@@ -80,7 +97,8 @@ def _iter_regexes(*modules) -> list[re.Pattern[str]]:
     return list(seen.values())
 
 
-ALL_REGEXES = _iter_regexes(
+# Named so the completeness test below can check nothing has been left out.
+_HARVESTED_MODULES = (
     # constants is harvested at its definition site so TEST_PATH_RX stays ReDoS-tested
     # without relying on a re-export elsewhere (which ruff would flag as unused).
     patterns, http_out, regex_extractors, graph_common, vocabulary, library_taint_java,
@@ -93,7 +111,19 @@ ALL_REGEXES = _iter_regexes(
     # name meant the version-catalog patterns added later were silently outside
     # this gate. Whole-module harvesting fails safe as patterns are added.
     build_metabase_v2,
+    # Added by the completeness check below, which found nine modules defining
+    # module-level regexes that had never been inside this gate at all.
+    config_extractor,
+    internal_groups_mod,
+    openapi_discovery,
+    payload_producers,
+    pii_touchpoint_utils,
+    repo_utils,
+    sanitize,
+    trace_batch,
+    traces_index,
 )
+ALL_REGEXES = _iter_regexes(*_HARVESTED_MODULES)
 
 
 @pytest.mark.watchdog(60)
@@ -156,4 +186,58 @@ def test_regex_extraction_pipeline_is_bounded_on_adversarial_source(language: st
     elapsed = time.monotonic() - start
     assert elapsed < BUDGET_SECONDS * 4, (
         f"regex extraction passes ({language}) took {elapsed:.2f}s on adversarial source"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The gate must not silently stop covering things
+# ---------------------------------------------------------------------------
+
+def _modules_defining_patterns() -> set[str]:
+    """Return src2sink modules that define a module-level compiled regex."""
+    import ast
+
+    found: set[str] = set()
+    root = Path(__file__).resolve().parent.parent / "src2sink"
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in str(path):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:  # module level only
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            if not targets:
+                continue
+            src = ast.unparse(node.value) if node.value is not None else ""
+            if "re.compile" in src:
+                found.add(str(path.relative_to(root.parent)))
+                break
+    return found
+
+
+def test_every_module_defining_patterns_is_harvested() -> None:
+    """A module outside the harvest list is silently outside this gate.
+
+    `_iter_regexes` walks the globals of the modules it is *given*, so a pattern
+    living anywhere else is unguarded and nothing says so. This has already
+    happened twice: once when the symbol-table patterns moved to
+    `extractors/symbols.py`, and once when version-catalog patterns were added to
+    `build_metabase_v2` — which was harvested by *name* (`_GRADLE_DEP_RX`) rather
+    than as a module, so later additions fell outside.
+
+    Neither was caught by a failing test. Coverage was unchanged, the suite was
+    green, and the gate simply stopped covering three patterns each time.
+    """
+    harvested = {
+        f"src2sink/{m.__name__.split('src2sink.')[-1].replace('.', '/')}.py"
+        for m in _HARVESTED_MODULES
+    }
+    unharvested = _modules_defining_patterns() - harvested
+    assert not unharvested, (
+        "these modules define module-level regexes but are not harvested by "
+        f"_iter_regexes, so their patterns are outside TA-005: {sorted(unharvested)}. "
+        "Add the module to _HARVESTED_MODULES."
     )
