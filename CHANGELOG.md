@@ -5,6 +5,76 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html) applied to the
 observable contract — the CLI flags and the output schema (`SCHEMA_VERSION`), as
 set out in [`docs/releasing.md`](docs/releasing.md).
 
+## [Unreleased]
+
+Detection correctness. Where 1.1.0 recovered callers that were missing, this work
+is mostly about output that was **wrong** — findings the tool stated confidently
+and should not have. Issues are tracked as `OI-n` in
+[`docs/issues/src2sink-open-issues.md`](docs/issues/src2sink-open-issues.md);
+each is reproduced by a named regression test.
+
+### Fixed
+
+- **The `sql` family matched on method name alone (`OI-7`).** `execute`, `query`
+  and `update` are ordinary method names, and the receiver — available on every
+  grammar's AST node — was read and discarded. So `httpClient.execute(request)`,
+  `messageDigest.update(data)` and `call.execute()` were catalogued as
+  unparameterised SQL execution sinks at `high` confidence. Worse, an execution
+  sink feeds `link_raw_code_payload_endpoints`, so an HTTP proxy carrying a field
+  named `sql` **manufactured a `raw-code-payload` finding** — a fabricated
+  injection endpoint that sends an analyst to audit code that was never
+  vulnerable. A `sql` node now requires positive evidence: a database receiver, a
+  library name in the call text, or file-level SQL evidence.
+- **Version prefixes outranked real route names (`OI-1`).** Confidence graded by
+  which structural rule fired rather than how much meaning matched, so a repo
+  exposing a bare `/v1` beat the service actually exposing `/stock` — and the
+  correct candidate was discarded, not merely ranked lower. Segments naming a
+  version or a layer are now dropped before comparison, and equal-confidence
+  candidates are ranked by specificity.
+- **SQL assembled by formatting produced no node at all (`OI-8`).**
+  `String.format`, `.formatted`, `MessageFormat.format`, Python `%` and `.format`
+  were uncovered. Two adjacent holes mattered more: the concatenation patterns
+  excluded *both* quote characters, so `"… WHERE ref = '" + ref + "'"` — the
+  canonical injection shape — could not be spanned; and the template pattern
+  required interpolation *before* the SQL keyword, so `"SELECT … ${id}"` rarely
+  fired.
+- **`parameterised` claimed a safety property it could not establish (`OI-10`).**
+  A placeholder does not undo a concatenation in the same statement, and the
+  value was computed from any SQL-shaped literal anywhere in the file — so an
+  unrelated safe constant certified an injectable call site while the scan
+  simultaneously reported that statement as a `sql` source.
+- **A base-query constant hid the concatenation appended to it (`OI-11`).** In
+  `SAFE + " AND ref = '" + ref + "'"` the keyword lives in the constant and the
+  concatenated fragments carry none, so nothing matched: no finding was emitted
+  *and* the call site was reported safe. Constants are now resolved through a
+  per-file symbol table, the same mechanism already used for constant-mediated
+  URLs.
+
+### Changed
+
+- **`detail.parameterised` is now a posture, not a boolean.** Values are
+  `parameterised`, `mixed`, `raw`, `static` or `unknown`. `mixed` — a placeholder
+  in a statement that is *also* concatenated — is the case the boolean could not
+  express. `SCHEMA_VERSION` is unchanged at `2` and existing metabases still
+  load: a pre-1.2.0 `true`/`false` is reported as `unknown` rather than
+  translated, because that boolean was produced by the heuristic this release
+  removes.
+- **`sql` and `raw-code-payload` counts fall.** This is withdrawn false
+  positives, not lost coverage — expect the drop on any dashboard tracking them.
+- **Service-call edges resolved through a bare `/v1` or `/api` disappear**, and
+  edges that previously ranked `low` through a version prefix are now `medium`.
+  `trace --path` filtering is deliberately unchanged: filtering and routing are
+  different questions and now use different predicates.
+- `detail.receiver` added to `sql` sink nodes.
+
+### Added
+
+- **A mutation gate** (`make mutation`, `scripts/mutation_check.py`, in the `ci`
+  chain). Coverage says the tests ran; this says they would notice. It
+  reintroduces each catalogued defect in a sandboxed copy of the tree and
+  requires the suite to fail. On its first runs it found two vacuous tests, two
+  pieces of dead logic, and one untested branch — see the commit history.
+
 ## [1.1.0] — 2026-08-01
 
 Cross-repo caller detection: on a real fleet, a service with roughly two dozen
