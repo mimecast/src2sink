@@ -415,7 +415,10 @@ def _run_selector(root: Path, selector: str) -> tuple[bool, str]:
         "-q", "--no-cov", "-p", "no:cacheprovider", "-x",
     ]
     try:
-        proc = subprocess.run(  # nosec B603 - fixed argv, no shell, sandboxed cwd.
+        # argv is this interpreter plus literals from CATALOGUE, which is source in
+        # this file — nothing external reaches it, and there is no shell
+        # (opengrep dangerous-subprocess-use-audit).
+        proc = subprocess.run(  # nosec B603 - fixed argv, no shell, sandboxed cwd.  # nosemgrep
             cmd, cwd=root, capture_output=True, text=True, timeout=_MUTANT_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
@@ -436,7 +439,9 @@ def _changed_files() -> set[str]:
         return set()
     changed: set[str] = set()
     for rev in (["origin/main...HEAD"], []):
-        proc = subprocess.run(  # nosec B603 - absolute path, fixed argv, no shell.
+        # git is an absolute path from shutil.which and every argument is a
+        # literal; no shell (opengrep dangerous-subprocess-use-audit).
+        proc = subprocess.run(  # nosec B603 - absolute path, fixed argv, no shell.  # nosemgrep
             [git, "diff", "--name-only", *rev],
             cwd=REPO_ROOT, capture_output=True, text=True, check=False,
         )
