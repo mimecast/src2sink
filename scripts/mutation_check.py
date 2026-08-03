@@ -266,6 +266,7 @@ CATALOGUE: tuple[Mutant, ...] = (
         new='    r")\\b",',
         selector="tests/test_http_guard_evidence.py",
         note="Transport-agnostic Java tokens dropped from the file guard.",
+    ),
     # --- OI-3: Gradle version catalogs -------------------------------------
     Mutant(
         id="OI3-M1",
