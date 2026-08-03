@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .symbols import build_symbol_table, iter_concatenated_symbols
+
 # JDBC / native SQL execution (used for raw-code-payload correlation)
 SQL_EXECUTION_SINK_NAMES = frozenset({
     "execute", "executeQuery", "executeUpdate", "executeBatch",
@@ -170,12 +172,40 @@ def file_has_sql_evidence(source: str) -> bool:
     return bool(SQL_LITERAL_RX.search(source) or SQL_DB_IMPORT_RX.search(source))
 
 
-def _statement_is_constructed(region: str) -> bool:
-    """True if ``region`` shows SQL being assembled rather than used verbatim."""
-    return any(pat.search(region) for pat, _kind in SQL_SOURCE_RX)
+def sql_symbol_table(source: str) -> dict[str, str]:
+    """Map identifier -> SQL-shaped string literal declared in this file.
+
+    The base query of a hand-written DAO usually lives in a constant while only
+    the clause appended to it is dynamic. Every pattern in :data:`SQL_SOURCE_RX`
+    anchors on a keyword *inside the literal next to the operator*, so
+    ``SAFE + " AND ref = '" + ref`` matched nothing at all: the keyword is in
+    ``SAFE`` and the concatenated fragments carry none (OI-11).
+    """
+    return build_symbol_table(
+        source,
+        # The value arrives unquoted; re-quote it so the same literal pattern
+        # judges it, keeping one definition of what counts as a SQL statement.
+        lambda value: bool(SQL_LITERAL_RX.search(f'"{value}"')),
+    )
 
 
-def sql_parameterisation(call_text: str, source: str) -> str:
+def _statement_is_constructed(region: str, symbols: dict[str, str] | None = None) -> bool:
+    """True if ``region`` shows SQL being assembled rather than used verbatim.
+
+    ``symbols`` resolves constant-mediated construction: a SQL constant taking
+    part in a concatenation is a constructed statement even though none of the
+    concatenated literals carries a keyword.
+    """
+    if any(pat.search(region) for pat, _kind in SQL_SOURCE_RX):
+        return True
+    if not symbols:
+        return False
+    return any(True for _ in iter_concatenated_symbols(region, symbols))
+
+
+def sql_parameterisation(
+    call_text: str, source: str, symbols: dict[str, str] | None = None
+) -> str:
     """Classify the posture of the SQL statement executed at this call site.
 
     ``parameterised`` is not a safety verdict, because a placeholder does not undo
@@ -217,7 +247,7 @@ def sql_parameterisation(call_text: str, source: str) -> str:
     placeholders = any(
         SQL_PLACEHOLDER_RX.search(lit) for lit in _STRING_LITERAL_RX.findall(region)
     )
-    if _statement_is_constructed(region):
+    if _statement_is_constructed(region, symbols):
         return "mixed" if placeholders else "raw"
     return "parameterised" if placeholders else "static"
 

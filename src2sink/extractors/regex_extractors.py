@@ -7,6 +7,7 @@ from typing import Any
 
 from ..constants import WEAK_ALGOS
 from .file_context import FileExtractionContext
+from .symbols import iter_concatenated_symbols
 from .http_out import (
     HTTP_OUT_CALL_RX,
     HTTP_OUT_CONTEXT_CALL_RX,
@@ -25,6 +26,7 @@ from .patterns import (
     QUEUE_RX,
     SECRETS_MANAGER_RX,
     SQL_SOURCE_RX,
+    sql_symbol_table,
 )
 from ..known_api_clients import binding_for_import
 from ..vocabulary import (
@@ -119,7 +121,8 @@ def extract_sql_string_sources(ctx: FileExtractionContext) -> None:
     """Emit sql source nodes for dynamically constructed query strings.
 
     Covers concatenation, format calls (`String.format`, `.formatted`, `%`,
-    `.format`), f-strings and template interpolation.
+    `.format`), f-strings, template interpolation, and concatenation onto a
+    constant whose literal holds the SQL keyword.
 
     At most one node per line: the patterns deliberately overlap — a
     keyword-bearing literal that is both preceded and followed by `+`, or a
@@ -130,22 +133,33 @@ def extract_sql_string_sources(ctx: FileExtractionContext) -> None:
     Scans untrusted source text; matches are only recorded, never evaluated.
     """
     seen_lines: set[int] = set()
+
+    def emit(line: int, kind: str, snippet: str) -> None:
+        """Record one constructed-statement node, at most one per line."""
+        if line in seen_lines:
+            return
+        seen_lines.add(line)
+        ctx.nodes.append(make_node(
+            repo=ctx.repo_id,
+            file=ctx.rel_path,
+            line=line,
+            language=ctx.language,
+            kind="source",
+            family="sql",
+            detail={"subkind": "string-concat", "pattern": kind, "snippet": snippet[:160]},
+            confidence="medium",
+        ))
+
     for pat, kind in SQL_SOURCE_RX:
         for m in pat.finditer(ctx.source):
-            line = ctx.line_number(m.start())
-            if line in seen_lines:
-                continue
-            seen_lines.add(line)
-            ctx.nodes.append(make_node(
-                repo=ctx.repo_id,
-                file=ctx.rel_path,
-                line=line,
-                language=ctx.language,
-                kind="source",
-                family="sql",
-                detail={"subkind": "string-concat", "pattern": kind, "snippet": m.group(0)[:160]},
-                confidence="medium",
-            ))
+            emit(ctx.line_number(m.start()), kind, m.group(0))
+
+    # Constant-mediated construction: the SQL keyword lives in a constant and the
+    # concatenated fragments carry none, so no pattern above can match (OI-11).
+    symbols = sql_symbol_table(ctx.source)
+    if symbols:
+        for pos, _name, _value in iter_concatenated_symbols(ctx.source, symbols):
+            emit(ctx.line_number(pos), "constant-concat", ctx.line_text_at(pos).strip())
 
 
 def extract_file_sinks(ctx: FileExtractionContext) -> None:

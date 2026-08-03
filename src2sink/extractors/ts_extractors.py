@@ -11,6 +11,7 @@ from .patterns import (
     SQL_EXECUTION_SINK_NAMES,
     SQL_SINK_NAMES,
     file_has_sql_evidence,
+    sql_symbol_table,
     receiver_is_database,
     sql_parameterisation,
 )
@@ -24,6 +25,7 @@ def _maybe_add_sql_sink(
     receiver: str | None,
     *,
     file_sql_evidence: bool,
+    sql_symbols: dict[str, str],
 ) -> None:
     """Append a sql sink node if the call is evidenced as database work.
 
@@ -59,7 +61,7 @@ def _maybe_add_sql_sink(
             "symbol": name,
             "receiver": receiver or "",
             "execution": is_execution,
-            "parameterised": sql_parameterisation(call_text, ctx.source),
+            "parameterised": sql_parameterisation(call_text, ctx.source, sql_symbols),
             "raw": call_text[:160],
         },
         confidence="high" if is_execution else "medium",
@@ -105,13 +107,17 @@ def extract_tree_sitter_calls(ctx: FileExtractionContext) -> None:
     # Computed once per file, not once per call: the answer cannot vary within a
     # file and the scan is over the whole source.
     file_sql_evidence = file_has_sql_evidence(ctx.source)
+    # Resolves a base query held in a constant, so a clause concatenated onto it
+    # is seen as construction rather than as a verbatim statement (OI-11).
+    sql_symbols = sql_symbol_table(ctx.source)
 
     for call_node, name in iter_calls(src_bytes, tree.root_node, ctx.language):
         line = line_number(src_bytes, call_node)
         call_text = node_text(src_bytes, call_node)
         receiver = extract_call_receiver(src_bytes, call_node, ctx.language)
         _maybe_add_sql_sink(
-            ctx, name, line, call_text, receiver, file_sql_evidence=file_sql_evidence,
+            ctx, name, line, call_text, receiver,
+            file_sql_evidence=file_sql_evidence, sql_symbols=sql_symbols,
         )
         _maybe_add_script_exec(ctx, name, line, call_text)
 

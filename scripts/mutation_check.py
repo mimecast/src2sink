@@ -172,12 +172,57 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI8-M5",
         file="src2sink/extractors/regex_extractors.py",
-        old="            if line in seen_lines:\n                continue\n            seen_lines.add(line)\n",
+        # Re-derived when OI-11 moved the de-duplication into the `emit` helper.
+        old="        if line in seen_lines:\n            return\n        seen_lines.add(line)\n",
         new="",
         selector="tests/test_sql_source_construction.py",
         note=(
             "Per-line de-duplication removed — overlapping patterns inflate one "
             "constructed statement into a cluster of findings."
+        ),
+    ),
+    # --- OI-11: a base-query constant hides the concatenation appended to it -
+    Mutant(
+        id="OI11-M1",
+        file="src2sink/extractors/symbols.py",
+        old="            symbols[name] = value\n",
+        new="",
+        selector="tests/test_sql_source_construction.py tests/test_sql_sink_evidence.py",
+        note="Symbol table always empty — no constant can be resolved.",
+    ),
+    Mutant(
+        id="OI11-M2",
+        file="src2sink/extractors/patterns.py",
+        old="        lambda value: bool(SQL_LITERAL_RX.search(f'\"{value}\"')),",
+        new="        lambda value: True,",
+        selector="tests/test_sql_source_construction.py",
+        note=(
+            "Any constant recorded, not only SQL-shaped ones, so resolving "
+            "`GREETING + name` manufactures SQL out of an ordinary string."
+        ),
+    ),
+    Mutant(
+        id="OI11-M3",
+        file="src2sink/extractors/ts_extractors.py",
+        old='            "parameterised": sql_parameterisation(call_text, ctx.source, sql_symbols),',
+        new='            "parameterised": sql_parameterisation(call_text, ctx.source),',
+        selector="tests/test_sql_sink_evidence.py",
+        note=(
+            "Resolution wired to the source pass but not the posture — the "
+            "half-finished plumbing that would let the two drift apart again, "
+            "reporting the construction while still calling the sink safe."
+        ),
+    ),
+    Mutant(
+        id="OI11-M4",
+        file="src2sink/extractors/symbols.py",
+        old=r'    r"\b([A-Za-z_][A-Za-z0-9_]{0,63})\s*\+|\+\s*([A-Za-z_][A-Za-z0-9_]{0,63})\b"',
+        new=r'    r"\b([A-Za-z_][A-Za-z0-9_]{0,63})\b|\+\s*([A-Za-z_][A-Za-z0-9_]{0,63})\b"',
+        selector="tests/test_sql_sink_evidence.py",
+        note=(
+            "Any *reference* to a SQL constant treated as construction, not only "
+            "one joined by `+`, so a base query used verbatim stops being "
+            "parameterised."
         ),
     ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
@@ -293,8 +338,9 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI10-M3",
         file="src2sink/extractors/patterns.py",
-        old='    if _statement_is_constructed(region):\n        return "mixed" if placeholders else "raw"',
-        new='    if _statement_is_constructed(region):\n        return "parameterised" if placeholders else "raw"',
+        # Re-derived when OI-11 threaded the symbol table into the check.
+        old='    if _statement_is_constructed(region, symbols):\n        return "mixed" if placeholders else "raw"',
+        new='    if _statement_is_constructed(region, symbols):\n        return "parameterised" if placeholders else "raw"',
         selector="tests/test_sql_sink_evidence.py",
         note=(
             "`mixed` collapsed into `parameterised` — a concatenated statement "

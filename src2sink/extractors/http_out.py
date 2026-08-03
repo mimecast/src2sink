@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..graph_common import extract_urls_and_paths
+from .symbols import build_symbol_table
 
 if TYPE_CHECKING:
     from ..known_api_clients import ApiClientBinding
@@ -178,19 +179,6 @@ HTTP_METHOD_RX = re.compile(
 # without a full symbol table or type resolution.
 # ---------------------------------------------------------------------------
 
-# `NAME = "literal"` / `NAME: Type = "literal"` / `NAME := "literal"` across
-# Java, Kotlin, Python, TS and Go. Both runs are length-bounded so the pattern
-# stays linear on hostile input (see tests/test_redos_bounds.py).
-_SYMBOL_ASSIGN_RX = re.compile(
-    r"\b([A-Za-z_][A-Za-z0-9_]{0,63})\s*"
-    r"(?::\s*[A-Za-z_][A-Za-z0-9_<>\[\].,? ]{0,63})?"
-    r"\s*(?::?=)\s*(?:[fbruFBRU]{0,2})?[\"']([^\"'\n]{1,240})[\"']"
-)
-# Java/Kotlin enum members that pass their path to the constructor:
-# `SUBMIT_SYNC("/v1/query/sync")`.
-_ENUM_MEMBER_RX = re.compile(
-    r"\b([A-Z][A-Z0-9_]{1,63})\s*\(\s*[\"']([^\"'\n]{1,240})[\"']"
-)
 # Identifiers referenced at a call site, optionally through a qualifier
 # (`ApiPaths.SUBMIT_SYNC` -> `SUBMIT_SYNC`).
 _IDENT_REF_RX = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{0,63})\b")
@@ -200,7 +188,6 @@ _CONFIG_PLACEHOLDER_RX = re.compile(r"\$\{([A-Za-z0-9_.\-]{1,120})[^}\n]{0,80}\}
 # Only literals that could plausibly be an endpoint are worth remembering; this
 # keeps the map small and stops unrelated literals leaking into call details.
 _ENDPOINTISH_RX = re.compile(r"^(?:https?://|/[A-Za-z0-9_])")
-_MAX_SYMBOLS_PER_FILE = 400
 
 
 def build_path_symbol_table(source: str) -> dict[str, str]:
@@ -209,16 +196,7 @@ def build_path_symbol_table(source: str) -> dict[str, str]:
     Only URL/path-shaped literals are recorded, so the table stays small and
     substituting from it cannot invent a host or path that is not in the source.
     """
-    symbols: dict[str, str] = {}
-    for rx in (_SYMBOL_ASSIGN_RX, _ENUM_MEMBER_RX):
-        for m in rx.finditer(source):
-            if len(symbols) >= _MAX_SYMBOLS_PER_FILE:
-                return symbols
-            name, value = m.group(1), m.group(2)
-            if name in symbols or not _ENDPOINTISH_RX.match(value):
-                continue
-            symbols[name] = value
-    return symbols
+    return build_symbol_table(source, lambda value: bool(_ENDPOINTISH_RX.match(value)))
 
 
 def _resolved_symbol_text(window: str, symbols: dict[str, str]) -> str:
