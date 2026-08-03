@@ -24,7 +24,7 @@ import time
 import pytest
 
 from src2sink import constants, graph_common, library_taint_java, vocabulary
-from src2sink.extractors import http_out, patterns, regex_extractors
+from src2sink.extractors import http_out, patterns, regex_extractors, symbols
 from src2sink.extractors.file_context import FileExtractionContext
 from src2sink.internal_groups import DEFAULT_INTERNAL_GROUP_PATTERN_STRINGS
 from src2sink.build_metabase_v2 import _GRADLE_DEP_RX
@@ -85,6 +85,9 @@ ALL_REGEXES = _iter_regexes(
     # without relying on a re-export elsewhere (which ruff would flag as unused).
     patterns, http_out, regex_extractors, graph_common, vocabulary, library_taint_java,
     constants,
+    # symbols holds the identifier/assignment patterns that used to live in
+    # http_out; they run against untrusted source just the same after the move.
+    symbols,
 )
 ALL_REGEXES.append(_GRADLE_DEP_RX)
 

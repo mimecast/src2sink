@@ -498,3 +498,85 @@ def test_legacy_boolean_posture_is_reported_as_unknown(tmp_path) -> None:
     md = (tmp_path / "sql-execution-sinks.md").read_text(encoding="utf-8")
     assert "unknown" in md
     assert "parameterised" not in md
+
+
+# --------------------------------------------------------------------------
+# OI-11: a constant base query does not certify the clause appended to it
+# --------------------------------------------------------------------------
+
+JAVA_CONSTANT_BASE_PLUS_CLAUSE = """
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> find(String ref, long id) {
+        String sql = SAFE + " AND ref = '" + ref + "'";
+        return jdbcTemplate.query(sql, mapper, id);
+    }
+}
+"""
+
+JAVA_CONSTANT_BASE_NO_PLACEHOLDER = """
+public class StockDao {
+    private static final String BASE = "SELECT ref FROM stock";
+
+    List<Stock> find(String ref) {
+        String sql = BASE + " WHERE ref = '" + ref + "'";
+        return jdbcTemplate.query(sql, mapper);
+    }
+}
+"""
+
+JAVA_CONSTANT_USED_VERBATIM = """
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> find(long id) {
+        return jdbcTemplate.query(SAFE, mapper, id);
+    }
+}
+"""
+
+JAVA_CONSTANT_FROM_ANOTHER_FILE = """
+public class StockDao {
+    List<Stock> find(long id) {
+        return jdbcTemplate.query(Queries.FIND_BY_ID, mapper, id);
+    }
+}
+"""
+
+
+def test_constant_base_query_with_appended_clause_is_mixed() -> None:
+    """OI-11: the constant's placeholder does not certify the appended clause.
+
+    `SAFE + " AND ref = '" + ref + "'"` is a bound parameter *and* a
+    concatenation of user input. Counting only the `?` reported it as safe.
+    """
+    sinks = _sql_sinks(_nodes(JAVA_CONSTANT_BASE_PLUS_CLAUSE))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "mixed"
+
+
+def test_appended_clause_without_a_placeholder_is_raw() -> None:
+    """The same shape with no bound parameter anywhere is simply raw."""
+    sinks = _sql_sinks(_nodes(JAVA_CONSTANT_BASE_NO_PLACEHOLDER))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "raw"
+
+
+def test_unconcatenated_constant_is_still_parameterised() -> None:
+    """The OI-10 recall guard: a constant used verbatim stays parameterised.
+
+    Symbol resolution must only fire on constants that are actually concatenated;
+    treating every referenced constant as constructed would withdraw the one
+    posture the fallback exists to establish.
+    """
+    sinks = _sql_sinks(_nodes(JAVA_CONSTANT_USED_VERBATIM))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "parameterised"
+
+
+def test_constant_from_another_file_is_unknown() -> None:
+    """A per-file symbol map cannot see `Queries.FIND_BY_ID`, so it must not guess."""
+    sinks = _sql_sinks(_nodes(JAVA_CONSTANT_FROM_ANOTHER_FILE))
+    assert sinks
+    assert sinks[0].detail["parameterised"] == "unknown"

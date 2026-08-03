@@ -226,3 +226,47 @@ def test_one_constructed_statement_yields_one_node_per_line() -> None:
     nodes = _sql_sources(JAVA_STRING_FORMAT)
     lines = [n.line for n in nodes]
     assert len(lines) == len(set(lines)), f"duplicate nodes on one line: {lines}"
+
+
+# --------------------------------------------------------------------------
+# OI-11: the SQL keyword may live in a constant the fragments only reference
+# --------------------------------------------------------------------------
+
+JAVA_CONSTANT_BASE_PLUS_CLAUSE = """
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> find(String ref, long id) {
+        String sql = SAFE + " AND ref = '" + ref + "'";
+        return jdbcTemplate.query(sql, mapper, id);
+    }
+}
+"""
+
+JAVA_NON_SQL_CONSTANT_CONCAT = """
+public class Greeter {
+    private static final String GREETING = "Hello there";
+
+    String greet(String name) {
+        return GREETING + ", " + name;
+    }
+}
+"""
+
+
+def test_constant_base_query_with_appended_clause_is_a_source() -> None:
+    """OI-11: the base query in a constant, the injection in the appended clause.
+
+    Every other pattern anchors on a SQL keyword inside the literal next to the
+    operator. Here the keyword is in `SAFE` and the concatenated fragments —
+    `" AND ref = '"` and `"'"` — carry none, so nothing matched and the most
+    common hand-written-DAO shape produced no finding at all.
+    """
+    nodes = _sql_sources(JAVA_CONSTANT_BASE_PLUS_CLAUSE)
+    assert nodes, "constant-mediated concatenation produced no sql source"
+    assert [n.line for n in nodes] == [6], "the node belongs on the concatenation line"
+
+
+def test_non_sql_constant_does_not_make_a_concatenation_sql() -> None:
+    """Resolving identifiers must not manufacture SQL out of ordinary strings."""
+    assert _sql_sources(JAVA_NON_SQL_CONSTANT_CONCAT) == []
