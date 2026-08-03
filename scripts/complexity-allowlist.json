@@ -1,0 +1,219 @@
+{
+  "_comment": "Complexity hot spots frozen at their current scores. This file may only shrink: refactor a function below its recorded score and re-run with --update. Adding an entry by hand to silence the gate defeats it.",
+  "max_cyclomatic": 10,
+  "max_cognitive": 15,
+  "frozen": {
+    "src2sink/aggregators/api_client_discovery.py:_demand_side_observations": {
+      "cyclomatic": 11,
+      "cognitive": 25
+    },
+    "src2sink/aggregators/auth_cards.py:_collect_repo_auth": {
+      "cyclomatic": 11,
+      "cognitive": 15
+    },
+    "src2sink/aggregators/crypto_cards.py:_collect_repo_crypto": {
+      "cyclomatic": 12,
+      "cognitive": 17
+    },
+    "src2sink/aggregators/crypto_cards.py:write_crypto_agility_catalog": {
+      "cyclomatic": 12,
+      "cognitive": 9
+    },
+    "src2sink/aggregators/data_stores.py:_collect_stores": {
+      "cyclomatic": 11,
+      "cognitive": 18
+    },
+    "src2sink/aggregators/library_source_map.py:generate_library_source_map": {
+      "cyclomatic": 12,
+      "cognitive": 21
+    },
+    "src2sink/aggregators/openapi_discovery.py:discover_helm_hosts": {
+      "cyclomatic": 12,
+      "cognitive": 28
+    },
+    "src2sink/aggregators/openapi_discovery.py:discover_openapi_specs": {
+      "cyclomatic": 14,
+      "cognitive": 20
+    },
+    "src2sink/aggregators/openapi_match.py:match_http_out_to_openapi": {
+      "cyclomatic": 12,
+      "cognitive": 31
+    },
+    "src2sink/aggregators/openapi_report.py:write_openapi_artifacts": {
+      "cyclomatic": 11,
+      "cognitive": 9
+    },
+    "src2sink/aggregators/payload_producers.py:_http_out_hit": {
+      "cyclomatic": 11,
+      "cognitive": 10
+    },
+    "src2sink/aggregators/payload_producers.py:_scan_repo_for_binding": {
+      "cyclomatic": 11,
+      "cognitive": 13
+    },
+    "src2sink/aggregators/payload_producers.py:build_producer_indices": {
+      "cyclomatic": 10,
+      "cognitive": 21
+    },
+    "src2sink/aggregators/pii_cross_repo.py:_build_queue_flows": {
+      "cyclomatic": 11,
+      "cognitive": 20
+    },
+    "src2sink/aggregators/pii_cross_repo.py:write_pii_cross_repo_graph": {
+      "cyclomatic": 12,
+      "cognitive": 5
+    },
+    "src2sink/aggregators/pii_flow_v2.py:_collect_pii_flow": {
+      "cyclomatic": 11,
+      "cognitive": 31
+    },
+    "src2sink/aggregators/pii_touchpoint_collect.py:_collect_delete_hints": {
+      "cyclomatic": 11,
+      "cognitive": 20
+    },
+    "src2sink/aggregators/pii_touchpoint_collect.py:collect_pii_touchpoints": {
+      "cyclomatic": 8,
+      "cognitive": 26
+    },
+    "src2sink/aggregators/ropa.py:write_ropa_view": {
+      "cyclomatic": 15,
+      "cognitive": 11
+    },
+    "src2sink/aggregators/service_call_collect.py:_collect_api_client_edges": {
+      "cyclomatic": 12,
+      "cognitive": 18
+    },
+    "src2sink/aggregators/service_call_collect.py:_collect_http_out_edges": {
+      "cyclomatic": 19,
+      "cognitive": 48
+    },
+    "src2sink/aggregators/service_call_collect.py:_collect_reference_edges": {
+      "cyclomatic": 11,
+      "cognitive": 21
+    },
+    "src2sink/aggregators/taint_buckets.py:_route_node": {
+      "cyclomatic": 9,
+      "cognitive": 17
+    },
+    "src2sink/aggregators/taint_writers.py:_write_pii_sources": {
+      "cyclomatic": 11,
+      "cognitive": 6
+    },
+    "src2sink/aggregators/taint_writers.py:write_crypto_and_payload_catalogues": {
+      "cyclomatic": 14,
+      "cognitive": 2
+    },
+    "src2sink/build_metabase_v2.py:_discover_repos": {
+      "cyclomatic": 11,
+      "cognitive": 15
+    },
+    "src2sink/build_metabase_v2.py:_limits_hit_summary": {
+      "cyclomatic": 9,
+      "cognitive": 19
+    },
+    "src2sink/build_metabase_v2.py:_scan_repo_files": {
+      "cyclomatic": 11,
+      "cognitive": 17
+    },
+    "src2sink/build_metabase_v2.py:main": {
+      "cyclomatic": 13,
+      "cognitive": 13
+    },
+    "src2sink/extractors/ast_walk.py:call_name_js_go": {
+      "cyclomatic": 13,
+      "cognitive": 24
+    },
+    "src2sink/extractors/config.py:extract_from_config": {
+      "cyclomatic": 14,
+      "cognitive": 16
+    },
+    "src2sink/extractors/http_out.py:enrich_http_out_detail": {
+      "cyclomatic": 15,
+      "cognitive": 16
+    },
+    "src2sink/extractors/regex_extractors.py:extract_http_inbound": {
+      "cyclomatic": 9,
+      "cognitive": 18
+    },
+    "src2sink/extractors/regex_extractors.py:extract_http_outbound": {
+      "cyclomatic": 15,
+      "cognitive": 26
+    },
+    "src2sink/extractors/regex_extractors.py:extract_pii_sinks": {
+      "cyclomatic": 9,
+      "cognitive": 17
+    },
+    "src2sink/extractors/ts_extractors.py:_maybe_add_sql_sink": {
+      "cyclomatic": 11,
+      "cognitive": 8
+    },
+    "src2sink/graph_common.py:match_path_in_inbound_index": {
+      "cyclomatic": 16,
+      "cognitive": 18
+    },
+    "src2sink/graph_common.py:path_filter_matches": {
+      "cyclomatic": 13,
+      "cognitive": 7
+    },
+    "src2sink/graph_common.py:store_key_from_node": {
+      "cyclomatic": 11,
+      "cognitive": 14
+    },
+    "src2sink/limits.py:map_with_timeout": {
+      "cyclomatic": 12,
+      "cognitive": 17
+    },
+    "src2sink/prescreen.py:screen": {
+      "cyclomatic": 13,
+      "cognitive": 17
+    },
+    "src2sink/renderers/markdown.py:render_repo_md_v2": {
+      "cyclomatic": 14,
+      "cognitive": 7
+    },
+    "src2sink/repo_utils.py:_build_component_identity_index": {
+      "cyclomatic": 13,
+      "cognitive": 18
+    },
+    "src2sink/repo_utils.py:_index_gradle": {
+      "cyclomatic": 9,
+      "cognitive": 19
+    },
+    "src2sink/repo_utils.py:_read_dotnet_project_identity": {
+      "cyclomatic": 11,
+      "cognitive": 12
+    },
+    "src2sink/repo_utils.py:_read_gradle_group": {
+      "cyclomatic": 11,
+      "cognitive": 22
+    },
+    "src2sink/repo_utils.py:_read_pom_identity": {
+      "cyclomatic": 17,
+      "cognitive": 30
+    },
+    "src2sink/repo_utils.py:detect_build_systems": {
+      "cyclomatic": 14,
+      "cognitive": 13
+    },
+    "src2sink/trace.py:_find_upstream_from_nodes": {
+      "cyclomatic": 16,
+      "cognitive": 19
+    },
+    "src2sink/trace.py:_iter_consumer_files": {
+      "cyclomatic": 10,
+      "cognitive": 20
+    },
+    "src2sink/trace.py:_merge_producer_indices": {
+      "cyclomatic": 9,
+      "cognitive": 16
+    },
+    "src2sink/trace.py:render_trace_markdown": {
+      "cyclomatic": 14,
+      "cognitive": 8
+    },
+    "src2sink/trace.py:run_trace": {
+      "cyclomatic": 11,
+      "cognitive": 14
+    }
+  }
+}

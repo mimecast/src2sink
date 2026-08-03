@@ -95,4 +95,15 @@ pretty = true
 # E7 statement, E9 syntax). Deliberately NOT enabling the line-length / whitespace
 # style families (E1/E2/E5, W) — turning those on is a large, separate reformat.
 # target-version is inferred from project.requires-python.
-select = ["E4", "E7", "E9", "F"]
+#
+# D1xx are the docstring *presence* rules: every module, class and public function
+# must be documented. The rest of the D family is deliberately left off — D401
+# ("imperative mood") would require rewriting 23 predicate docstrings from
+# "True when the receiver names a database handle" to "Return True when…", which
+# is noise rather than clarity for a boolean-returning function.
+select = ["E4", "E7", "E9", "F", "D1"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names and module docstrings; requiring
+# one on every fixture helper adds ceremony without adding information.
+"tests/*" = ["D1"]

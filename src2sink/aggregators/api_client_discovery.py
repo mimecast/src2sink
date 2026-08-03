@@ -365,6 +365,7 @@ def discover_api_clients(
     by_coord, by_name, by_full = _build_component_identity_index(repos_root)
 
     def resolve(coord: str) -> str | None:
+        """Resolve a maven coordinate to the repo id that publishes it, or None."""
         return _resolve_clone_path(coord, by_coord, by_name, by_full)
 
     return discover_api_clients_from_records(metabase_root, records, resolve)

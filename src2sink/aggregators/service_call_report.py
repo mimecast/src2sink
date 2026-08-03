@@ -62,6 +62,7 @@ def _render_binding_coverage(edges: list[CallEdge]) -> list[str]:
             binding_callers.setdefault(e.target_repo, set()).add(e.source_repo)
 
     def _status(target: str) -> str:
+        """Report whether a configured binding actually produced any callers."""
         if binding_callers.get(target):
             return "OK"
         if all_callers.get(target):

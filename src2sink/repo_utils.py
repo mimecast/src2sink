@@ -35,7 +35,9 @@ class IdentityRegister(Protocol):
 
     def __call__(
         self, group: str, name: str, clone_path: str | None, full: str | None = None
-    ) -> None: ...
+    ) -> None:
+        """Record one identity: ``(group, name)`` and optionally its full coordinate."""
+        ...
 
 # ---------------------------------------------------------------------------
 # External-coordinate fast-reject prefixes
