@@ -147,21 +147,123 @@ def _parse_gradle_deps(gradle_path: Path) -> list[dict[str, str]]:
     return deps
 
 
-def _collect_dependencies(repo_root: Path) -> list[dict[str, str]]:
-    """Gather declared dependencies from pom.xml, build.gradle*, and package.json."""
+# A version catalog holds the coordinate that the build script only references by
+# alias, so without these the build file yields nothing at all (OI-3). Every run
+# is length-bounded to stay linear on hostile input (tests/test_redos_bounds.py).
+_CATALOG_TOML_RX = re.compile(
+    r'^\s*([A-Za-z0-9_.\-]{1,120})\s*=\s*\{[^}\n]{0,200}?module\s*=\s*["\']'
+    r'([A-Za-z0-9_.\-]{1,120}):([A-Za-z0-9_.\-]{1,120})["\']',
+    re.MULTILINE,
+)
+_CATALOG_DSL_RX = re.compile(
+    r'library\(\s*["\']([A-Za-z0-9_.\-]{1,120})["\']\s*,\s*["\']([A-Za-z0-9_.\-]{1,120})["\']'
+    r'\s*,\s*["\']([A-Za-z0-9_.\-]{1,120})["\']'
+)
+_CATALOG_REF_RX = re.compile(
+    r"\b(?:implementation|api|compile|runtimeOnly|testImplementation|compileOnly)"
+    r"\s*[\(\s]\s*libs\.([A-Za-z0-9_.]{1,120})"
+)
+# A repo with more catalog files than this is pathological; parsing them all
+# would turn a bounded read into an unbounded one.
+_MAX_CATALOG_FILES = 20
+
+
+def _normalise_alias(alias: str) -> str:
+    """Reduce a catalog alias to its lookup key.
+
+    Gradle exposes a catalog entry named ``warehouse-service-client`` to build
+    scripts as ``libs.warehouseServiceClient``, so the declaration and the
+    reference differ by both separator and case. Discarding both is what makes
+    the two sides meet.
+    """
+    return alias.replace("-", "").replace(".", "").replace("_", "").lower()
+
+
+def _parse_version_catalog(repo_root: Path) -> dict[str, tuple[str, str]]:
+    """Map catalog alias -> (groupId, artifactId) from TOML and the settings DSL.
+
+    Reads through ``safe_read_text`` (size-capped) and honours ``is_skipped_path``,
+    like every other manifest read.
+    """
+    catalog: dict[str, tuple[str, str]] = {}
+    candidates = [
+        *sorted(repo_root.rglob("*.versions.toml")),
+        *sorted(repo_root.rglob("settings.gradle.kts")),
+        *sorted(repo_root.rglob("settings.gradle")),
+    ][:_MAX_CATALOG_FILES]
+    for path in candidates:
+        if is_skipped_path(path, repo_root):
+            continue
+        text = safe_read_text(path) or ""
+        for alias, gid, aid in _CATALOG_TOML_RX.findall(text):
+            catalog.setdefault(_normalise_alias(alias), (gid, aid))
+        for alias, gid, aid in _CATALOG_DSL_RX.findall(text):
+            catalog.setdefault(_normalise_alias(alias), (gid, aid))
+    return catalog
+
+
+def _resolve_catalog_refs(
+    gradle_paths: list[Path], catalog: dict[str, tuple[str, str]]
+) -> tuple[list[dict[str, str]], int]:
+    """Resolve `libs.<alias>` references against the catalog.
+
+    Returns the resolved dependencies and the count of references that could not
+    be resolved — the caller turns a non-zero count into a repo note, because a
+    dependency list that silently degrades to empty is the failure shape this
+    whole issue is about.
+    """
     deps: list[dict[str, str]] = []
+    unresolved = 0
+    for path in gradle_paths:
+        text = safe_read_text(path) or ""
+        for alias in _CATALOG_REF_RX.findall(text):
+            entry = catalog.get(_normalise_alias(alias))
+            if entry is None:
+                unresolved += 1
+                continue
+            gid, aid = entry
+            deps.append({
+                "groupId": gid,
+                "artifactId": aid,
+                "version": "",
+                "kind": "internal" if is_internal_coordinate(gid, aid) else "external",
+            })
+    return deps, unresolved
+
+
+def _collect_dependencies(repo_root: Path) -> tuple[list[dict[str, str]], list[str]]:
+    """Gather declared dependencies; returns (deps, notes).
+
+    Notes carry anything that would otherwise make the dependency list quietly
+    incomplete — currently unresolved version-catalog references.
+    """
+    deps: list[dict[str, str]] = []
+    notes: list[str] = []
     for pom in repo_root.rglob("pom.xml"):
         if not is_skipped_path(pom, repo_root):
             deps.extend(parse_pom_dependencies(pom))
-    for gradle in list(repo_root.rglob("build.gradle")) + list(
-        repo_root.rglob("build.gradle.kts")
-    ):
-        if not is_skipped_path(gradle, repo_root):
-            deps.extend(_parse_gradle_deps(gradle))
+    gradle_paths = [
+        g
+        for g in list(repo_root.rglob("build.gradle")) + list(repo_root.rglob("build.gradle.kts"))
+        if not is_skipped_path(g, repo_root)
+    ]
+    for gradle in gradle_paths:
+        deps.extend(_parse_gradle_deps(gradle))
+    if gradle_paths:
+        catalog_deps, unresolved = _resolve_catalog_refs(
+            gradle_paths, _parse_version_catalog(repo_root)
+        )
+        deps.extend(catalog_deps)
+        if unresolved:
+            notes.append(
+                f"gradle version catalog unresolved: {unresolved} libs.* reference(s) "
+                "in build.gradle* matched no catalog entry; dependencies may be "
+                "incomplete (looked for *.versions.toml and settings.gradle*)"
+            )
     for pkg in repo_root.rglob("package.json"):
         if not is_skipped_path(pkg, repo_root):
             deps.extend(parse_package_json_dependencies(pkg))
-    return deps
+    return deps, notes
 
 
 def _record_dependencies(summary: RepoSummaryV2, deps: list[dict[str, str]]) -> None:
@@ -248,7 +350,8 @@ def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> Re
     summary.analysed_at = dt.datetime.now(dt.timezone.utc).isoformat()
     summary.build_systems = detect_build_systems(repo_root)
 
-    deps = _collect_dependencies(repo_root)
+    deps, dep_notes = _collect_dependencies(repo_root)
+    summary.notes.extend(dep_notes)
     _record_dependencies(summary, deps)
     summary.frameworks = classify_frameworks(deps)
 
