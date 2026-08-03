@@ -428,6 +428,7 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 | OI-8 | 8 | SQL built by formatting is undetected | low | a confirmed injection currently produces no node | P1 |
 | OI-3 | 3 | Gradle version catalogs unparsed | low | restores discovery input for affected repos | P1 |
 | OI-2 | 2 | Context guards miss custom wrappers | low–medium | recovers hand-rolled callers | P1 |
+| OI-12 | 12 | Four unused runtime dependencies pull in sixty packages | low | shrinks the audited supply-chain and licence surface | P1 |
 | OI-9 | 9 | No `sql-payload-out` family | medium | a whole sink class is unrepresented | P2 |
 | OI-4 | 4 | Demand-side discovery | medium | generates the field that cannot be inferred otherwise | P2 |
 
@@ -862,3 +863,53 @@ Bound the map as `build_path_symbol_table` does (`_MAX_SYMBOLS_PER_FILE`), and r
 ### Residual not covered
 
 Cross-file constants, and a base query assembled through a `StringBuilder` across several statements, both need more than a per-file symbol map. `OI-8`'s residual (multi-statement `sb.append` construction) is the same gap seen from the other side.
+
+---
+
+## 12. Four unused runtime dependencies pull in sixty packages  `OI-12`
+
+**Severity:** Medium — no known vulnerability today; this is attack-surface and licence-surface reduction.
+
+**Not a detection defect.** This is the one supply-chain entry in a document otherwise about detection, kept here so the `OI-n` record stays in one place.
+
+### Symptom
+
+`pyproject.toml` declares `ipykernel`, `jupyterlab`, `openpyxl` and `pandas` as **runtime** dependencies. None of them is imported anywhere:
+
+```
+$ grep -rn "import pandas|import openpyxl|import jupyter|import ipykernel|import IPython" src2sink/ scripts/ tests/
+(no matches)
+```
+
+There are no notebooks in the repository and no documentation referring to a notebook or spreadsheet workflow.
+
+Measured closure of the installed environment:
+
+| Set | Packages |
+|---|---|
+| Deps `src2sink` actually imports (`defusedxml`, `tree-sitter*`) | **8** |
+| Closure of the four never-imported deps | **68** |
+
+Every consumer of the library installs roughly sixty packages the tool never touches.
+
+### Why it matters for this project in particular
+
+1. **Audited surface.** `pip-audit` (control SC-1, artifact TA-011) audits the lockfile. Sixty unnecessary packages are sixty more advisories that can turn the build red, and sixty more chances that a compromised transitive dependency ends up inside a *security scanner* — a tool whose output people act on.
+2. **Licence surface.** The only non-permissive licences in the tree arrive this way. All three MPL-2.0 packages — `certifi` (via `httpx`/`requests`), `fqdn` (via `jupyterlab`'s `jsonschema` format extras) and `pathspec` (via `mypy`, dev-only) — are outside the real closure. The eight packages actually shipped against are MIT or PSFL, with no copyleft of any kind.
+3. **Install cost.** `jupyterlab` alone is a large install for a CLI that parses source files.
+
+MPL-2.0 is weak, file-level copyleft: using an unmodified dependency imposes nothing on an MIT project, so there is no licence *problem* today. The point is that the exposure is gratuitous.
+
+### Proposed fix
+
+Remove all four from `[project.dependencies]` and regenerate `uv.lock`. Not moved to an optional extra: nothing in the repository uses them, so there is no feature to keep working. Should a notebook workflow appear later, `[project.optional-dependencies]` is the right home for it, not the default install.
+
+### Suggested tests
+
+* The existing suite must pass unchanged — nothing imports them, so nothing should move.
+* `uv sync --locked` and `pip-audit --frozen` must both succeed against the regenerated lock.
+* A guard test asserting the runtime dependency set stays minimal would prevent a silent re-introduction; the natural form is to assert that every distribution in `[project.dependencies]` is imported somewhere under `src2sink/`.
+
+### Residual not covered
+
+Package metadata does not cover the C grammars vendored inside the `tree-sitter-*` wheels, whose upstream licences have not been verified here. Dev dependencies are unaudited beyond noting that `pathspec` (MPL-2.0) arrives via `mypy`.
