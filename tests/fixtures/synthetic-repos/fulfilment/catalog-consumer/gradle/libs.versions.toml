@@ -1,0 +1,6 @@
+# OI-3 regression fixture: the coordinate lives here, not in the build script.
+[versions]
+warehouse = "3.0.2"
+
+[libraries]
+warehouse-service-client = { module = "com.example.commerce.warehouse:warehouse-service-client", version.ref = "warehouse" }
