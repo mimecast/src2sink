@@ -278,9 +278,20 @@ def extract_http_outbound(ctx: FileExtractionContext) -> None:
         if _call_rx_applies(lang_hint, ctx.language):
             emit(pat, purpose)
 
+    # A route constant is HTTP evidence in its own right, so a wrapper that names
+    # no HTTP library still admits its call sites (OI-2). Computed once per file,
+    # and only when a guard actually fails, since the common case is a library
+    # name being present.
+    has_route_constant: bool | None = None
     for pat, lang_hint, purpose, file_guard in HTTP_OUT_CONTEXT_CALL_RX:
-        if _call_rx_applies(lang_hint, ctx.language) and file_guard.search(ctx.source):
-            emit(pat, purpose)
+        if not _call_rx_applies(lang_hint, ctx.language):
+            continue
+        if not file_guard.search(ctx.source):
+            if has_route_constant is None:
+                has_route_constant = file_declares_a_route_constant(ctx.source)
+            if not has_route_constant:
+                continue
+        emit(pat, purpose)
 
     for bp in get_binding_call_patterns():
         if _call_rx_applies(bp.language, ctx.language):
@@ -319,6 +330,26 @@ def _is_route_like_constant(name: str, path: str) -> bool:
     # only kept when the constant is explicitly named like an endpoint, so
     # generic one-word literals do not each become a node.
     return len(segments) >= 2 or bool(_ENDPOINT_CONST_NAME_RX.search(name))
+
+
+def file_declares_a_route_constant(source: str) -> bool:
+    """True when the file declares a route-like constant or enum member.
+
+    Used as HTTP evidence alongside the library-name guards. A file holding a
+    route constant *and* a `<receiver>.post(` call is doing HTTP whatever library
+    sits underneath, which is the case the vocabulary-only guard missed (OI-2).
+
+    Evidence-based rather than vocabulary-based, so it needs no extending when a
+    new HTTP client appears — and derived from the source rather than from
+    ``ctx.nodes``, because ``extract_http_outbound`` runs *before*
+    ``extract_path_constants``, so no path-constant node exists yet. Reading the
+    text keeps the guard independent of pass order entirely.
+    """
+    for rx in (PATH_CONST_RX, PATH_ENUM_RX):
+        for m in rx.finditer(source):
+            if _is_route_like_constant(m.group(1), m.group(2)):
+                return True
+    return False
 
 
 def extract_path_constants(ctx: FileExtractionContext) -> None:

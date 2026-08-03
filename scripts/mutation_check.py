@@ -225,6 +225,48 @@ CATALOGUE: tuple[Mutant, ...] = (
             "parameterised."
         ),
     ),
+    # --- OI-2: a custom HTTP wrapper must not be invisible ------------------
+    Mutant(
+        id="OI2b-M1",
+        file="src2sink/extractors/regex_extractors.py",
+        old="            if has_route_constant is None:\n                has_route_constant = file_declares_a_route_constant(ctx.source)\n            if not has_route_constant:\n                continue\n",
+        new="            continue\n",
+        selector="tests/test_http_guard_evidence.py",
+        note=(
+            "Route-constant evidence removed, so a wrapper naming no HTTP "
+            "library is invisible again — the whole of OI-2."
+        ),
+    ),
+    Mutant(
+        id="OI2b-M2",
+        file="src2sink/extractors/regex_extractors.py",
+        old="        if not file_guard.search(ctx.source):\n            if has_route_constant is None:",
+        new="        if False:\n            if has_route_constant is None:",
+        selector="tests/test_http_guard_evidence.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Guard bypassed entirely — `\\w*[Cc]lient.post(` then matches any "
+            "Mapping-like helper in the fleet, which is what the guard is for."
+        ),
+    ),
+    Mutant(
+        id="OI2b-M3",
+        file="src2sink/extractors/regex_extractors.py",
+        old="            if _is_route_like_constant(m.group(1), m.group(2)):\n                return True",
+        new="            return True",
+        selector="tests/test_http_guard_evidence.py",
+        note=(
+            "Any string constant counts as a route, so `/config/app.yml` — a "
+            "resource path — becomes HTTP evidence."
+        ),
+    ),
+    Mutant(
+        id="OI2a-M1",
+        file="src2sink/extractors/http_out.py",
+        old='    r"|MediaType|HttpStatus|Authorization|Bearer)\\b",',
+        new='    r")\\b",',
+        selector="tests/test_http_guard_evidence.py",
+        note="Transport-agnostic Java tokens dropped from the file guard.",
+    ),
     # --- OI-3: Gradle version catalogs -------------------------------------
     Mutant(
         id="OI3-M1",

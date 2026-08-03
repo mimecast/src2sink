@@ -269,10 +269,21 @@ class Wrapper {{
         for n in with_evidence
     ), "custom Java client wrapper not detected"
 
-    # No HTTP stack referenced anywhere in the file -> the broad receiver pattern
-    # must stay quiet rather than flagging every `x.post(` in the fleet.
-    without = _nodes(body)
+    # The broad receiver pattern must still stay quiet rather than flagging every
+    # `x.post(` in the fleet. OI-2 changed *what counts as evidence*, not whether
+    # evidence is required: a route constant now suffices, so this negative needs
+    # a file carrying neither a library name nor a route.
+    without = _nodes('''
+class Wrapper {
+  Handle submit(String sql) { return client.post(sql); }
+}
+''')
     assert not [n for n in without if n.family == "http-out"]
+
+    # ...and the same wrapper *with* its route constant is now detected, which is
+    # the whole of OI-2: the HTTP concern lives in another module, so the file
+    # names no library and the caller used to be invisible.
+    assert [n for n in _nodes(body) if n.family == "http-out"]
 
 
 def test_python_self_post_wrapper_needs_file_level_http_evidence() -> None:
@@ -294,8 +305,19 @@ class Client:
         for n in with_evidence
     ), "python custom client call site not detected"
 
-    without = _nodes(body, language="python", rel_path="mapping.py")
+    # As above (OI-2): evidence is still required, but a route constant is now
+    # evidence, so the negative needs a fixture with neither.
+    without = _nodes('''
+class Client:
+    def run(self, sql):
+        return self.post(sql)
+''', language="python", rel_path="mapping.py")
     assert not [n for n in without if n.family == "http-out"]
+
+    assert [
+        n for n in _nodes(body, language="python", rel_path="mapping.py")
+        if n.family == "http-out"
+    ]
 
 
 def test_self_get_on_a_mapping_class_is_not_an_http_call() -> None:
