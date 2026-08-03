@@ -59,13 +59,20 @@ HTTP_OUT_CALL_RX: list[tuple[re.Pattern[str], str, str]] = [
 # broad receiver patterns below. Without a guard, `self.post(` matches any
 # Mapping-like helper; with it, the pattern only fires in files that also
 # reference an HTTP stack, so custom wrappers are recovered without the noise.
+# The library names below are only half the evidence: a wrapper that hides the
+# HTTP client names none of them, which is why a whole class of caller was
+# invisible (OI-2). The transport-agnostic tokens close that — a module still
+# names statuses, media types and auth headers even when the library is
+# somebody else's problem.
 _PY_HTTP_FILE_RX = re.compile(
     r"\b(?:requests|httpx|aiohttp|urllib3|urlopen|HTTPConnection)\b"
-    r"|base_url|raise_for_status|\bSession\s*\(",
+    r"|base_url|raise_for_status|\bSession\s*\("
+    r"|\b(?:status_code|Authorization|Bearer|content_type|application/json)\b",
 )
 _JAVA_HTTP_FILE_RX = re.compile(
     r"\b(?:RestTemplate|WebClient|OkHttpClient|HttpClient|HttpEntity|HttpHeaders"
-    r"|ResponseEntity|HttpMethod|FeignClient|WebTarget)\b",
+    r"|ResponseEntity|HttpMethod|FeignClient|WebTarget"
+    r"|MediaType|HttpStatus|Authorization|Bearer)\b",
 )
 
 # Call sites that are only trusted when the enclosing *file* also shows HTTP

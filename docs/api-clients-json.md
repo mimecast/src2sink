@@ -175,6 +175,26 @@ matched with Python `in` (substring), so make them specific enough to avoid
 false positives but general enough to survive version bumps. A single wrong or
 over-broad binding poisons the taint graph with phantom cross-service edges.
 
+### In-house HTTP wrappers: when to declare `class_patterns`
+
+Outbound call sites matched on a broad receiver — `client.post(...)`,
+`self.post(...)` — are only trusted when the enclosing file also shows HTTP
+evidence, otherwise the pattern would match every Mapping-like helper in the
+fleet. That evidence is either a recognised HTTP type, a transport-agnostic
+signal (`HttpStatus`, `MediaType`, `Authorization`, `Bearer`, `status_code`), or
+a route-like constant declared in the same file.
+
+A wrapper that satisfies **none** of those — no library name, no status or auth
+handling, and a route that arrives from configuration rather than a constant —
+is still invisible. Declaring the wrapper class as a binding `class_patterns`
+entry is the intended remedy: those patterns run in an **unguarded** tier, so
+they match regardless of file-level evidence.
+
+That tier is also language-agnostic and matched as a plain substring, which is
+exactly why the pattern must be distinctive. `Client`, `ApiClient` or
+`ServiceGateway` will match across the fleet and manufacture phantom edges;
+name the concrete class (`StockTransportClient`), not its suffix.
+
 ---
 
 ## 3. Discovery flow (`--discover-api-clients` / `--promote-api-clients`)
