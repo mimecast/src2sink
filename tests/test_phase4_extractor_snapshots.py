@@ -102,6 +102,15 @@ def _assert_snapshot(name: str, actual: dict) -> None:
             "java",
             SYN / "fulfilment/stock-proxy/src/StockForwarder.java",
         ),
+        # OI-2: an in-house REST wrapper naming no HTTP library. The route
+        # constant is the only evidence that this file speaks HTTP at all.
+        (
+            "java-wrapper-caller",
+            "fulfilment/wrapper-caller",
+            "src/StockRequestProcessor.java",
+            "java",
+            SYN / "fulfilment/wrapper-caller/src/StockRequestProcessor.java",
+        ),
         # OI-8: SQL built by String.format and by concatenation containing an
         # embedded quote. Both produced no node at all before the rewrite.
         (

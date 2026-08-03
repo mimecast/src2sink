@@ -278,6 +278,100 @@ CATALOGUE: tuple[Mutant, ...] = (
             "nowhere a reviewer looks — the half-finished-plumbing case."
         ),
     ),
+    # --- OI-2: a custom HTTP wrapper must not be invisible ------------------
+    Mutant(
+        id="OI2b-M1",
+        file="src2sink/extractors/regex_extractors.py",
+        old="            if has_route_constant is None:\n                has_route_constant = file_declares_a_route_constant(ctx.source)\n            if not has_route_constant:\n                continue\n",
+        new="            continue\n",
+        selector="tests/test_http_guard_evidence.py",
+        note=(
+            "Route-constant evidence removed, so a wrapper naming no HTTP "
+            "library is invisible again — the whole of OI-2."
+        ),
+    ),
+    Mutant(
+        id="OI2b-M2",
+        file="src2sink/extractors/regex_extractors.py",
+        old="        if not file_guard.search(ctx.source):\n            if has_route_constant is None:",
+        new="        if False:\n            if has_route_constant is None:",
+        selector="tests/test_http_guard_evidence.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Guard bypassed entirely — `\\w*[Cc]lient.post(` then matches any "
+            "Mapping-like helper in the fleet, which is what the guard is for."
+        ),
+    ),
+    Mutant(
+        id="OI2b-M3",
+        file="src2sink/extractors/regex_extractors.py",
+        old="            if _is_route_like_constant(m.group(1), m.group(2)):\n                return True",
+        new="            return True",
+        selector="tests/test_http_guard_evidence.py",
+        note=(
+            "Any string constant counts as a route, so `/config/app.yml` — a "
+            "resource path — becomes HTTP evidence."
+        ),
+    ),
+    Mutant(
+        id="OI2a-M1",
+        file="src2sink/extractors/http_out.py",
+        old='    r"|MediaType|HttpStatus|Authorization|Bearer)\\b",',
+        new='    r")\\b",',
+        selector="tests/test_http_guard_evidence.py",
+        note="Transport-agnostic Java tokens dropped from the file guard.",
+    ),
+    # --- OI-3: Gradle version catalogs -------------------------------------
+    Mutant(
+        id="OI3-M1",
+        file="src2sink/build_metabase_v2.py",
+        old='    return alias.replace("-", "").replace(".", "").replace("_", "").lower()',
+        new="    return alias",
+        selector="tests/test_gradle_version_catalogs.py",
+        note=(
+            "Alias normalisation dropped, so the catalog's "
+            "`warehouse-service-client` never meets the script's "
+            "`libs.warehouseServiceClient`."
+        ),
+    ),
+    Mutant(
+        id="OI3-M2",
+        file="src2sink/build_metabase_v2.py",
+        old='    return alias.replace("-", "").replace(".", "").replace("_", "").lower()',
+        new='    return alias.replace("-", "").replace(".", "").replace("_", "")',
+        selector="tests/test_gradle_version_catalogs.py",
+        note="Case folding dropped — separators handled, capitalisation not.",
+    ),
+    Mutant(
+        id="OI3-M3",
+        file="src2sink/build_metabase_v2.py",
+        old="        for alias, gid, aid in _CATALOG_DSL_RX.findall(text):\n            catalog.setdefault(_normalise_alias(alias), (gid, aid))\n",
+        new="",
+        selector="tests/test_gradle_version_catalogs.py",
+        note="settings.gradle.kts `library(...)` catalogs no longer parsed.",
+    ),
+    Mutant(
+        id="OI3-M4",
+        file="src2sink/build_metabase_v2.py",
+        old='                "kind": "internal" if is_internal_coordinate(gid, aid) else "external",',
+        new='                "kind": "external",',
+        selector="tests/test_gradle_version_catalogs.py",
+        note=(
+            "Resolved coordinates never classified internal, so they reach "
+            "dependencies_internal — the discovery input — as nothing."
+        ),
+    ),
+    Mutant(
+        id="OI3-M5",
+        file="src2sink/build_metabase_v2.py",
+        old="        if unresolved:\n            notes.append(",
+        new="        if False:\n            notes.append(",
+        selector="tests/test_gradle_version_catalogs.py",
+        note=(
+            "Unresolved catalog references stop being reported — the dependency "
+            "list degrades to empty with nothing saying so, which is the whole "
+            "failure shape the 1.1.0 work set out to eliminate."
+        ),
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",

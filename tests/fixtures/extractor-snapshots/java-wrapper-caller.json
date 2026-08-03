@@ -1,0 +1,47 @@
+{
+  "edge_count": 0,
+  "families": [
+    "http-out",
+    "path-constant"
+  ],
+  "node_count": 2,
+  "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "http_method": "POST",
+        "path": "/v1/stock",
+        "paths": [
+          "/v1/stock"
+        ],
+        "purpose": "client-call",
+        "raw": "client.post(",
+        "resolved_symbols": "\"/v1/stock\""
+      },
+      "family": "http-out",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "path": "/v1/stock",
+        "raw": "STOCK_SUBMIT_URL = \"/v1/stock\"",
+        "symbol": "STOCK_SUBMIT_URL"
+      },
+      "family": "path-constant",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    }
+  ]
+}
