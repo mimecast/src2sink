@@ -380,6 +380,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `crypto-algorithm` | sink | Literal algorithm use |
 | `crypto-key-source` | propagator | Secrets Manager / KMS / Vault |
 | `raw-code-payload` | source | Endpoint accepts `sql`/`query`/… and file has SQL execution sink |
+| `sql-payload-out` | sink | Outbound request whose body carries a `sql`/`dql`/… field; see below |
 | `api-client-consumer` | propagator | Import of a registered client library (`known_api_clients.py`); carries `target_repo` + declared `paths`, so the hop is graphed even though the consumer's source names no host or URL |
 | `path-constant` | reference | Route-like string constant or enum member (`PATH_QUERY = "/v1/queries"`); recovers call sites that build their URL from a named constant in another file |
 
@@ -423,6 +424,28 @@ Before 1.2.0 this field was a boolean derived from `"?" in call_text`, which
 labelled calls containing no SQL at all as *unparameterised* and calls next to an
 unrelated safe constant as *parameterised*. Values from an older metabase are
 reported as `unknown` rather than translated.
+
+#### `sql-payload-out` vs `raw-code-payload`
+
+The two are the ends of one cross-repo hop and neither implies the other:
+
+| Family | Direction | Means |
+|--------|-----------|-------|
+| `raw-code-payload` | inbound | *this service accepts SQL* — an endpoint whose handler takes a `sql`-ish field and reaches an execution sink |
+| `sql-payload-out` | outbound | *this service sends SQL* — a `sql`-ish field bound into an outbound request body |
+
+An outbound SQL payload is neither a local `sql` sink (nothing executes here)
+nor an ordinary `http-out` (the body is executable input at the far end), which
+is why it needs a family of its own rather than a flag on either.
+
+`detail` carries `field_name`, `http_out_line` and `path` (the request it rides
+on), plus `target_repo`/`client` when a binding resolved the destination.
+Confidence is `high` when the field was named in an `api-clients.json`
+`payload_fields` list — a declaration that the receiving service treats it as
+executable — and `medium` on the generic vocabulary alone.
+
+Joining the two families across repos is not done: a `sql-payload-out` in one
+repo and a `raw-code-payload` in another are recorded independently.
 
 ### Classification axes (orthogonal)
 

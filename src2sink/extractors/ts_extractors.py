@@ -11,6 +11,7 @@ from .patterns import (
     SQL_EXECUTION_SINK_NAMES,
     SQL_SINK_NAMES,
     file_has_sql_evidence,
+    iter_bound_payload_fields,
     sql_symbol_table,
     receiver_is_database,
     sql_parameterisation,
@@ -120,6 +121,54 @@ def extract_tree_sitter_calls(ctx: FileExtractionContext) -> None:
             file_sql_evidence=file_sql_evidence, sql_symbols=sql_symbols,
         )
         _maybe_add_script_exec(ctx, name, line, call_text)
+
+
+def link_sql_payload_out(ctx: FileExtractionContext) -> None:
+    """Tag an outbound request that carries SQL in its body (sql-payload-out).
+
+    The mirror of :func:`link_raw_code_payload_endpoints`, which is structurally
+    *inbound* — it requires an ``http-in`` node, so it only ever fires on the
+    service that receives SQL. A repo that *sends* SQL to another service had no
+    family at all: not a local ``sql`` sink, since nothing executes here, and not
+    an ordinary ``http-out``, since the payload is executable code at the far end
+    (OI-9).
+
+    Requires both halves in the same file — a payload field being bound, and an
+    outbound call to carry it. A data class declaring a ``sql`` field sends
+    nothing, and an outbound call with no such field is ordinary traffic.
+    """
+    if not ctx.http_out_sinks:
+        return
+
+    for pos, field, by_binding in iter_bound_payload_fields(ctx.source):
+        line = ctx.line_number(pos)
+        # Attribute to the nearest outbound call at or after the binding: a
+        # payload is populated before the request that carries it.
+        following = [n for n in ctx.http_out_sinks if n.line >= line]
+        carrier = min(following or ctx.http_out_sinks, key=lambda n: abs(n.line - line))
+        detail = {
+            "field_name": field,
+            "http_out_line": carrier.line,
+            "path": carrier.detail.get("path", ""),
+            "target_repo": carrier.detail.get("target_repo", ""),
+            "client": carrier.detail.get("client", ""),
+            "evidence": (
+                "binding payload_fields" if by_binding else "payload field vocabulary"
+            ),
+        }
+        ctx.nodes.append(make_node(
+            repo=ctx.repo_id,
+            file=ctx.rel_path,
+            line=line,
+            language=ctx.language,
+            kind="sink",
+            family="sql-payload-out",
+            detail=detail,
+            data_class="raw-sql-payload",
+            # A binding declaring the field is a statement that this service
+            # takes it as executable input; the generic vocabulary is a guess.
+            confidence="high" if by_binding else "medium",
+        ))
 
 
 def link_raw_code_payload_endpoints(ctx: FileExtractionContext) -> None:

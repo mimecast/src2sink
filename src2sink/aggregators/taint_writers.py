@@ -320,6 +320,34 @@ def write_crypto_and_payload_catalogues(taint_dir: Path, buckets: TaintCatalogue
     _write_jsonl(taint_dir / "raw-code-payload-endpoints.jsonl", buckets.raw_payload)
     (taint_dir / "raw-code-payload-endpoints.md").write_text("\n".join(md), encoding="utf-8")
 
+    # The outbound dual: this repo *sends* SQL rather than accepting it. Written
+    # as its own catalogue because the reader is different — one asks "what can
+    # be injected into my service", the other "where does my service ship
+    # executable input to someone else" (OI-9).
+    md = _hierarchical_section(
+        "Outbound SQL payloads",
+        "_Outbound requests carrying a `sql`/`dql`/… field in the body. The "
+        "far end of the hop that `raw-code-payload-endpoints` records from the "
+        "receiving side._\n",
+        [["Confidence", "Count"],
+         *[[str(k), str(v)] for k, v in Counter(r.get("confidence") for r in buckets.sql_payload_out).most_common()]],
+        [
+            [
+                r["repo"],
+                r.get("detail", {}).get("field_name", ""),
+                r.get("detail", {}).get("path", ""),
+                r.get("detail", {}).get("target_repo", "") or "?",
+                f"{r.get('file')}:{r.get('line')}",
+            ]
+            for r in buckets.sql_payload_out
+        ],
+        ["Repo", "Field", "Path", "Target", "Location"],
+        max(0, len(buckets.sql_payload_out) - MAX_MD_ROWS),
+        taint_dir / "sql-payload-out.jsonl",
+    )
+    _write_jsonl(taint_dir / "sql-payload-out.jsonl", buckets.sql_payload_out)
+    (taint_dir / "sql-payload-out.md").write_text("\n".join(md), encoding="utf-8")
+
 
 def write_config_catalogues(taint_dir: Path, buckets: TaintCatalogueBuckets) -> None:
     """Write config data-store, security-key, and (optional) crypto-config catalogues."""

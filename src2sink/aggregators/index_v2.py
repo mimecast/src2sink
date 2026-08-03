@@ -34,6 +34,7 @@ def _row_from_record(data: dict[str, Any]) -> dict[str, Any]:
         "http_out": families.get("http-out", 0),
         "sql": families.get("sql", 0),
         "raw_payload": families.get("raw-code-payload", 0),
+        "sql_payload_out": families.get("sql-payload-out", 0),
         "pii_field": families.get("pii-field", 0),
         "pii_log": families.get("pii-log", 0),
         "queue": families.get("queue-pub", 0) + families.get("queue-sub", 0),

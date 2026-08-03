@@ -101,3 +101,25 @@ def _clear_repo_utils_caches():
     yield
     repo_utils._repo_artifact_index_cache = None
     repo_utils._component_identity_index_cache = None
+
+
+@pytest.fixture(autouse=True)
+def _clear_api_client_bindings():
+    """Reset the configured api-client bindings between tests.
+
+    Bindings are module-global and change extraction results: a binding's
+    ``payload_fields`` raises the confidence of a ``sql-payload-out`` node, and
+    its ``class_patterns`` add an entire unguarded call-site tier. A test that
+    configured bindings and did not restore them therefore changed the *output*
+    of every test that ran after it — which is how a committed extractor
+    snapshot came to depend on collection order.
+
+    Restoring here rather than in each test means the next one cannot reintroduce
+    the leak by forgetting a ``finally``.
+    """
+    from src2sink import known_api_clients as kac
+    from src2sink.extractors.http_out import configure_http_out_client_patterns
+
+    yield
+    kac.configure_api_client_bindings(())
+    configure_http_out_client_patterns(())

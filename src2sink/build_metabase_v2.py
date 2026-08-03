@@ -345,6 +345,7 @@ def process_one_v2(args: tuple[Path, str, str, Path, bool]) -> dict[str, Any] | 
         "http_out": families.get("http-out", 0),
         "pii_log": families.get("pii-log", 0),
         "raw_code_payload": families.get("raw-code-payload", 0),
+        "sql_payload_out": families.get("sql-payload-out", 0),
     }
 
 

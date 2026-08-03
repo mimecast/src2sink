@@ -1,0 +1,109 @@
+{
+  "edge_count": 0,
+  "families": [
+    "data-class-field",
+    "http-out",
+    "path-constant",
+    "sql-payload-out"
+  ],
+  "node_count": 6,
+  "nodes": [
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "sql"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "path": "/v1/query",
+        "paths": [
+          "/v1/query"
+        ],
+        "purpose": "client-call",
+        "raw": "restTemplate.postForObject(",
+        "resolved_symbols": "\"/v1/query\""
+      },
+      "family": "http-out",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 24,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "path": "/v1/query",
+        "raw": "SUBMIT_URL = \"/v1/query\"",
+        "symbol": "SUBMIT_URL"
+      },
+      "family": "path-constant",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "raw-sql-payload",
+      "detail": {
+        "client": "",
+        "evidence": "payload field vocabulary",
+        "field_name": "sql",
+        "http_out_line": 24,
+        "path": "/v1/query",
+        "target_repo": ""
+      },
+      "family": "sql-payload-out",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "sink",
+      "language": "java",
+      "line": 23,
+      "pii_classification": null
+    }
+  ]
+}

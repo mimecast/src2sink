@@ -263,7 +263,7 @@ def extract_http_outbound(ctx: FileExtractionContext) -> None:
                 if detail.get("url") or detail.get("path") or binding is not None
                 else "medium"
             )
-            ctx.nodes.append(make_node(
+            node = make_node(
                 repo=ctx.repo_id,
                 file=ctx.rel_path,
                 line=line,
@@ -272,7 +272,9 @@ def extract_http_outbound(ctx: FileExtractionContext) -> None:
                 family="http-out",
                 detail=detail,
                 confidence=conf,
-            ))
+            )
+            ctx.nodes.append(node)
+            ctx.http_out_sinks.append(node)
 
     for pat, lang_hint, purpose in HTTP_OUT_CALL_RX:
         if _call_rx_applies(lang_hint, ctx.language):

@@ -74,6 +74,15 @@ def _assert_snapshot(name: str, actual: dict) -> None:
             "python",
             SYN / "python/sms-sender/src/sender.py",
         ),
+        # OI-9: a repo that sends SQL to another service. Before the family
+        # existed this file was an ordinary http-out and nothing more.
+        (
+            "java-query-forwarder",
+            "fulfilment/query-forwarder",
+            "src/StockQueryForwarder.java",
+            "java",
+            SYN / "fulfilment/query-forwarder/src/StockQueryForwarder.java",
+        ),
         (
             "go-http-caller",
             "go/http-caller",
