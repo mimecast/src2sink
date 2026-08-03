@@ -1,7 +1,9 @@
 # src2sink 1.1.0 — Open Detection Issues and Proposed Fixes
 
 **Version reviewed:** src2sink 1.1.0
-**Status:** all issues below are open in 1.1.0. Earlier defects (empty-binding silent failure, `api-client-consumer` nodes never reaching the call graph, class-name-anchored call-site regexes, constant/enum indirection, binding aliases, unmatched-ref reporting) were fixed in 1.1.0 and are not repeated here.
+**Status:** every issue in this document is **open**. Fixed issues are removed from here and recorded in [`src2sink-closed-issues.md`](src2sink-closed-issues.md) with their fix and commit sha, so the length of this file is the backlog. Earlier defects (empty-binding silent failure, `api-client-consumer` nodes never reaching the call graph, class-name-anchored call-site regexes, constant/enum indirection, binding aliases, unmatched-ref reporting) were fixed in 1.1.0 before that convention existed and are not repeated here.
+
+**Citing an issue:** use the stable `OI-n` id shown on each heading, not the section number — section numbers do not survive the move to the closed-issues file. See §5.
 
 **Anonymisation notice:** every repository name, package name, artifact id, service name, class name, constant name and **URL path** in this document is fictitious. The worked example throughout is an invented warehouse system. References to `src2sink`'s own source (file:line) and to third-party library names appearing in `src2sink`'s regexes (`RestTemplate`, `requests`, …) are real, as those are needed to locate the code being fixed.
 
@@ -9,13 +11,15 @@
 
 ## 0. Context: how these were found
 
-A fleet scan of several hundred repositories was used to measure detection coverage for one heavily-consumed internal service. Coverage of that service's callers in the service-call graph rose from 1 to 22 after upgrading to 1.1.0. Investigating the callers that *remained* invisible surfaced the four issues below. Three of them are general — not specific to the service used as the probe.
+**§1–§4** came from a fleet scan of several hundred repositories, used to measure detection coverage for one heavily-consumed internal service. Coverage of that service's callers in the service-call graph rose from 1 to 22 after upgrading to 1.1.0. Investigating the callers that *remained* invisible surfaced those four issues. Three of them are general — not specific to the service used as the probe.
+
+**§7–§9** came from a later review of the SQL families, unrelated to the fleet scan. Their evidence is measured `extract_from_file` output on 1.1.0 rather than fleet statistics.
 
 The running example is a fictitious service `commerce/warehouse-service`, which publishes a client library `warehouse-service-client` (group `com.example.commerce.warehouse.client`) and exposes `POST /stock`. It is consumed by a fictitious repo `fulfilment/fulfilment-commons`.
 
 ---
 
-## 1. Version prefixes outrank real route names in path matching
+## 1. Version prefixes outrank real route names in path matching  `OI-1`
 
 **Severity:** High — silently produces *wrong* edges, not merely missing ones.
 
@@ -131,7 +135,7 @@ assert path_templates_match("/v1/orders", "/v1/invoices") is None
 
 ---
 
-## 2. Context guards suppress fully custom HTTP wrappers
+## 2. Context guards suppress fully custom HTTP wrappers  `OI-2`
 
 **Severity:** Medium — misses a whole class of caller, silently.
 
@@ -221,7 +225,7 @@ A fixture file containing only a route constant, a `client.post(ROUTE, ...)` cal
 
 ---
 
-## 3. Dependency parsing misses Gradle version catalogs
+## 3. Dependency parsing misses Gradle version catalogs  `OI-3`
 
 **Severity:** Medium — silently zeroes the input to client discovery for affected repos.
 
@@ -310,7 +314,7 @@ This and the original empty-bindings defect share a failure mode: **a detection 
 
 ---
 
-## 4. Client discovery is single-direction and never proposes `class_patterns`
+## 4. Client discovery is single-direction and never proposes `class_patterns`  `OI-4`
 
 **Severity:** Medium (capability gap). This section also answers "could discovery run from the other direction?" — yes, and the two directions are complementary rather than redundant.
 
@@ -415,14 +419,51 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 
 ## 5. Priority
 
-| # | Issue | Effort | Value | Priority |
-|---|---|---|---|---|
-| 1 | Version prefixes outrank route names | low | fixes wrong edges, not just missing ones | **P0** |
-| 3 | Gradle version catalogs unparsed | low | restores discovery input for affected repos | P1 |
-| 2 | Context guards miss custom wrappers | low–medium | recovers hand-rolled callers | P1 |
-| 4 | Demand-side discovery | medium | generates the field that cannot be inferred otherwise | P2 |
+| id | # | Issue | Effort | Value | Priority |
+|---|---|---|---|---|---|
+| OI-7 | 7 | `sql` family matches on method name alone | low–medium | withdraws fabricated high-confidence injection findings | **P0** |
+| OI-1 | 1 | Version prefixes outrank route names | low | fixes wrong edges, not just missing ones | **P0** |
+| OI-10 | 10 | `parameterised` claims a safety property it cannot establish | low (with OI-8) | withdraws a false *safe* label from injectable call sites | **P0** |
+| OI-11 | 11 | A base-query constant hides the concatenation appended to it | medium | misses a common injection shape *and* labels it safe | **P0** |
+| OI-8 | 8 | SQL built by formatting is undetected | low | a confirmed injection currently produces no node | P1 |
+| OI-3 | 3 | Gradle version catalogs unparsed | low | restores discovery input for affected repos | P1 |
+| OI-2 | 2 | Context guards miss custom wrappers | low–medium | recovers hand-rolled callers | P1 |
+| OI-12 | 12 | Four unused runtime dependencies pull in sixty packages | low | shrinks the audited supply-chain and licence surface | P1 |
+| OI-9 | 9 | No `sql-payload-out` family | medium | a whole sink class is unrepresented | P2 |
+| OI-4 | 4 | Demand-side discovery | medium | generates the field that cannot be inferred otherwise | P2 |
 
-Issue 1 is first because it is the only one producing **incorrect output**. The others reduce recall; this one reduces precision, and a confidently wrong edge is worse than a missing one — nothing in the graph distinguishes it from a real dependency.
+Issues 7, 1 and 10 are first because they produce **incorrect output**. The others
+reduce recall; these reduce precision, and a confidently wrong result is worse than
+a missing one — nothing downstream distinguishes it from a real finding. Issue 7
+outranks issue 1 because its wrong output is a *security finding*: a wrong service
+edge misleads, a fabricated injection endpoint sends someone to audit code that was
+never vulnerable.
+
+Issues 10 and 11 are the mirror image and are the ones to weigh most carefully. A
+false finding costs a reviewer time and is self-correcting — someone reads the code
+and closes it. A false **safe** label costs nothing and is never revisited, because
+nothing draws attention back to a call site the tool has already cleared. Both are
+ranked alongside the P0s, and 10 is deliberately sequenced *after* OI-8 rather than
+before, since its fix depends on detection OI-8 provides.
+
+Issue 11 is the worst of the set on the evidence available: the shape it misses —
+a base-query constant with a clause concatenated onto it — is how most hand-written
+DAOs build a filtered query, and it fails in both directions at once, emitting no
+finding *and* certifying the call site as safe. It is P0 despite being the most
+expensive to fix, because the two cheaper fixes either side of it (OI-8, OI-10)
+leave it untouched.
+
+### Issue ids and lifecycle
+
+Each issue carries a stable `OI-n` id **in addition to** its section number,
+because section numbers do not survive the move to
+[`src2sink-closed-issues.md`](src2sink-closed-issues.md). Cite `OI-n` — never `§n` —
+from test docstrings, commit messages, and code comments.
+
+When an issue is fixed it is **removed from this document** and its section moved
+verbatim to the closed-issues document, with a fix description and the commit sha
+appended. This file is therefore always and only the open set: its length is the
+backlog. See the closed-issues header for the exact move procedure.
 
 ---
 
@@ -435,3 +476,440 @@ Three of these four defects share one shape: **a detection path that fails to em
 - An unparsed dependency format produces `dependencies_internal: []` and no note (§3).
 
 The 1.1.0 work established the right pattern — the manifest binding count, the unconditional `service-call-unmatched.jsonl`, the recorded oversized-file skips. Extending it consistently is the durable fix: **any detection input that resolves to nothing should say so in the run manifest or the repo's notes.** A count of zero is a finding; an absent field is not.
+
+---
+
+## 7. The `sql` family matches on method name alone  `OI-7`
+
+**Severity:** High — produces *wrong* output, and unlike §1 the wrong output is a security finding.
+
+Sections 7–9 come from a separate review of the SQL families rather than the fleet-scan investigation in §0. Every output quoted below is real `extract_from_file` output on 1.1.0, not a reconstruction.
+
+### Symptom
+
+Calls that have nothing to do with SQL are catalogued as unparameterised SQL execution sinks at `high` confidence:
+
+```
+httpClient.execute(request)     -> sql sink, confidence=high, execution=True, parameterised=False
+messageDigest.update(data)      -> sql sink, confidence=high, execution=True, parameterised=False
+call.execute()                  -> sql sink, confidence=high, execution=True, parameterised=False
+```
+
+### Root cause
+
+`extractors/patterns.py:9-10` places the bare verbs `execute`, `query` and `update` in `SQL_SINK_NAMES`, and `ts_extractors.py:17` decides on the method name alone:
+
+```python
+is_sql_call = name in SQL_SINK_NAMES or any(
+    hint in call_text for hint in SQL_EXECUTION_CALL_HINTS
+)
+```
+
+The receiver is not unavailable — it is discarded. `call_name_java_kotlin` (`ast_walk.py:32`) reads the AST node's `name` field and drops the sibling `object` field that holds `httpClient` / `messageDigest`.
+
+`parameterised` compounds it (`ts_extractors.py:35`):
+
+```python
+"parameterised": "?" in call_text or ":" in call_text,
+```
+
+That is a substring test, not a placeholder test, so a call containing no SQL whatsoever is reported as **unparameterised**.
+
+### Why this is worse than a noisy family
+
+`execution=True` appends the node to `ctx.sql_execution_sinks`, one of the three inputs to `link_raw_code_payload_endpoints` (`ts_extractors.py:87`). A plain HTTP proxy that happens to carry a field named `sql` therefore manufactures a **`raw-code-payload` node at `high` confidence**:
+
+```java
+// fulfilment/stock-proxy — StockForwarder.java
+@RestController
+public class StockForwarder {
+    private String sql;
+    @PostMapping("/v1/forward")
+    public Response forward(@RequestBody StockRequest req) throws Exception {
+        return httpClient.execute(req.toHttpRequest());   // not SQL
+    }
+}
+```
+
+```
+http-in          source high
+sql              sink   high   {'symbol': 'execute', 'execution': True, 'parameterised': False}
+raw-code-payload source high   {'endpoint_path': '/v1/forward', 'sink_symbol': 'execute'}
+EDGE intra-file: sql payload field (line 4) on /v1/forward → execute (line 7)
+```
+
+That fabricated finding flows into `taint/raw-code-payload-endpoints.jsonl`, the `trace_batch` reports and the index counts — the tool's highest-value output. A wrong service edge misleads; a fabricated injection endpoint sends someone to audit code that was never vulnerable.
+
+### Proposed fix
+
+Surface the receiver (`method_invocation` carries an `object` field in the Java/Kotlin grammar; `attribute` carries one in Python), then admit a bare `SQL_SINK_NAMES` hit only on positive evidence:
+
+* **(a) receiver vocabulary** — `jdbcTemplate`, `entityManager`, `em`, `session`, `sqlSession`, `cursor`, `conn`/`connection`, `stmt`/`statement`/`preparedStatement`, `db`, `dao`, `repository`, `tx`; case-insensitive, matched on the trailing identifier so `this.userDao` and `readOnlyJdbcTemplate` both hit;
+* **(b) call-text hint** — the existing `SQL_EXECUTION_CALL_HINTS`, unchanged;
+* **(c) file-level SQL evidence** — a SQL keyword **inside a string literal** (`SELECT|INSERT|UPDATE|DELETE|MERGE|UPSERT|CREATE TABLE`) **or** a database import (`java.sql`, `javax.sql`, `jakarta.persistence`, `org.springframework.jdbc`, `org.hibernate`, `mybatis`, `sqlalchemy`, `psycopg`, `pymysql`, `sqlite3`, `database/sql`, `gorm`).
+
+**(c) must mean SQL text or a DB import — never the bare token `sql`.** The proxy above has a field named `sql` and no SQL anywhere; a looser (c) re-admits precisely the case this fix exists to eliminate.
+
+Make `parameterised` tri-state: `True`/`False` only when a SQL literal is in scope, otherwise `"unknown"`.
+
+### Suggested tests
+
+* The three call sites above, in a file with no SQL evidence, yield **zero** `sql` nodes.
+* `jdbcTemplate.query(SQL, …)` still yields one at `high` with `execution=True` — the recall guard.
+* A bare `execute` **with** a `SELECT` literal in the file, and again with only a JDBC import, each yield one.
+* The `StockForwarder` proxy yields zero `sql` **and** zero `raw-code-payload` nodes.
+* One Python (`cursor.execute`) and one Go (`db.Query`) case, so the gate is not silently Java-only.
+
+### Residual not covered
+
+A SQL statement assembled in one file and executed in another is still invisible; signal (c) is file-scoped by design. Cross-file SQL provenance is a separate problem.
+
+---
+
+## 8. SQL built by formatting produces no node at all  `OI-8`
+
+**Severity:** High — a confirmed injection is invisible to the scan.
+
+### Symptom
+
+```java
+// fulfilment/stock-dao — StockQueryBuilder.java
+String sql = String.format("SELECT * FROM stock WHERE ref = '%s'", ref);
+```
+
+No `sql` node of any kind is produced. Measured across the common formatting constructs:
+
+| Construct | 1.1.0 |
+|---|---|
+| `String.format("SELECT * FROM stock WHERE ref = '%s'", ref)` | **no node** |
+| Kotlin `"SELECT * FROM stock WHERE ref = $ref"` | **no node** |
+| Python `"SELECT … '%s'" % ref` | **no node** |
+| Python `"SELECT … '{}'".format(ref)` | **no node** |
+| `"SELECT * FROM stock WHERE ref = " + ref` | sql source, `concatenated` ✓ |
+| `"SELECT * FROM stock WHERE ref = '" + ref + "'"` | **no node** |
+
+### Root cause
+
+`SQL_SOURCE_RX` (`patterns.py:36-41`) holds four patterns — concatenation in either direction, Python f-strings, and `${…}` templates. Three distinct defects:
+
+1. **No format-function coverage at all.** `String.format`, `.formatted(`, `MessageFormat.format`, Python `%` and `.format` are absent.
+
+2. **The concatenation patterns break on an embedded quote.** Their literal body is `[^"\']*`, excluding *both* quote characters, so a double-quoted literal containing `'` cannot be spanned:
+
+   ```python
+   (re.compile(r'["\'][^"\']*(?:SELECT|INSERT|UPDATE|DELETE)\b[^"\']*["\']\s*\+'), "concatenated"),
+   ```
+
+   `WHERE ref = '" + ref + "'` is the canonical injection shape, so the pattern misses exactly the case it exists for. This is likely the defect behind the reported miss, rather than the format-function gap.
+
+3. **The template pattern requires the interpolation first.** `\$\{[^}]+\}.*(?:SELECT|INSERT|UPDATE|DELETE)` demands `${…}` *before* the SQL keyword; real templates interpolate after it (`"SELECT … WHERE ref = ${ref}"`), so it rarely fires.
+
+### Proposed fix
+
+Add format-function patterns (each requiring a SQL keyword inside the format string); rewrite the concatenation literal body per delimiter — `"(?:[^"\\\n]{0,400})"` and `'(?:[^'\\\n]{0,400})'` — so a double-quoted literal may contain `'`; and match keyword-and-interpolation in **either** order within one literal. Rate `high` where a SQL keyword co-occurs with interpolation of a variable, `medium` for the existing shapes.
+
+Every pattern stays length-bounded and joins the TA-005 bounded-regex test.
+
+### Suggested tests
+
+* One case per row of the table above, each asserting the `pattern` label.
+* `String.format("Hello %s", name)` yields nothing — widening a source pattern needs its negative.
+* A SQL keyword inside a comment yields nothing.
+
+### Residual not covered
+
+SQL assembled across multiple statements (`sb.append("SELECT …"); sb.append(ref);`) is still missed — the patterns are single-expression.
+
+---
+
+## 9. An outbound request carrying a SQL payload has no home family  `OI-9`
+
+**Severity:** Medium — a whole sink class is unrepresented.
+
+### Symptom
+
+```java
+// fulfilment/fulfilment-commons — StockQueryForwarder.java
+public class StockQueryForwarder {
+    private static final String SUBMIT_URL = "/v1/query";
+    public Result submit(String sqlText) {
+        QueryRequest body = new QueryRequest();
+        body.setSql(sqlText);
+        return restTemplate.postForObject(SUBMIT_URL, body, Result.class);
+    }
+}
+```
+
+```
+http-out       sink      high   {'path': '/v1/query', …}
+path-constant  reference medium
+data-class-field source  medium {'field_name': 'query'}
+```
+
+An ordinary HTTP call and nothing more, though this is a repo shipping arbitrary SQL to another service over the wire.
+
+### Root cause
+
+Not a bug — a missing family. `raw-code-payload` is structurally *inbound*: `link_raw_code_payload_endpoints` (`ts_extractors.py:87`) requires `ctx.http_sources`, an `http-in` node, so it only ever fires on the service that **receives** SQL. The dual — the service that **sends** it — has no representation. Such a call is neither a local `sql` sink (nothing executes here) nor an ordinary `http-out` (the payload is executable code at the far end).
+
+Note also that `body.setSql(sqlText)` contributed no `sql` field marker: the field-name passes recognise declarations, not setter, builder or JSON-key forms.
+
+### Proposed fix
+
+A `sql-payload-out` family, emitted by a cross-pass linker mirroring `link_raw_code_payload_endpoints` on the outbound side: an `http-out` node in the file **and** a SQL-payload field bound into that request.
+
+The vocabulary already exists and should be reused rather than reinvented — `RAW_SQL_PAYLOAD_FIELD_NAMES` (`vocabulary.py:130`, the strict set) ∪ the `payload_fields` of the binding that stamped the `http-out` node, where one did (`known_api_clients.py:32`, default `("sql",)`).
+
+```
+family:     sql-payload-out
+kind:       sink
+data_class: raw-sql-payload
+detail:     {field_name, http_out_line, path, target_repo, client, evidence}
+```
+
+Confidence `high` when a binding's own `payload_fields` matched — the binding is a declaration that this service takes SQL over the wire — and `medium` on vocabulary alone.
+
+Field detection must cover setters (`setSql(`), builders (`.sql(`), assignment (`.sql =`, `sql:`) and JSON keys (`"sql":`), not only declarations.
+
+**This is not merely an extractor change.** A new family must be threaded through `taint_buckets.FAMILY_TO_BUCKET`, `taint_writers.py`, `index_v2.py`, `renderers/markdown.py`, the `build_metabase_v2` family counts, `trace.py` and `SCHEMA.md`. That plumbing is the bulk of the work.
+
+### Suggested tests
+
+* The forwarder above yields one `sql-payload-out` node referencing the `http-out` line and `/v1/query`.
+* A binding declaring `payload_fields: ["dql"]` promotes a `dql` field to `high`.
+* An ordinary POST with no SQL-ish field yields nothing — the precision guard.
+* A data class with a `sql` field but no outbound call in the file yields nothing.
+* The family reaches the aggregated taint catalogue, not just `ctx.nodes` — the test that catches half-finished plumbing.
+
+### Residual not covered
+
+`raw-code-payload` and `sql-payload-out` are the two ends of one cross-repo hop — *"this service accepts SQL"* and *"this service sends SQL"*. Joining them across repos in the aggregation phase is the obvious follow-on and is deliberately out of scope here.
+
+---
+
+## 10. `parameterised` is reported as a safety property it cannot establish  `OI-10`
+
+**Severity:** High — a false *safe* label is more dangerous than a false finding.
+
+**Introduced by:** the OI-7 fix (commit `1339b60`, 1.2.0-dev). The 1.1.0 field was differently wrong (`"?" in call_text or ":" in call_text`); this section is about the replacement, not the original.
+
+### Symptom
+
+A placeholder somewhere in the file is taken as evidence that *this* call site is parameterised:
+
+```java
+// fulfilment/stock-dao — StockDao.java
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> search(String clause) {
+        String sql = "SELECT * FROM stock WHERE " + clause;   // injectable
+        return jdbcTemplate.query(sql, mapper);
+    }
+}
+```
+
+```
+sql source pattern=concatenated          <- the danger is detected ...
+sql sink   parameterised=True            <- ... and then contradicted
+```
+
+The scan reports both facts about the same file and they disagree. A reviewer filtering the SQL catalogue for raw statements never sees this call site.
+
+### Root cause
+
+`patterns.sql_parameterisation`:
+
+```python
+statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(call_text)]
+if not statements:
+    statements = [m.group(1) for m in SQL_LITERAL_RX.finditer(source)]   # (1)
+if not statements:
+    return "unknown"
+return any(SQL_PLACEHOLDER_RX.search(s) for s in statements)             # (2)
+```
+
+Three distinct errors:
+
+1. **(1) file-level fallback.** When the call executes a variable, any SQL literal anywhere in the file stands in for the statement actually executed. Unrelated code certifies this call site.
+2. **(2) `any`.** One parameterised statement among several marks the call parameterised, even when the executed one is not.
+3. **Concatenation is ignored entirely.** A statement may be *both* concatenated and parameterised — `"... WHERE ref = '" + ref + "' AND id = ?"` — which is injectable despite the placeholder. The presence of a placeholder is not the absence of concatenation, and only the second is a safety property.
+
+A fourth, milder case: a `?` with no bound arguments is reported parameterised. That is usually a runtime error rather than a vulnerability, but it is the same overclaim.
+
+Note also that error 3 is currently masked by luck. In the mixed example the literal fragments split around the concatenation, so `SQL_LITERAL_RX` matches only `"SELECT * FROM stock WHERE ref = '"` — which has no placeholder, giving the right answer for the wrong reason. Reverse the operands (`"... AND id = ? AND ref = '" + ref`) and it reports `True`.
+
+### Proposed fix
+
+`parameterised` should stop being a safety verdict and become a *posture* derived from two independent facts about the statement executed at the call site:
+
+| Posture | Placeholders | Concatenation / interpolation |
+|---|---|---|
+| `parameterised` | yes | no |
+| `mixed` | yes | yes | 
+| `raw` | no | yes |
+| `unknown` | — | statement not identifiable at the call site |
+
+`mixed` is the case this section exists for and must not collapse into either neighbour.
+
+The governing rule: **weak evidence may downgrade a posture, never upgrade it.** File-level evidence can move a call to `mixed` or `raw`; it can never establish `parameterised`, which requires the statement to be identified at the call site. Concretely, drop the file-level fallback at (1), replace `any` at (2) with a per-statement judgement, and consult the concatenation evidence the `sql` *source* pass already produces for the same file.
+
+### Dependency
+
+The concatenation half of this is only as good as `SQL_SOURCE_RX`, which `OI-8` shows misses `String.format`, template interpolation, and — most relevantly here — concatenation containing an embedded quote, which is exactly the shape of the mixed example. **This issue should be fixed with `OI-8`, not before it**: a posture built on today's concatenation detection would mark genuinely mixed statements `parameterised` and re-create the defect one level up.
+
+### Why the fallback cannot simply be deleted
+
+Constant-mediated SQL is the normal shape in Java, and the fallback is what handles it:
+
+```java
+private static final String FIND = "SELECT ref FROM stock WHERE id = ?";
+List<Stock> find(long id) {
+    return jdbcTemplate.query(FIND, mapper, id);   // call text holds no literal
+}
+```
+
+Deleting (1) makes this `unknown` and loses a correct verdict. The proper fix is **symbol resolution** — the same shape as `build_path_symbol_table` in `extractors/http_out.py`, which already resolves `host + SUBMIT_PATH` for outbound paths — mapping the identifier at the call site to the literal it was assigned. That is what turns a file-level guess into a statement-level fact.
+
+### Interim
+
+A narrower change gets the false *safe* label out without waiting for symbol resolution: **keep the fallback only when the file shows no concatenation evidence.** If a file contains a concatenated SQL statement, no unattributed literal in it may certify a call site, so the posture becomes `unknown`. The `search` example above is then `unknown` while the `FIND` example stays `parameterised`.
+
+### Suggested tests
+
+* The `search` example above: posture is not `parameterised`. This is the symptom test.
+* `"... WHERE ref = '" + ref + "' AND id = ?"` → `mixed`, and the same statement with the operands reversed → also `mixed` (the luck-masking case).
+* A file containing one safe constant and one built statement: each call site is judged on its own statement.
+* A call executing a variable that cannot be resolved → `unknown`, never `parameterised`.
+* A genuine `jdbcTemplate.query("SELECT ... WHERE id = ?", mapper, id)` → `parameterised`. The recall guard.
+
+### Residual not covered
+
+Whether the bound arguments actually match the placeholders, and whether a `PreparedStatement`'s `setX` calls are ever made, both need dataflow the extractor does not have. `mixed` and `unknown` are the honest labels for what a regex pass can establish.
+
+A statement whose SQL keyword lives in a constant and whose *appended* fragments carry the user input is missed entirely — see `OI-11`.
+
+---
+
+## 11. A base-query constant hides the concatenation appended to it  `OI-11`
+
+**Severity:** High — misses a common injection shape *and* labels it safe.
+
+**Found:** while fixing `OI-10`; not closed by `OI-8` or `OI-10`.
+
+### Symptom
+
+The "base query plus conditional clause" shape, which is how most hand-written Java DAOs build a filtered query:
+
+```java
+// fulfilment/stock-dao — StockDao.java
+public class StockDao {
+    private static final String SAFE = "SELECT ref FROM stock WHERE id = ?";
+
+    List<Stock> find(String ref, long id) {
+        String sql = SAFE + " AND ref = '" + ref + "'";
+        return jdbcTemplate.query(sql, mapper, id);
+    }
+}
+```
+
+Measured:
+
+```
+keyword-bearing literals in file: ['SELECT ref FROM stock WHERE id = ?']
+file detected as constructing SQL: False
+sql source nodes:                 []
+sink posture:                     parameterised
+```
+
+Both halves are wrong. The concatenation produces **no `sql` source node**, and the sink is then labelled **`parameterised`** — the safe posture — on the strength of the base constant's `?`.
+
+### Root cause
+
+One cause, two symptoms. Every pattern in `SQL_SOURCE_RX` anchors on a SQL keyword *inside the literal adjacent to the operator*:
+
+```python
+(re.compile(rf"{lit}{q}\s*\+"), "concatenated"),   # "SELECT …" +
+(re.compile(rf"\+\s*{lit}"), "concatenated"),      # + "SELECT …"
+```
+
+Here the keyword is in `SAFE`, and the fragments actually concatenated — `" AND ref = '"`, `"'"` — carry none. Nothing matches, so:
+
+* no `sql` source node is emitted (`OI-8`'s widening does not help: the shapes it added are also keyword-anchored); and
+* `sql_parameterisation` sees no construction, finds exactly one candidate statement, and attributes it — yielding `parameterised` (`OI-10`'s single-candidate rule is satisfied, because the *other* fragments were never candidates).
+
+`OI-10` is therefore correct as specified and still wrong in this case: its guard against misattribution counts only keyword-bearing literals.
+
+### Proposed fix
+
+**Symbol resolution**, which `OI-10` already identifies as the proper remedy for its own fallback. `extractors/http_out.py` has the pattern to copy: `build_path_symbol_table` maps identifier → endpoint-like literal per file, and `_resolved_symbol_text` substitutes the identifiers referenced near a call so a constant-mediated path resolves.
+
+The SQL equivalent:
+
+1. build a per-file map of identifier → SQL-shaped string literal (the same shape as `build_path_symbol_table`, with a SQL-literal predicate in place of `_ENDPOINTISH_RX`);
+2. when an expression concatenates an identifier that resolves to a SQL statement, treat the whole expression as the statement — so `SAFE + " AND ref = '" + ref` is a constructed SQL statement;
+3. feed that resolved statement to both `extract_sql_string_sources` (emitting the missing `sql` source) and `sql_parameterisation` (yielding `mixed`, since the base constant's `?` and the appended concatenation are both present).
+
+Bound the map as `build_path_symbol_table` does (`_MAX_SYMBOLS_PER_FILE`), and record only SQL-shaped literals so the table stays small.
+
+### Suggested tests
+
+* The example above: one `sql` source node, and sink posture `mixed`.
+* The same with no placeholder in the base constant → posture `raw`.
+* A constant that is *not* concatenated (`jdbcTemplate.query(SAFE, mapper, id)`) → still `parameterised`. The recall guard for `OI-10`'s constant-mediated case.
+* An identifier that resolves to a non-SQL literal must not make an unrelated concatenation into SQL. The precision guard.
+* A constant defined in another file is out of reach — assert `unknown`, not a guess.
+
+### Residual not covered
+
+Cross-file constants, and a base query assembled through a `StringBuilder` across several statements, both need more than a per-file symbol map. `OI-8`'s residual (multi-statement `sb.append` construction) is the same gap seen from the other side.
+
+---
+
+## 12. Four unused runtime dependencies pull in sixty packages  `OI-12`
+
+**Severity:** Medium — no known vulnerability today; this is attack-surface and licence-surface reduction.
+
+**Not a detection defect.** This is the one supply-chain entry in a document otherwise about detection, kept here so the `OI-n` record stays in one place.
+
+### Symptom
+
+`pyproject.toml` declares `ipykernel`, `jupyterlab`, `openpyxl` and `pandas` as **runtime** dependencies. None of them is imported anywhere:
+
+```
+$ grep -rn "import pandas|import openpyxl|import jupyter|import ipykernel|import IPython" src2sink/ scripts/ tests/
+(no matches)
+```
+
+There are no notebooks in the repository and no documentation referring to a notebook or spreadsheet workflow.
+
+Measured closure of the installed environment:
+
+| Set | Packages |
+|---|---|
+| Deps `src2sink` actually imports (`defusedxml`, `tree-sitter*`) | **8** |
+| Closure of the four never-imported deps | **68** |
+
+Every consumer of the library installs roughly sixty packages the tool never touches.
+
+### Why it matters for this project in particular
+
+1. **Audited surface.** `pip-audit` (control SC-1, artifact TA-011) audits the lockfile. Sixty unnecessary packages are sixty more advisories that can turn the build red, and sixty more chances that a compromised transitive dependency ends up inside a *security scanner* — a tool whose output people act on.
+2. **Licence surface.** The only non-permissive licences in the tree arrive this way. All three MPL-2.0 packages — `certifi` (via `httpx`/`requests`), `fqdn` (via `jupyterlab`'s `jsonschema` format extras) and `pathspec` (via `mypy`, dev-only) — are outside the real closure. The eight packages actually shipped against are MIT or PSFL, with no copyleft of any kind.
+3. **Install cost.** `jupyterlab` alone is a large install for a CLI that parses source files.
+
+MPL-2.0 is weak, file-level copyleft: using an unmodified dependency imposes nothing on an MIT project, so there is no licence *problem* today. The point is that the exposure is gratuitous.
+
+### Proposed fix
+
+Remove all four from `[project.dependencies]` and regenerate `uv.lock`. Not moved to an optional extra: nothing in the repository uses them, so there is no feature to keep working. Should a notebook workflow appear later, `[project.optional-dependencies]` is the right home for it, not the default install.
+
+### Suggested tests
+
+* The existing suite must pass unchanged — nothing imports them, so nothing should move.
+* `uv sync --locked` and `pip-audit --frozen` must both succeed against the regenerated lock.
+* A guard test asserting the runtime dependency set stays minimal would prevent a silent re-introduction; the natural form is to assert that every distribution in `[project.dependencies]` is imported somewhere under `src2sink/`.
+
+### Residual not covered
+
+Package metadata does not cover the C grammars vendored inside the `tree-sitter-*` wheels, whose upstream licences have not been verified here. Dev dependencies are unaudited beyond noting that `pathspec` (MPL-2.0) arrives via `mypy`.

@@ -1,4 +1,4 @@
-.PHONY: test cov audit lint typecheck srtm bandit opengrep ci
+.PHONY: test cov audit lint typecheck srtm mutation bandit opengrep ci
 
 # Run the test suite (coverage is reported via pyproject addopts).
 test:
@@ -28,6 +28,12 @@ typecheck:
 srtm:
 	uv run python scripts/srtm_check.py
 
+# Mutation gate: every catalogued defect must still break a test. Coverage says
+# the tests ran; this says they would notice. ~1s per mutant, so it stays in the
+# `ci` chain — the expensive generated sweep (uvx mutmut) is a dev-time tool.
+mutation:
+	uv run python scripts/mutation_check.py
+
 # Python SAST over first-party code (tests/ excluded: its fixtures are payloads).
 bandit:
 	uv run bandit -r src2sink scripts
@@ -42,4 +48,4 @@ opengrep:
 		--timeout 60 src2sink scripts
 
 # Everything CI gates on, minus opengrep (which needs the external ruleset).
-ci: lint typecheck test srtm bandit audit
+ci: lint typecheck test srtm mutation bandit audit

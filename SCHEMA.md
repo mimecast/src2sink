@@ -371,7 +371,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 |----------|----------------|-------|
 | `http-in` | source | Inbound route |
 | `http-out` | sink | Outbound client |
-| `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` |
+| `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
 | `file` | sink | Filesystem write / archive extract |
 | `queue-pub` / `queue-sub` | sink / source | Messaging |
 | `pii-field` | source | Field-name heuristic |
@@ -382,6 +382,47 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `raw-code-payload` | source | Endpoint accepts `sql`/`query`/… and file has SQL execution sink |
 | `api-client-consumer` | propagator | Import of a registered client library (`known_api_clients.py`); carries `target_repo` + declared `paths`, so the hop is graphed even though the consumer's source names no host or URL |
 | `path-constant` | reference | Route-like string constant or enum member (`PATH_QUERY = "/v1/queries"`); recovers call sites that build their URL from a named constant in another file |
+
+#### `sql` sink `detail`
+
+| Field | Values |
+|-------|--------|
+| `symbol` | the invoked method name (`query`, `execute`, `find`, …) |
+| `receiver` | the expression the call was made on (`jdbcTemplate`, `this.stockRepository`), or `""` for an unqualified call |
+| `execution` | `true` for JDBC/JPA/native execution, `false` for ORM helpers |
+| `parameterised` | a posture: `parameterised`, `mixed`, `raw`, `static`, `unknown` — see below |
+
+`execute`, `query` and `update` are ordinary method names, so a `sql` sink is
+emitted only when one positive signal supports it: a database-ish `receiver`, an
+explicit library name in the call text, or file-level SQL evidence (a SQL keyword
+inside a string literal, or a database import). A field merely *named* `sql` is
+deliberately not evidence — matching on the method name alone catalogued
+`httpClient.execute(request)` and `messageDigest.update(data)` as SQL execution
+sinks, and let an HTTP proxy fabricate a `raw-code-payload` finding (issue `OI-7`).
+
+`parameterised` is a **posture, not a safety verdict**, because a placeholder does
+not undo a concatenation in the same statement: `"… ref = '" + ref + "' AND id = ?"`
+is injectable despite the `?`. Two independent facts about the statement executed
+at the call site are reported as one label:
+
+| Posture | Placeholders | Statement constructed | Read it as |
+|---|---|---|---|
+| `parameterised` | yes | no | bound parameters, nothing concatenated |
+| `mixed` | yes | yes | **partially parameterised — still injectable** |
+| `raw` | no | yes | assembled from parts |
+| `static` | no | no | a constant statement; no input reaches it |
+| `unknown` | — | — | no statement attributable to this call site |
+
+`mixed` and `unknown` must never be read as safe. The governing rule is that weak
+evidence may downgrade a posture but never establish `parameterised`: a statement
+found at the call site is a fact about that call, while a literal found elsewhere
+in the file is a guess, so it is only trusted when the file holds exactly one
+candidate statement.
+
+Before 1.2.0 this field was a boolean derived from `"?" in call_text`, which
+labelled calls containing no SQL at all as *unparameterised* and calls next to an
+unrelated safe constant as *parameterised*. Values from an older metabase are
+reported as `unknown` rather than translated.
 
 ### Classification axes (orthogonal)
 

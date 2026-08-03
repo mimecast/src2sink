@@ -6,9 +6,6 @@ import configparser
 import json
 import re
 import tomllib
-# All parsing goes through defusedxml (DET) below — stdlib ET is imported *only*
-# for its ParseError type, which defusedxml raises and does not re-export (D-3).
-import xml.etree.ElementTree as ET  # nosec B405 - no stdlib parse call  # nosemgrep
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -25,8 +22,9 @@ from .constants import SKIP_DIRS
 from .safe_paths import resolve_within
 
 # Untrusted manifests (pom.xml, *.csproj) are parsed with defusedxml to block
-# entity-expansion ("billion laughs") and external-entity attacks. ``ET`` is
-# retained only for its ``ParseError`` type (raised for merely malformed XML).
+# entity-expansion ("billion laughs") and external-entity attacks. ``DET`` also
+# re-exports ``ParseError`` (it *is* the stdlib type), so merely malformed XML is
+# caught without importing ``xml.etree`` at all.
 
 # Callback shapes used by the identity/artifact index passes below.
 ArtifactRegister = Callable[[str, str, str], None]
@@ -151,7 +149,7 @@ def parse_pom_dependencies(pom_path: Path) -> list[dict[str, str]]:
     no_ns = re.sub(r'xmlns(:\w+)?="[^"]+"', "", text, count=10)
     try:
         root = DET.fromstring(no_ns)
-    except (ET.ParseError, DefusedXmlException):
+    except (DET.ParseError, DefusedXmlException):
         return []
     deps: list[dict[str, str]] = []
     for dep in root.iter("dependency"):
@@ -364,7 +362,7 @@ def _read_pom_identity(pom_path: Path) -> tuple[str, str] | None:
         if MAX_FILE_BYTES and pom_path.stat().st_size > MAX_FILE_BYTES:
             return None
         root = DET.parse(pom_path).getroot()
-    except (ET.ParseError, DefusedXmlException, OSError):
+    except (DET.ParseError, DefusedXmlException, OSError):
         return None
     if root is None:
         return None
@@ -495,7 +493,7 @@ def _read_dotnet_project_identity(path: Path) -> tuple[str, str, str | None] | N
         if MAX_FILE_BYTES and path.stat().st_size > MAX_FILE_BYTES:
             return None
         root = DET.parse(path).getroot()
-    except (ET.ParseError, DefusedXmlException, OSError):
+    except (DET.ParseError, DefusedXmlException, OSError):
         return None
     if root is None:
         return None

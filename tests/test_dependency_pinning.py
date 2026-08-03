@@ -129,3 +129,55 @@ def test_pip_audit_reports_no_known_vulnerabilities():
         return
 
     assert result.returncode == 0, f"pip-audit found issues:\n{result.stdout}\n{result.stderr}"
+
+
+# --------------------------------------------------------------------------
+# OI-12 — every runtime dependency must actually be used
+# --------------------------------------------------------------------------
+
+# Distribution name -> the module name it provides, where the two differ.
+_DIST_TO_MODULE = {
+    "tree-sitter": "tree_sitter",
+    "tree-sitter-go": "tree_sitter_go",
+    "tree-sitter-java": "tree_sitter_java",
+    "tree-sitter-javascript": "tree_sitter_javascript",
+    "tree-sitter-kotlin": "tree_sitter_kotlin",
+    "tree-sitter-python": "tree_sitter_python",
+    "tree-sitter-typescript": "tree_sitter_typescript",
+}
+
+
+def _declared_runtime_distributions() -> list[str]:
+    """Return the distribution names in [project.dependencies], without version specs."""
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    out = []
+    for spec in data["project"]["dependencies"]:
+        name = spec.split(">=")[0].split("==")[0].split("[")[0].strip()
+        out.append(name)
+    return out
+
+
+def test_every_runtime_dependency_is_imported_somewhere() -> None:
+    """A declared runtime dependency that nothing imports is gratuitous surface.
+
+    `src2sink` is installed into other people's environments, so each runtime
+    dependency is audited supply-chain surface (SC-1 / TA-011) and licence
+    surface for every consumer. Four unused ones — ipykernel, jupyterlab,
+    openpyxl and pandas — pulled the installed closure from 8 packages to 68,
+    and were the sole source of every non-permissive licence in the tree
+    (OI-12). This asserts they cannot come back unnoticed.
+    """
+    sources = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace")
+        for p in (REPO_ROOT / "src2sink").rglob("*.py")
+    )
+    unused = [
+        dist
+        for dist in _declared_runtime_distributions()
+        if _DIST_TO_MODULE.get(dist, dist.replace("-", "_")) not in sources
+    ]
+    assert not unused, (
+        f"declared as runtime dependencies but never imported under src2sink/: {unused}. "
+        "Move them to [dependency-groups] dev, or to an optional extra if a "
+        "feature needs them — the default install must stay minimal."
+    )

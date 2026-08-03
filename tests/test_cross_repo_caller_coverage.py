@@ -429,20 +429,23 @@ def test_repo_records_win_over_binding_aliases(bindings) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_inbound_match_prefers_the_best_confidence_candidate() -> None:
-    """The fuzzy pass must not return the first dict-order match.
+def test_inbound_match_prefers_the_route_name_over_the_version_prefix() -> None:
+    """The fuzzy pass must not return the first dict-order match — nor a bare version.
 
-    `/api/v1/queries` overlaps `/queries` only at the segment level (low) but is
-    a genuine prefix match for `/api/v1` (medium); returning whichever came first
-    in iteration order pointed the edge at the wrong service.
+    This test previously asserted the opposite: that `/api/v1/queries` should
+    resolve to the service exposing `/api/v1`, on the grounds that a prefix match
+    outranked a segment overlap. OI-1 showed that grading by *which rule fired*
+    rather than by how much meaning matched is the defect itself — `/api/v1` names
+    an edition of an API, not an endpoint, and the service exposing `/queries` is
+    the real target.
     """
     inbound = {
-        "/queries": [("acme/wrong-service", "/queries", "POST", "A.java:1")],
-        "/api/v1": [("acme/right-service", "/api/v1", "POST", "B.java:1")],
+        "/queries": [("acme/queries-service", "/queries", "POST", "A.java:1")],
+        "/api/v1": [("acme/version-root", "/api/v1", "POST", "B.java:1")],
     }
     rows, conf = match_path_in_inbound_index("/api/v1/queries", inbound)
     assert conf == "medium"
-    assert [r[0] for r in rows] == ["acme/right-service"]
+    assert [r[0] for r in rows] == ["acme/queries-service"]
 
 
 def test_inbound_match_memo_is_consistent() -> None:
@@ -659,3 +662,49 @@ def test_manifest_records_the_real_binding_count(tmp_path, monkeypatch, bindings
     )
     m = json.loads((tmp_path / "run-manifest.json").read_text(encoding="utf-8"))
     assert m["invocation"]["api_clients_binding_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# OI-1: a version prefix is not a route name.
+# ---------------------------------------------------------------------------
+
+
+def test_version_prefix_does_not_outrank_a_route_name() -> None:
+    """The OI-1 symptom, end to end: one edge to the real target, not three decoys.
+
+    A consumer declaring `STOCK_SUBMIT_URL = "/v1/stock"` used to produce edges to
+    every repo in the fleet exposing a bare `/v1` route — those won a `medium`
+    prefix match, while the service actually exposing `/stock` only managed `low`
+    and was discarded rather than ranked second.
+    """
+    # `raw` carries the quoted literal exactly as extract_path_constants emits it;
+    # the reference-edge pass reads paths out of the node's free text, so a fixture
+    # without the quotes produces no edges at all and would not reproduce anything.
+    consumer = _record("fulfilment", "fulfilment-commons", [{
+        "family": "path-constant", "kind": "reference", "file": "StockRequestProcessor.java",
+        "line": 8, "detail": {
+            "path": "/v1/stock",
+            "symbol": "STOCK_SUBMIT_URL",
+            "raw": 'STOCK_SUBMIT_URL = "/v1/stock"',
+        },
+    }])
+    target = _record("commerce", "warehouse-service", [{
+        "family": "http-in", "kind": "source", "file": "StockResource.java",
+        "line": 20, "detail": {"method": "POST", "path": "/stock"},
+    }])
+    decoys = [
+        _record(group, name, [{
+            "family": "http-in", "kind": "source", "file": "Root.java",
+            "line": 3, "detail": {"method": "GET", "path": "/v1"},
+        }])
+        for group, name in [
+            ("pricing", "price-index"),
+            ("shipping", "label-store"),
+            ("billing", "tax-service"),
+        ]
+    ]
+
+    edges, _broken = collect_service_edges([consumer, target, *decoys])
+    hops = {e.target_repo for e in edges if e.source_repo == "fulfilment/fulfilment-commons"}
+    assert hops == {"commerce/warehouse-service"}
+    assert all(e.confidence == "medium" for e in edges if e.target_repo in hops)

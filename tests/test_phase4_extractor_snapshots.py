@@ -81,6 +81,27 @@ def _assert_snapshot(name: str, actual: dict) -> None:
             "go",
             SYN / "go/http-caller/main.go",
         ),
+        # OI-7: an HTTP proxy with a `sql` field and SQL-verb calls on non-database
+        # receivers. Snapshotted as a whole node list precisely because the
+        # assertion is an *absence* — `sql` and `raw-code-payload` must not appear,
+        # and a lookup-based test would not notice them coming back under a
+        # different line or symbol.
+        (
+            "java-stock-proxy",
+            "fulfilment/stock-proxy",
+            "src/StockForwarder.java",
+            "java",
+            SYN / "fulfilment/stock-proxy/src/StockForwarder.java",
+        ),
+        # OI-8: SQL built by String.format and by concatenation containing an
+        # embedded quote. Both produced no node at all before the rewrite.
+        (
+            "java-stock-dao",
+            "fulfilment/stock-dao",
+            "src/StockQueryBuilder.java",
+            "java",
+            SYN / "fulfilment/stock-dao/src/StockQueryBuilder.java",
+        ),
     ],
 )
 def test_extractor_file_snapshot(

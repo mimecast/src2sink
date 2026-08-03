@@ -18,12 +18,11 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Typing :: Typed",
 ]
+# Kept deliberately small: this package is installed into other people's
+# environments, so every runtime dependency is audited surface (SC-1 / TA-011).
+# Anything listed here must be imported somewhere under src2sink/.
 dependencies = [
     "defusedxml>=0.7.1",
-    "ipykernel>=7.2.0",
-    "jupyterlab>=4.5.7",
-    "openpyxl>=3.1.5",
-    "pandas>=3.0.2",
     "tree-sitter>=0.25.2",
     "tree-sitter-go>=0.25.0",
     "tree-sitter-java>=0.23.5",

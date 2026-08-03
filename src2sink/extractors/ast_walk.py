@@ -96,6 +96,33 @@ def extract_call_name(source: bytes, node: Node, language: str) -> str | None:
     return call_name_js_go(source, node, language)
 
 
+def extract_call_receiver(source: bytes, node: Node, language: str) -> str | None:
+    """Return the receiver expression a call is made on, or None for a bare call.
+
+    ``jdbcTemplate.query(...)`` -> ``"jdbcTemplate"``; ``this.dao.find(...)`` ->
+    ``"this.dao"``; ``query(...)`` -> ``None``.
+
+    The receiver is what distinguishes ``jdbcTemplate.execute`` from
+    ``httpClient.execute`` — the method name alone does not (OI-7). Every grammar
+    already exposes it; it was simply never read.
+    """
+    if language in ("java", "kotlin"):
+        # Java `method_invocation` carries the receiver on its `object` field.
+        obj = node.child_by_field_name("object")
+        return node_text(source, obj) if obj is not None else None
+
+    fn = node.child_by_field_name("function")
+    if fn is None:
+        return None
+    # Python `attribute` and JS/TS `member_expression` both name it `object`;
+    # Go's `selector_expression` calls the same thing `operand`.
+    for field in ("object", "operand"):
+        recv = fn.child_by_field_name(field)
+        if recv is not None:
+            return node_text(source, recv)
+    return None
+
+
 CALL_NODE_TYPES: dict[str, frozenset[str]] = {
     "java": frozenset({"method_invocation"}),
     "kotlin": frozenset({"call_expression", "navigation_expression"}),
