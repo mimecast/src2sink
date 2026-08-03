@@ -144,6 +144,90 @@ def _collect_candidates(
     return cands
 
 
+# A proposed class_pattern is matched as a plain substring in an unguarded,
+# language-agnostic tier, so one appearing across the fleet manufactures phantom
+# edges everywhere rather than merely adding noise.
+MAX_PATTERN_REPOS = 3
+
+
+def _is_binding_stamped(detail: dict[str, Any]) -> bool:
+    """True when a binding, not an observation, put the target on this node.
+
+    Demand-side discovery resolves targets against routes and aliases that
+    promoted bindings already influence. Re-ingesting an edge a binding created
+    as fresh evidence *for that binding* inflates confidence on every run, so the
+    provenance already recorded in ``target_repo_evidence`` is used to exclude it.
+    """
+    evidence = detail.get("target_repo_evidence")
+    return isinstance(evidence, str) and evidence.startswith("api-client class")
+
+
+def _enclosing_class(file_path: str) -> str:
+    """Best-effort class name for a call site, from its file name.
+
+    The aggregation phase has the metabase, not the sources, so the enclosing
+    class is taken from the file stem. That is exact for Java and Kotlin, where
+    the public type must match the file name, and a reasonable proposal
+    elsewhere — the reviewer confirms it either way.
+    """
+    return Path(file_path).stem if file_path else ""
+
+
+def _repos_containing_class(records: list[dict[str, Any]], class_name: str) -> set[str]:
+    """Repos with a file of this name, as a proxy for corpus-wide occurrence."""
+    hits: set[str] = set()
+    for data in records:
+        rid = repo_id(data)
+        for node in data.get("nodes", []):
+            if _enclosing_class(str(node.get("file", ""))) == class_name:
+                hits.add(rid)
+                break
+    return hits
+
+
+def _demand_side_observations(
+    records: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Map target repo -> observed call sites that resolve to it.
+
+    Mines the direction supply-side discovery cannot reach: a call site landing
+    on a known service in a repo that declares no client library for it. A repo
+    that hand-rolls HTTP has no ``*-client`` dependency, so no amount of
+    dependency parsing finds it (OI-4).
+    """
+    from ..graph_common import match_path_in_inbound_index
+    from .service_call_index import build_inbound_index
+
+    inbound = build_inbound_index(records)
+    memo: dict[str, tuple[list[Any], str]] = {}
+    observed: dict[str, dict[str, Any]] = {}
+
+    for data in records:
+        consumer = repo_id(data)
+        for node in data.get("nodes", []):
+            if node.get("family") != "http-out":
+                continue
+            detail = node.get("detail") or {}
+            if _is_binding_stamped(detail):
+                continue
+            path = detail.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            rows, _conf = match_path_in_inbound_index(path, inbound, memo=memo)
+            for target, target_path, _method, _ref in rows:
+                if target == consumer:
+                    continue
+                entry = observed.setdefault(
+                    target, {"consumers": set(), "classes": set(), "paths": set()}
+                )
+                entry["consumers"].add(consumer)
+                entry["paths"].add(target_path)
+                cls = _enclosing_class(str(node.get("file", "")))
+                if cls:
+                    entry["classes"].add(cls)
+    return observed
+
+
 def _build_entry(
     cand: dict[str, Any],
     scanned: set[str],
@@ -152,6 +236,7 @@ def _build_entry(
     """Assemble a candidate entry, preserving a reviewer's non-pending decision."""
     consumers = sorted(cand.pop("consumers"))
     coordinate = cand.pop("coordinate")
+    warnings = cand.pop("warnings", [])
     has_paths = bool(cand["paths"])
     evidence = {
         "coordinate": coordinate,
@@ -167,11 +252,99 @@ def _build_entry(
     else:
         entry = {k: cand[k] for k in _TUNABLE_FIELDS}
         entry["status"] = STATUS_PENDING
+    # How the candidate was found. `both` is materially stronger than either
+    # alone: a declared dependency and an observed call site are independent
+    # lines of evidence. `call-site` sorts lowest, since it rests on the path
+    # matching that OI-1 showed can be wrong.
+    entry["discovery_method"] = cand.get("discovery_method", "dependency")
+    if warnings:
+        entry["warnings"] = warnings
     entry["confidence"] = _confidence(
         str(entry["target_repo"] or ""), scanned, bool(entry["paths"])
     )
     entry["evidence"] = evidence
     return entry
+
+
+def _apply_demand_side(
+    cands: dict[str, dict[str, Any]],
+    records: list[dict[str, Any]],
+) -> None:
+    """Enrich supply-side candidates with observed call sites, or create new ones.
+
+    Runs *after* the supply-side pass so it can do a keyed lookup rather than a
+    merge: the two directions produce different fields for the same candidate
+    (``maven_artifact`` and ``import_prefix`` only exist supply-side;
+    ``class_patterns`` only demand-side), and a demand-side-only candidate has no
+    artifact id to key on. Sequencing is for correctness, not speed — both passes
+    run in the aggregation phase with the fleet already in memory.
+    """
+    observed = _demand_side_observations(records)
+    by_target = {c["target_repo"]: (k, c) for k, c in cands.items() if c["target_repo"]}
+
+    for target, seen in sorted(observed.items()):
+        classes = sorted(seen["classes"])
+        warnings = []
+        for cls in classes:
+            repos = _repos_containing_class(records, cls)
+            if len(repos) > MAX_PATTERN_REPOS:
+                warnings.append(
+                    f"class_pattern {cls!r} appears in {len(repos)} repos; too "
+                    "generic to be safe — narrow it before accepting"
+                )
+
+        existing = by_target.get(target)
+        if existing is not None:
+            _key, cand = existing
+            cand["class_patterns"] = sorted({*cand["class_patterns"], *classes})
+            cand["paths"] = sorted({*cand["paths"], *seen["paths"]})
+            cand["consumers"] |= seen["consumers"]
+            cand["discovery_method"] = "both"
+            if warnings:
+                cand["warnings"] = warnings
+            continue
+
+        # No dependency declares this hop — the hand-rolled case supply-side
+        # discovery cannot reach at all.
+        cands[_key_demand(target)] = {
+            "target_repo": target,
+            "maven_artifact": "",
+            "import_prefix": "",
+            "paths": sorted(seen["paths"]),
+            "payload_fields": ["sql"],
+            "service_aliases": [target.split("/")[-1]],
+            "class_patterns": classes,
+            "coordinate": "",
+            "consumers": set(seen["consumers"]),
+            "discovery_method": "call-site",
+            **({"warnings": warnings} if warnings else {}),
+        }
+
+
+def _key_demand(target_repo: str) -> str:
+    """Candidate key for a call-site-only hop, which has no artifact to key on."""
+    return _key(target_repo, "")
+
+
+def discover_api_clients_from_records(
+    metabase_root: Path,
+    records: list[dict[str, Any]],
+    resolve: Any,
+) -> int:
+    """Run both discovery passes over in-memory records; returns the candidate count."""
+    scanned = {repo_id(d) for d in records}
+    cands = _collect_candidates(records, resolve)
+    for cand in cands.values():
+        cand.setdefault("discovery_method", "dependency")
+    _apply_demand_side(cands, records)
+    prev = _load_discovered(metabase_root / DISCOVERED_FILE)
+
+    entries = [
+        _build_entry(cand, scanned, prev.get(key))
+        for key, cand in sorted(cands.items())
+    ]
+    _write_discovered(metabase_root, entries)
+    return len(entries)
 
 
 def discover_api_clients(
@@ -194,14 +367,11 @@ def discover_api_clients(
     def resolve(coord: str) -> str | None:
         return _resolve_clone_path(coord, by_coord, by_name, by_full)
 
-    scanned = {repo_id(d) for d in records}
-    cands = _collect_candidates(records, resolve)
-    prev = _load_discovered(metabase_root / DISCOVERED_FILE)
+    return discover_api_clients_from_records(metabase_root, records, resolve)
 
-    entries = [
-        _build_entry(cand, scanned, prev.get(key))
-        for key, cand in sorted(cands.items())
-    ]
+
+def _write_discovered(metabase_root: Path, entries: list[dict[str, Any]]) -> None:
+    """Persist the candidate file."""
     out = {
         "_comment": (
             "CANDIDATE api-client bindings discovered by src2sink-build "
@@ -215,7 +385,6 @@ def discover_api_clients(
     (metabase_root / DISCOVERED_FILE).write_text(
         json.dumps(out, indent=2, sort_keys=False) + "\n", encoding="utf-8"
     )
-    return len(entries)
 
 
 def _load_bindings(path: Path) -> list[dict[str, Any]]:

@@ -372,6 +372,59 @@ CATALOGUE: tuple[Mutant, ...] = (
             "failure shape the 1.1.0 work set out to eliminate."
         ),
     ),
+    # --- OI-4: discovery mines only one direction ---------------------------
+    Mutant(
+        id="OI4-M1",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    _apply_demand_side(cands, records)\n",
+        new="",
+        selector="tests/test_demand_side_discovery.py",
+        note=(
+            "Demand-side pass removed — a hand-rolled caller is invisible again, "
+            "and class_patterns goes back to being permanently empty."
+        ),
+    ),
+    Mutant(
+        id="OI4-M2",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="            if _is_binding_stamped(detail):\n                continue\n",
+        new="",
+        selector="tests/test_demand_side_discovery.py",
+        note=(
+            "Binding-stamped hops re-ingested as fresh evidence for the binding "
+            "that created them — confidence inflates on every run."
+        ),
+    ),
+    Mutant(
+        id="OI4-M3",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="MAX_PATTERN_REPOS = 3",
+        new="MAX_PATTERN_REPOS = 1000",
+        selector="tests/test_demand_side_discovery.py",
+        note=(
+            "Distinctiveness check disabled, so a fleet-wide class name like "
+            "`ApiClient` is proposed unflagged into an unguarded substring tier."
+        ),
+    ),
+    Mutant(
+        id="OI4-M4",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old='            cand["discovery_method"] = "both"',
+        new='            cand["discovery_method"] = "call-site"',
+        selector="tests/test_demand_side_discovery.py",
+        note=(
+            "Agreement between the two directions no longer recorded, so the "
+            "strongest candidates are indistinguishable from the weakest."
+        ),
+    ),
+    Mutant(
+        id="OI4-M5",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="                if target == consumer:\n                    continue\n",
+        new="",
+        selector="tests/test_demand_side_discovery.py",
+        note="Self-edges proposed as client bindings — a repo calling itself.",
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",
