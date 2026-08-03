@@ -27,7 +27,7 @@ from src2sink import constants, graph_common, library_taint_java, vocabulary
 from src2sink.extractors import http_out, patterns, regex_extractors, symbols
 from src2sink.extractors.file_context import FileExtractionContext
 from src2sink.internal_groups import DEFAULT_INTERNAL_GROUP_PATTERN_STRINGS
-from src2sink.build_metabase_v2 import _GRADLE_DEP_RX
+from src2sink import build_metabase_v2
 
 # Per-pattern wall-clock budget. Every pattern here is a simple/linear regex;
 # a nested-quantifier regression would take vastly longer than this on the
@@ -88,8 +88,12 @@ ALL_REGEXES = _iter_regexes(
     # symbols holds the identifier/assignment patterns that used to live in
     # http_out; they run against untrusted source just the same after the move.
     symbols,
+    # Harvested as a whole module rather than by naming _GRADLE_DEP_RX: every
+    # manifest pattern here reads untrusted repo content, and importing one by
+    # name meant the version-catalog patterns added later were silently outside
+    # this gate. Whole-module harvesting fails safe as patterns are added.
+    build_metabase_v2,
 )
-ALL_REGEXES.append(_GRADLE_DEP_RX)
 
 
 @pytest.mark.watchdog(60)
