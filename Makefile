@@ -39,6 +39,15 @@ complexity:
 mutation:
 	uv run python scripts/mutation_check.py
 
+# Detector identity: changing an extractor without bumping DETECTION_VERSION
+# means the fix never reaches a repo that has not itself changed, because the
+# incremental scan would keep the old record (OI-16). Content-fingerprinted
+# rather than git-diffed, so it behaves the same locally and on a depth-1
+# checkout. Re-freeze after a deliberate bump:
+#   uv run python scripts/detection_version_check.py --update
+detection:
+	uv run python scripts/detection_version_check.py
+
 # Python SAST over first-party code (tests/ excluded: its fixtures are payloads).
 bandit:
 	uv run bandit -r src2sink scripts
@@ -53,4 +62,4 @@ opengrep:
 		--timeout 60 src2sink scripts
 
 # Everything CI gates on, minus opengrep (which needs the external ruleset).
-ci: lint typecheck test srtm mutation complexity bandit audit
+ci: lint typecheck test srtm mutation complexity detection bandit audit

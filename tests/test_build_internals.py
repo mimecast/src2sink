@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 
 from src2sink import build_metabase_v2 as b
-from src2sink.build_metabase_v2 import _read_existing_sha, _worker_init, process_one_v2
+from src2sink.build_metabase_v2 import (
+    _existing_record_is_current,
+    _worker_init,
+    process_one_v2,
+)
+from src2sink.schema import DETECTION_VERSION
 
 VALID_SHA = "a" * 40
 
@@ -42,19 +47,41 @@ def test_process_one_v2_skips_unchanged(tmp_path):
     metabase = tmp_path / "metabase"
     out = metabase / "repos" / "g"
     out.mkdir(parents=True)
-    (out / "r.json").write_text(json.dumps({"git_sha": VALID_SHA}), encoding="utf-8")
+    (out / "r.json").write_text(
+        json.dumps({"git_sha": VALID_SHA, "detection_version": DETECTION_VERSION}),
+        encoding="utf-8",
+    )
 
     result = process_one_v2((repo, "g", "r", metabase, False))  # force=False
     assert result == {"_skipped": True, "group": "g", "name": "r"}
 
 
-def test_read_existing_sha(tmp_path):
+def test_existing_record_is_current(tmp_path):
+    """A record is reusable only if both the source and the detector match (OI-16)."""
     jp = tmp_path / "r.json"
-    assert _read_existing_sha(jp) is None
+    assert _existing_record_is_current(jp, VALID_SHA) is False  # no file
+
+    jp.write_text(
+        json.dumps({"git_sha": VALID_SHA, "detection_version": DETECTION_VERSION}),
+        encoding="utf-8",
+    )
+    assert _existing_record_is_current(jp, VALID_SHA) is True
+    assert _existing_record_is_current(jp, "b" * 40) is False  # source moved
+
+    # Same source, older detector: the record predates a detection change and
+    # must be rebuilt rather than trusted.
+    jp.write_text(
+        json.dumps({"git_sha": VALID_SHA, "detection_version": DETECTION_VERSION - 1}),
+        encoding="utf-8",
+    )
+    assert _existing_record_is_current(jp, VALID_SHA) is False
+
+    # Predates the field entirely, so what produced it is unknowable.
     jp.write_text(json.dumps({"git_sha": VALID_SHA}), encoding="utf-8")
-    assert _read_existing_sha(jp) == VALID_SHA
+    assert _existing_record_is_current(jp, VALID_SHA) is False
+
     jp.write_text("{bad", encoding="utf-8")
-    assert _read_existing_sha(jp) is None
+    assert _existing_record_is_current(jp, VALID_SHA) is False
 
 
 def test_worker_init_configures_globals():

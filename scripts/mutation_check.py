@@ -39,7 +39,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Copied into each mutant's sandbox. Kept minimal: the suite must run, but a
 # mutant should never be able to touch the real working tree.
-_SANDBOX_CONTENTS = ("src2sink", "tests", "pyproject.toml")
+# `scripts` is here because the gates are load-bearing code: a mutated gate that
+# still passes means the gate was decorative. Tests reach them via sys.path, so
+# they must be present in the sandbox for a mutant to have any effect.
+_SANDBOX_CONTENTS = ("src2sink", "tests", "scripts", "pyproject.toml")
 
 # A mutant may hang where the original terminated (that is itself a defect worth
 # catching), so every run is bounded.
@@ -639,6 +642,29 @@ CATALOGUE: tuple[Mutant, ...] = (
         note=(
             "Patterns stop deriving from the registry, silently disabling every "
             "class_patterns binding — the original defect, in its new shape."
+        ),
+    ),
+    Mutant(
+        id="OI16-M1",
+        file="src2sink/build_metabase_v2.py",
+        old='        data.get("git_sha") == current_sha\n'
+            '        and data.get("detection_version") == DETECTION_VERSION',
+        new='        data.get("git_sha") == current_sha',
+        selector="tests/test_detection_version.py",
+        note=(
+            "Skip keyed on the repo sha alone again, so a record built by an "
+            "older detector is never rebuilt — the whole of OI-16."
+        ),
+    ),
+    Mutant(
+        id="OI16-M2",
+        file="scripts/detection_version_check.py",
+        old="    if recorded_version != version_now:",
+        new="    if recorded_version != version_now or True:",
+        selector="tests/test_detection_fingerprint_gate.py",
+        note=(
+            "The gate stops failing on a changed extractor with an unbumped "
+            "version, which is the only case it exists to catch."
         ),
     ),
 )

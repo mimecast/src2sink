@@ -57,7 +57,7 @@ from .repo_utils import (
 )
 from .safe_paths import is_escaping_symlink
 from .sanitize import redact_literals
-from .schema import SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
+from .schema import DETECTION_VERSION, SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -357,6 +357,7 @@ def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> Re
         name=name,
         path=path_rel,
         schema_version=SCHEMA_VERSION,
+        detection_version=DETECTION_VERSION,
     )
     summary.git_sha = detect_git_sha(repo_root)
     summary.analysed_at = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -401,15 +402,29 @@ def summary_to_dict(summary: RepoSummaryV2) -> dict[str, Any]:
     return d
 
 
-def _read_existing_sha(json_path: Path) -> str | None:
-    """Return the git_sha recorded in a prior run's JSON output, if present and readable."""
+def _existing_record_is_current(json_path: Path, current_sha: str) -> bool:
+    """True if a prior run's record was built from this source *by this detector*.
+
+    A record's contents are a function of two things — what was scanned and what
+    scanned it — so both belong in the cache key. Keying on the sha alone meant a
+    detection fix never reached a repository that had not itself changed, and
+    nothing downstream could tell, because the record did not say which detector
+    produced it (OI-16).
+
+    A record carrying no ``detection_version`` is **stale**, not current: it
+    predates the field, so we cannot know what produced it, and assuming the
+    current detector is exactly how that defect survived six releases.
+    """
     if not json_path.is_file():
-        return None
+        return False
     try:
         data = json.loads(json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    return data.get("git_sha") or None
+        return False
+    return bool(
+        data.get("git_sha") == current_sha
+        and data.get("detection_version") == DETECTION_VERSION
+    )
 
 
 def process_one_v2(args: tuple[Path, str, str, Path, bool]) -> dict[str, Any] | None:
@@ -419,7 +434,7 @@ def process_one_v2(args: tuple[Path, str, str, Path, bool]) -> dict[str, Any] | 
 
     if not force:
         current_sha = detect_git_sha(repo_root)
-        if current_sha and current_sha == _read_existing_sha(json_path):
+        if current_sha and _existing_record_is_current(json_path, current_sha):
             return {"_skipped": True, "group": group, "name": name}
 
     try:
@@ -513,6 +528,9 @@ def _write_run_manifest(
     manifest = {
         "tool": "src2sink",
         "tool_version": _tool_version(),
+        # The detector that produced every record written by this run. Records
+        # carried over from an earlier run name their own; see OI-16.
+        "detection_version": DETECTION_VERSION,
         "started_at": started_at,
         "finished_at": finished_at,
         "invocation": {

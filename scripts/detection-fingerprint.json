@@ -1,0 +1,28 @@
+{
+  "_comment": "Content fingerprint of the detection inputs, frozen against DETECTION_VERSION. Regenerate with scripts/detection_version_check.py --update.",
+  "detection_version": 1,
+  "files": {
+    "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
+    "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
+    "src2sink/extractors/ast_walk.py": "c1e757d088a6db1d263bc157e3e4ae82b9de6c8b76679f4b92f27922b418e77b",
+    "src2sink/extractors/base.py": "f308246442fb03e9f0da86b522c7ff9c0471f721502bd4dc279f188f7eb36d61",
+    "src2sink/extractors/config.py": "6324ffeb41ee9357e9a94cb429782ba660c19dca05effe2a581dc38346062b34",
+    "src2sink/extractors/file_context.py": "401a368dc1a885246d5c3bc674bd49f62b0f2b530a529cd75d3343b0f68eb90e",
+    "src2sink/extractors/go.py": "d552b96021aa016ac9193ab6db007d55675f5f9b84b846c8c7429ea6de2cfb92",
+    "src2sink/extractors/http_out.py": "9d429fca18983b0a50757f8898ec1d261d039dd14405ded50192e889b4b1b25e",
+    "src2sink/extractors/java.py": "ebe72e1b556ffbbbf03d5262cd2d18d6fe7ce4f7a4056141571159bfa77a6efe",
+    "src2sink/extractors/javascript.py": "b21b6cd56150fca8da3653a2b4505130d970746b9702afd45ab9e4820d9e2a42",
+    "src2sink/extractors/kotlin.py": "1a6551711635eacb47d22e8fa603b0f236085362c33d857426754d17d1d81abd",
+    "src2sink/extractors/node_factory.py": "4083a23ffbc594a6fa51d0033f7077178964ef5588e2a4dceaec7c802c0c7702",
+    "src2sink/extractors/patterns.py": "9e1a03ba7143aabbb525298b369ccd3a1093fe992616c71becad16ceb5adcea6",
+    "src2sink/extractors/python_extractor.py": "149bb9c80c0791248be622d74b6e76ff6270031299f81842308409fca6e7a232",
+    "src2sink/extractors/regex_extractors.py": "ba7bd97931db5b6fb4e1748a958a402f242c6d05f9872770a419242a4f91e841",
+    "src2sink/extractors/symbols.py": "c3516ca04394e0abc9cdd9f137f8b107b11488fe1fd6bf4dd7db3effb53e0ee4",
+    "src2sink/extractors/ts_extractors.py": "466e00661c1f87db54888f6da47ec0e930089a2cd041f86cc9f67e522f0fa57d",
+    "src2sink/extractors/unified.py": "4d17f661f386129c5389763ef34d92a65417e2dfb386a842f9835279e29d2266",
+    "src2sink/known_api_clients.py": "450107cf45481387dc115f9bbfef76c6a22c4e3e91e44dbfe88e8e2bc35ef1fa",
+    "src2sink/library_taint_java.py": "12d05afc412b4b46d3de92ec1951dfa3408cd97ef1b87d906ef7ed6988267f16",
+    "src2sink/prescreen.py": "0892268b0aa2b27428c2c1a9a76cfb59c12fa9c8e876278cd7740025713d460f",
+    "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
+  }
+}

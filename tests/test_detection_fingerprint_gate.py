@@ -13,7 +13,6 @@ a gate that silently degrades when it cannot find a base ref is no gate.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -31,6 +30,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 
 def _frozen(version: int, files: dict[str, str]) -> dict[str, object]:
+    """Build a frozen-fingerprint record for the gate to check against."""
     return {"detection_version": version, "files": files}
 
 
