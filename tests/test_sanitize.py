@@ -16,6 +16,7 @@ from src2sink.renderers.markdown import md_table
 from src2sink.sanitize import (
     UNTRUSTED_CONTENT_NOTICE,
     for_markdown,
+    for_mermaid_label,
     for_table_cell,
     redact_literals,
 )
@@ -159,3 +160,62 @@ def test_pii_catalogue_markdown_carries_notice_and_contains_injection(tmp_path):
     for ln in md.splitlines():
         if ln.startswith("| "):
             assert ln.rstrip().endswith("|")
+
+
+# ---------------------------------------------------------------------------
+# Exact-output contracts (WI-10, Tier A)
+#
+# The tests above assert *containment* — no fence in the output, no raw email —
+# which is the right question but not the whole one. For a neutralisation module
+# the exact output IS the control: what a value is replaced *with* determines
+# whether the result is still safe to embed and still readable to the reader
+# who has to act on it.
+#
+# A mutation run over this module found 22 surviving mutants at 100% line
+# coverage. Most were string-literal changes the containment assertions could
+# not see: a newline normalised to "XX XX" instead of " " still contains no
+# newline, and "XX<redacted-email>XX" still contains no address.
+# ---------------------------------------------------------------------------
+
+def test_whitespace_normalises_to_exactly_one_space() -> None:
+    """Each newline/tab becomes a single space — not a marker, not nothing.
+
+    Collapsing to the wrong replacement keeps the cell structurally safe while
+    corrupting the value a reader is meant to act on.
+    """
+    assert for_table_cell("a\nb\tc\rd") == "a b c d"
+
+
+def test_pipe_is_escaped_with_exactly_a_backslash() -> None:
+    """`|` becomes `\\|` — the Markdown escape, and nothing more."""
+    assert for_table_cell("a|b") == "a\\|b"
+
+
+def test_a_fence_becomes_the_same_number_of_inert_graves() -> None:
+    """Length is preserved so the snippet still reads as it did in the source."""
+    assert for_table_cell("```java") == "ˋˋˋjava"
+    assert for_table_cell("`````") == "ˋˋˋˋˋ"
+
+
+def test_redaction_markers_are_exactly_these_strings() -> None:
+    """Downstream readers grep for these markers; the exact text is the contract."""
+    assert redact_literals("mail alice@example.com here") == "mail <redacted-email> here"
+    assert redact_literals("ssn 123-45-6789 here") == "ssn <redacted-number> here"
+
+
+def test_mermaid_label_strips_structural_characters_exactly() -> None:
+    """Quotes, brackets and backticks are removed; the rest of the label survives."""
+    assert for_mermaid_label('a"b[c]d{e}f(g)h|i`j') == "abcdefghij"
+
+
+def test_mermaid_label_truncates_at_its_documented_default() -> None:
+    """The default max_len is part of the contract, and an off-by-one is invisible
+    to a length-bounded assertion that only checks `<=`."""
+    out = for_mermaid_label("x" * 100)
+    assert len(out) == 40
+    assert out == "x" * 39 + "…"
+
+
+def test_mermaid_label_renders_the_value_it_was_given() -> None:
+    """Guards against the label being built from anything but its argument."""
+    assert for_mermaid_label("stock-service") == "stock-service"

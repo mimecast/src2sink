@@ -425,6 +425,74 @@ CATALOGUE: tuple[Mutant, ...] = (
         selector="tests/test_demand_side_discovery.py",
         note="Self-edges proposed as client bindings — a repo calling itself.",
     ),
+    # --- Tier A: security-critical modules (WI-10) --------------------------
+    # Transcribed from a mutmut sweep. sanitize sat at 100% line coverage with 22
+    # surviving mutants: the tests asked "is the dangerous thing gone" and never
+    # "is the safe thing right", so any change to *what* a value is replaced with
+    # went unnoticed.
+    Mutant(
+        id="SAN-M1",
+        file="src2sink/sanitize.py",
+        old='    text = _WHITESPACE_RX.sub(" ", text)\n    text = _CONTROL_RX.sub("", text)',
+        new='    text = _WHITESPACE_RX.sub("  ", text)\n    text = _CONTROL_RX.sub("", text)',
+        selector="tests/test_sanitize.py",
+        note=(
+            "Newlines collapse to something other than a single space. The cell "
+            "stays structurally safe while the value a reader acts on is corrupted."
+        ),
+    ),
+    Mutant(
+        id="SAN-M2",
+        file="src2sink/sanitize.py",
+        old='    return text.replace("|", "\\\\|")',
+        new='    return text.replace("|", "\\\\|\\\\|")',
+        selector="tests/test_sanitize.py",
+        note="Pipe escaped as something other than the Markdown escape sequence.",
+    ),
+    Mutant(
+        id="SAN-M3",
+        file="src2sink/sanitize.py",
+        old="    text = _FENCE_RX.sub(lambda m: _INERT_GRAVE * len(m.group()), text)",
+        new="    text = _FENCE_RX.sub(lambda m: _INERT_GRAVE, text)",
+        selector="tests/test_sanitize.py",
+        note=(
+            "A fence is neutralised but its length is not preserved, so the "
+            "snippet no longer reads as it did in the source."
+        ),
+    ),
+    Mutant(
+        id="SAN-M4",
+        file="src2sink/sanitize.py",
+        old='    text = _EMAIL_RX.sub("<redacted-email>", text)',
+        new='    text = _EMAIL_RX.sub("<removed>", text)',
+        selector="tests/test_sanitize.py",
+        note=(
+            "The redaction marker changes. Downstream readers grep for these "
+            "exact strings, so the text is part of the contract, not a label."
+        ),
+    ),
+    Mutant(
+        id="SAN-M5",
+        file="src2sink/sanitize.py",
+        old='    return "<redacted-number>" if sum(c.isdigit() for c in token) >= 9 else token',
+        new='    return "<redacted-number>" if sum(c.isdigit() for c in token) >= 8 else token',
+        selector="tests/test_sanitize.py",
+        note=(
+            "The digit threshold moves, so ports, line numbers and dates start "
+            "being redacted as identifiers — or PANs stop being."
+        ),
+    ),
+    Mutant(
+        id="SAN-M6",
+        file="src2sink/sanitize.py",
+        old="def for_mermaid_label(value: object, *, max_len: int = 40) -> str:",
+        new="def for_mermaid_label(value: object, *, max_len: int = 41) -> str:",
+        selector="tests/test_sanitize.py",
+        note=(
+            "Off-by-one in the documented default truncation length — invisible "
+            "to an assertion that only checks `len(out) <= max_len`."
+        ),
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",
