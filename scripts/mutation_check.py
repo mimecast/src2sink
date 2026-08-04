@@ -32,6 +32,7 @@ import shutil
 import subprocess  # nosec B404 - runs pytest on a copy of this repo; no external input.
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,10 +46,14 @@ _SANDBOX_CONTENTS = ("src2sink", "tests", "pyproject.toml")
 # catching), so every run is bounded.
 _MUTANT_TIMEOUT_S = 120
 
-# Guardrail for the whole-catalogue runtime in `make ci`. One selector costs
-# ~0.8s, so this is roughly 100s. Raising it is a deliberate decision, not a
-# side effect of appending entries — see the plan's budget discussion.
+# Guardrails for the whole-catalogue runtime in `make ci`. Count alone turned out
+# to be the wrong measure: most mutants cost ~1s, but one that breaks a *timeout*
+# can only be killed by waiting for that timeout to expire, so the LIM-* entries
+# cost 15-35s each. That is inherent to testing a bulkhead, not something to tune
+# away — but it has to be visible rather than creeping, so slow mutants are named
+# on every run.
 _MAX_CATALOGUE_SIZE = 120
+_SLOW_MUTANT_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -493,6 +498,49 @@ CATALOGUE: tuple[Mutant, ...] = (
             "to an assertion that only checks `len(out) <= max_len`."
         ),
     ),
+    # --- Tier A: the execution bulkhead (WI-10) -----------------------------
+    Mutant(
+        id="LIM-M1",
+        file="src2sink/limits.py",
+        old="    if proc.is_alive():\n        proc.kill()\n        proc.join()",
+        new="",
+        selector="tests/test_limits.py",
+        note=(
+            "Escalation to kill() removed. SIGTERM is a request a wedged or "
+            "hostile worker can decline, and without the second step the scan "
+            "hangs on that repo forever — the bulkhead's whole purpose."
+        ),
+    ),
+    Mutant(
+        id="LIM-M2",
+        file="src2sink/limits.py",
+        old="    if proc.is_alive():\n        proc.terminate()",
+        new="    if True:\n        proc.terminate()",
+        selector="tests/test_limits.py",
+        note="An already-dead worker is signalled again, which can hit a recycled pid.",
+    ),
+    Mutant(
+        id="LIM-M3",
+        file="src2sink/limits.py",
+        old="    workers = max(1, workers)",
+        new="    workers = max(0, workers)",
+        selector="tests/test_limits.py",
+        note=(
+            "`workers=0` reaches this from a CLI flag; without normalisation the "
+            "dispatcher starts nothing and never terminates."
+        ),
+    ),
+    Mutant(
+        id="LIM-M4",
+        file="src2sink/limits.py",
+        old="        for r in running:\n            _kill(r[\"proc\"])\n            _close(r[\"conn\"])",
+        new="        pass",
+        selector="tests/test_limits.py",
+        note=(
+            "Cleanup on generator close removed, leaking a worker per abandoned "
+            "iterator — the normal case when a consumer stops early."
+        ),
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",
@@ -749,18 +797,32 @@ def main() -> int:
         selected = [m for m in selected if m.file in changed]
 
     survivors: list[Mutant] = []
+    slow: list[tuple[str, float]] = []
     print(f"Running {len(selected)} mutant(s)\n")
     for mutant in selected:
+        started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="src2sink-mutation-") as tmp:
             root = _sandbox(Path(tmp))
             _apply(root, mutant)
             killed, tail = _run_selector(root, mutant.selector)
+        elapsed = time.monotonic() - started
+        if elapsed >= _SLOW_MUTANT_S:
+            slow.append((mutant.id, elapsed))
         mark = "killed " if killed else "SURVIVED"
         print(f"  [{mark}] {mutant.id}  {mutant.file}  ({tail})")
         if not killed:
             survivors.append(mutant)
 
     print()
+    if slow:
+        total = sum(s for _id, s in slow)
+        print(
+            f"{len(slow)} mutant(s) took over {_SLOW_MUTANT_S:.0f}s "
+            f"({total:.0f}s of the run): " + ", ".join(f"{i} {s:.0f}s" for i, s in slow)
+        )
+        print("  Expected where the mutant breaks a timeout — killing it means "
+              "waiting for that timeout. Watch this, not just the entry count.\n")
+
     if survivors:
         print(f"{len(survivors)} mutant(s) survived — the tests do not constrain this code:\n")
         for m in survivors:
