@@ -7,11 +7,23 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-04
+
 Detection correctness. Where 1.1.0 recovered callers that were missing, this work
 is mostly about output that was **wrong** — findings the tool stated confidently
 and should not have. Issues are tracked as `OI-n` in
 [`docs/issues/src2sink-open-issues.md`](docs/issues/src2sink-open-issues.md);
 each is reproduced by a named regression test.
+
+**Why a major bump.** `SCHEMA_VERSION` is unchanged at `2` and existing
+metabases still load, but `detail.parameterised` — a documented field — changed
+from a boolean to a posture string. Anything reading it as a boolean breaks, and
+[`docs/releasing.md`](docs/releasing.md) makes a change in a documented field's
+meaning a major bump regardless of whether the file still parses.
+
+**Before you upgrade:** the first build after installing this version **rescans
+every repository**, because records now record which detector produced them and
+none of the existing ones do (`OI-16`). Budget for a full fleet scan once.
 
 ### Fixed
 
@@ -57,13 +69,24 @@ each is reproduced by a named regression test.
   string on every comparison — 4.5M calls for 150 repos — which memoisation cuts
   by 4.2x (400 repos: 38.28s to 9.15s). Reports are unchanged.
 
+- **A detection fix never reached a repository that had not changed
+  (`OI-16`).** The incremental scan skipped a repo whose git sha matched the sha
+  in its existing record — keying the cache on what was scanned, but not on what
+  scanned it. So every fix in this release reached only the repositories that
+  happened to commit afterwards, and nothing said so, because a record did not
+  record which detector produced it. Records now carry a `detection_version` and
+  are rebuilt when it differs. **The first build after upgrading rescans the
+  whole fleet**, since no existing record carries the field; after that, findings
+  from superseded detectors disappear. A new gate fails the build when an
+  extractor changes without a version bump.
+
 ### Changed
 
 - **`detail.parameterised` is now a posture, not a boolean.** Values are
   `parameterised`, `mixed`, `raw`, `static` or `unknown`. `mixed` — a placeholder
   in a statement that is *also* concatenated — is the case the boolean could not
   express. `SCHEMA_VERSION` is unchanged at `2` and existing metabases still
-  load: a pre-1.2.0 `true`/`false` is reported as `unknown` rather than
+  load: a pre-2.0.0 `true`/`false` is reported as `unknown` rather than
   translated, because that boolean was produced by the heuristic this release
   removes.
 - **`sql` and `raw-code-payload` counts fall.** This is withdrawn false
@@ -393,6 +416,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[2.0.0]: https://github.com/mimecast/src2sink/releases/tag/v2.0.0
 [1.1.0]: https://github.com/mimecast/src2sink/releases/tag/v1.1.0
 [1.0.3]: https://github.com/mimecast/src2sink/releases/tag/v1.0.3
 [1.0.2]: https://github.com/mimecast/src2sink/releases/tag/v1.0.2

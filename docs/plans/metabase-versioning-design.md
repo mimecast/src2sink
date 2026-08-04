@@ -34,6 +34,11 @@ storage engine — graph, document or neither (§8) — and whether the tool sho
 gain a traversal engine (§9). Both were decided by measurement, and in both cases
 the measurement contradicted the instinct.
 
+**Status note.** §9 originally deferred traversal. That priority call was wrong
+and is corrected at the end of that section: the reachability it depends on is
+the tool's primary capability, now filed as `OI-17` at P0. The analysis is
+unchanged; the sequencing is.
+
 ---
 
 ## 2. What exists today
@@ -479,7 +484,7 @@ penalising length — and refuse to emit paths below a floor. Emitting everythin
 and letting the reader judge is not an option when the output is consumed by an
 LLM or pasted into a ticket.
 
-### Recommendation
+### Recommendation — **superseded, see the note below**
 
 **Not now, and not as a performance measure.** Sequence it:
 
@@ -500,6 +505,41 @@ LLM or pasted into a ticket.
 > small enough that no storage choice forecloses it. Review should push back
 > hardest on step 3 — a label is a weak defence against a diagram that looks
 > like a dataflow path.
+
+### Correction — this is the roadmap, not a deferral
+
+The analysis above stands; the **priority** it assigned was wrong, and the error
+is worth naming because it is a common one.
+
+Having established that intra-repo reachability blocks useful traversal, this
+document filed traversal as "later" and moved on. But connecting an entrypoint
+to a sink *is what the tool is for* — the name says so. A dependency that blocks
+the primary capability is not a reason to defer the capability; it is the next
+piece of work. Treating a blocker as a postponement is how a stated purpose
+quietly becomes a backlog item.
+
+That gap is now `OI-17`, filed at **P0**, with the measurement: on a three-file
+layered service, both the endpoint and the concatenated SQL sink are detected and
+**zero edges** connect them.
+
+Two things in the analysis above also turned out to be too pessimistic, and both
+were settled by prototype rather than argument:
+
+* **Resolution is syntactic for the languages that matter.** Java and Kotlin
+  declare field types, so `private final StockService stockService` resolves
+  `stockService.process()` with no compiler. ~60 lines of tree-sitter produced
+  the full path on the fixture, and correctly declined to resolve calls into
+  external types.
+* **The precision problem has a cheap answer.** Chaining *argument into
+  parameter* along the path turns reachability into evidence, and prunes hops
+  that carry nothing tainted — a decoy method calling a static query was excluded
+  rather than merely ranked lower.
+
+So the sequencing changes: intra-repo reachability (`OI-17`) is the primary
+deliverable, and traversal falls out of it nearly free. `R6` still governs the
+confidence model — degradation along a path, and a floor below which nothing is
+emitted — which is the part that keeps this from manufacturing authoritative
+nonsense. See the unified plan for how it sequences against the storage work.
 
 ---
 
