@@ -31,13 +31,43 @@ ArtifactRegister = Callable[[str, str, str], None]
 
 
 class IdentityRegister(Protocol):
-    """Records ``(group, name)`` — and optionally a full coordinate — → clone path."""
+    """The callback shape the identity scanners are handed to report what they find.
+
+    ``_build_component_identity_index`` owns three dicts and passes a closure over
+    them down to half a dozen ``_index_*`` scanners. The scanners never see the
+    dicts and the index never does any scanning; this Protocol is the seam, and
+    it lets ``mypy --strict`` check that both ends agree on the call shape.
+
+    A ``Protocol`` with ``__call__`` rather than a ``Callable[...]`` alias like
+    :data:`ArtifactRegister` above, for one reason: ``Callable`` can only express
+    *positional* parameters, and these scanners call
+    ``register(group, name, path, full=...)``. The optional keyword argument is
+    the whole difference between the two declarations.
+
+    Structural, not nominal — no implementation declares that it satisfies this,
+    it simply has to match — and checked statically only: without
+    ``@runtime_checkable`` an ``isinstance`` test raises, so nothing enforces it
+    at run time.
+    """
 
     def __call__(
         self, group: str, name: str, clone_path: str | None, full: str | None = None
     ) -> None:
-        """Record one identity: ``(group, name)`` and optionally its full coordinate."""
-        ...
+        """Record one identity, subject to the rules every implementation must keep.
+
+        * A call with an empty ``name`` or ``clone_path`` is **ignored**, not an
+          error. The callers scan manifests that are routinely incomplete, and
+          making each of them pre-filter would spread the same check across a
+          dozen call sites.
+        * When one ``(group, name)`` is seen twice, the **shortest**
+          ``clone_path`` wins: the shallowest checkout is taken as canonical, so
+          a vendored or nested copy cannot displace the real repository.
+        * One ``name`` may map to several paths — the by-name index accumulates
+          rather than replaces, because an ambiguous name is a fact worth keeping
+          rather than a collision to resolve arbitrarily.
+        * ``full`` is optional and populates a *separate* index, so a lookup by
+          full coordinate never silently falls back to a looser name match.
+        """
 
 # ---------------------------------------------------------------------------
 # External-coordinate fast-reject prefixes

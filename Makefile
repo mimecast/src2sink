@@ -5,8 +5,10 @@ test:
 	uv run pytest
 
 # Lint with ruff (rule set configured in pyproject [tool.ruff.lint]).
+# scripts/ is included deliberately: mypy already covers it, and leaving it out
+# of lint let an unused import sit in a new gate script unnoticed.
 lint:
-	uv run ruff check src2sink/ tests/
+	uv run ruff check src2sink/ tests/ scripts/
 
 # Full coverage run with an HTML report in htmlcov/.
 cov:
