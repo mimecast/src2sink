@@ -127,7 +127,24 @@ ALL_REGEXES = _iter_regexes(*_HARVESTED_MODULES)
 
 
 @pytest.mark.watchdog(60)
-@pytest.mark.parametrize("rx", ALL_REGEXES, ids=[p.pattern[:40] for p in ALL_REGEXES])
+def _param_id(index: int, pattern: str) -> str:
+    """A pytest node id that can be selected on the command line.
+
+    Using the raw regex source as the id put `[`, `|`, `\\` and truncated groups
+    into node ids, which then could not be passed back to pytest — anything that
+    selects tests by node id (mutation runs, CI shard splitters, `--last-failed`)
+    fails to resolve them. The pattern itself is still in the assertion message,
+    so a failure names it.
+    """
+    slug = re.sub(r"[^A-Za-z0-9]+", "", pattern)[:24]
+    return f"rx{index:03d}-{slug}" if slug else f"rx{index:03d}"
+
+
+@pytest.mark.parametrize(
+    "rx",
+    ALL_REGEXES,
+    ids=[_param_id(i, p.pattern) for i, p in enumerate(ALL_REGEXES)],
+)
 def test_pattern_is_bounded_on_adversarial_input(rx: re.Pattern[str]) -> None:
     for payload in _adversarial_payloads():
         start = time.monotonic()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src2sink.extractors.config import extract_from_config
 
 YAML_SAMPLE = """
@@ -51,3 +53,58 @@ def test_config_mongo_redis_secrets() -> None:
     assert "mongodb" in vendors
     assert "redis" in vendors
     assert any(n.family == "crypto-key-source" for n in nodes)
+
+
+# ---------------------------------------------------------------------------
+# is_config_path — the gate deciding what gets config extraction at all
+#
+# 28 surviving mutants and no direct test. Everything downstream of this
+# function — data-store URLs, base URLs, credential-shaped keys — is only found
+# in files it says yes to, so a wrong answer here removes whole classes of
+# finding silently.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("name", "suffix", "expected"),
+    [
+        # Spring's conventional names and their profile variants.
+        ("application.yml", ".yml", True),
+        ("application.yaml", ".yaml", True),
+        ("application.properties", ".properties", True),
+        ("bootstrap.yml", ".yml", True),
+        ("application-prod.yml", ".yml", True),
+        ("application-local.properties", ".properties", True),
+        # Any file with a config-ish suffix, wherever it lives.
+        ("anything.yml", ".yml", True),
+        ("anything.yaml", ".yaml", True),
+        ("db.properties", ".properties", True),
+        (".env", ".env", True),
+        # Helm values.
+        ("values.yaml", ".yaml", True),
+        ("prod.values.yaml", ".yaml", True),
+        # Not config: source, docs, and formats this extractor cannot read.
+        ("StockDao.java", ".java", False),
+        ("README.md", ".md", False),
+        ("package.json", ".json", False),
+        ("Dockerfile", "", False),
+        ("application.toml", ".toml", False),
+    ],
+)
+def test_is_config_path(name: str, suffix: str, expected: bool) -> None:
+    """Which files reach the config extractor, stated case by case."""
+    from src2sink.extractors.config import is_config_path
+
+    assert is_config_path(name, suffix) is expected
+
+
+def test_config_suffixes_are_the_deciding_rule() -> None:
+    """The suffix set is what the behaviour above rests on.
+
+    Every other branch in `is_config_path` is subsumed by it — every name in
+    CONFIG_FILE_NAMES ends in one of these suffixes, as do `values.yaml` and
+    `application-*.yml`. Asserting the set directly is what makes a change to it
+    visible, since a redundant branch cannot fail a test.
+    """
+    from src2sink.extractors.config import _CONFIG_SUFFIXES
+
+    assert _CONFIG_SUFFIXES == frozenset({".properties", ".yml", ".yaml", ".env"})

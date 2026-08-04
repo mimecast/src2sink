@@ -156,3 +156,110 @@ def test_limits_hit_summary(tmp_path):
     # Nothing skipped anywhere → empty suffix.
     (repo_dir / "clean.json").write_text(json.dumps({"notes": []}), encoding="utf-8")
     assert _limits_hit_summary([repo_dir / "clean.json"], timed_out=0) == ""
+
+
+# ---------------------------------------------------------------------------
+# The bulkhead's own promises (WI-10, Tier A)
+#
+# A mutation sweep left 25 survivors in this module. The existing tests prove a
+# hang is killed and the run continues, which is the headline guarantee — but
+# not the mechanisms it rests on. Everything below is a promise the module makes
+# that nothing was checking.
+# ---------------------------------------------------------------------------
+
+class _StubProcess:
+    """A process-like object that can be told to ignore ``terminate()``.
+
+    Standing in for a real child keeps this a unit test of the escalation logic:
+    a process that ignores SIGTERM needs a custom signal handler in the child,
+    and the suite deliberately uses only picklable stdlib callables so it works
+    under spawn.
+    """
+
+    def __init__(self, *, ignores_terminate: bool) -> None:
+        self._ignores_terminate = ignores_terminate
+        self.alive = True
+        self.calls: list[str] = []
+
+    def is_alive(self) -> bool:
+        return self.alive
+
+    def terminate(self) -> None:
+        self.calls.append("terminate")
+        if not self._ignores_terminate:
+            self.alive = False
+
+    def kill(self) -> None:
+        self.calls.append("kill")
+        self.alive = False
+
+    def join(self, timeout: float | None = None) -> None:
+        self.calls.append(f"join({timeout})")
+
+
+def test_kill_escalates_when_a_worker_ignores_terminate():
+    """SIGTERM is a request; a hostile or wedged worker can decline it.
+
+    Escalating to kill() is the difference between the bulkhead holding and a
+    scan hanging forever on one repo, and nothing tested that the second step
+    happens.
+    """
+    from src2sink.limits import _TERMINATE_GRACE_S, _kill
+
+    proc = _StubProcess(ignores_terminate=True)
+    _kill(proc)
+    assert proc.calls == ["terminate", f"join({_TERMINATE_GRACE_S})", "kill", "join(None)"]
+    assert not proc.alive
+
+
+def test_kill_does_not_escalate_when_terminate_is_enough():
+    """The grace period is real: a cooperative worker is never SIGKILLed."""
+    from src2sink.limits import _kill
+
+    proc = _StubProcess(ignores_terminate=False)
+    _kill(proc)
+    assert "kill" not in proc.calls
+
+
+def test_kill_is_a_no_op_for_an_already_dead_worker():
+    """Reaping a finished worker must not signal a recycled pid."""
+    from src2sink.limits import _kill
+
+    proc = _StubProcess(ignores_terminate=False)
+    proc.alive = False
+    _kill(proc)
+    assert proc.calls == []
+
+
+@pytest.mark.watchdog(30)
+def test_worker_count_below_one_is_normalised():
+    """`workers=0` must still make progress rather than spin on an empty pool.
+
+    The value reaches this function from a CLI flag, so zero is reachable from
+    outside. Without the normalisation the dispatcher never starts a process and
+    never terminates.
+    """
+    assert sorted(map_with_timeout(abs, [-1, -2], workers=0, timeout=10)) == [1, 2]
+
+
+@pytest.mark.watchdog(30)
+def test_closing_the_generator_leaves_no_workers_running():
+    """Abandoning the iterator must not leak processes.
+
+    The `finally` block exists for exactly this, and a caller that stops early —
+    an exception downstream, a `break`, a consumer giving up — is the normal case
+    rather than an exotic one. One quick item lets the first `next()` return
+    while two long ones are still running, which is the state that leaks.
+    """
+    import multiprocessing as mp
+
+    gen = map_with_timeout(time.sleep, [0.05, 30, 30], workers=3, timeout=60)
+    next(gen)  # returns as soon as the quick item finishes; two workers remain
+    assert mp.active_children(), "fixture must leave workers running to be a test"
+
+    gen.close()
+
+    deadline = time.monotonic() + 10
+    while mp.active_children() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not mp.active_children(), "generator close left workers running"
