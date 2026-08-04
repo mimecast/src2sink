@@ -1,5 +1,13 @@
 # Fix plan — src2sink 1.1.0 open detection issues
 
+> **Superseded.** This plan covered the 2.0.0 detection-correctness cycle and is
+> complete — every work item landed and every issue it tracked is recorded in
+> [`../issues/src2sink-closed-issues.md`](../issues/src2sink-closed-issues.md).
+> Forward work is in [`src2sink-3.0-plan.md`](src2sink-3.0-plan.md). Kept for the
+> record: its §0 findings and the deviations it drove are cited from the closed
+> issues.
+
+
 **Input:** `docs/issues/src2sink-open-issues.md` (issues `OI-1`–`OI-9`)
 **Target release:** 1.2.0 (Phase 1), 1.3.0 (Phase 2)
 **Method:** strict TDD (red → green → refactor) per work item, with a regression
