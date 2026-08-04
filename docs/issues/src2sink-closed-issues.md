@@ -43,6 +43,11 @@ itself, so the move is a *follow-up* commit — normally the release-prep commit
 which can close several issues at once. Do not leave a `TBD` in the sha column;
 an entry without a sha is not a record of anything.
 
+**`OI-5` and `OI-6` do not exist**, and never did — the ids were minted from
+section numbers, two of which were the Priority table and the Cross-cutting
+principle rather than issues. The gap in this index is an artefact of that, not a
+withdrawn issue. See the open-issues lifecycle section.
+
 **Do not repeat the issue text in `CHANGELOG.md`.** The changelog says what
 changed for a user; this file says why the detection was wrong. They serve
 different readers.
@@ -55,6 +60,7 @@ different readers.
 |---|---|---|---|---|
 | `OI-1` | Version prefixes outrank real route names in path matching | 1.2.0 | `ccf471d`, `759235d` (PR #5) | Edges resolved through a bare `/v1` or `/api` disappear; edges that ranked `low` through a version prefix are now `medium`. |
 | `OI-2` | Context guards suppress fully custom HTTP wrappers | 1.2.0 | `b56df04`, `22bf572` (PR #7) | In-house wrapper call sites now produce `http-out` nodes, so those callers appear in the graphs. |
+| `OI-4` | Client discovery is single-direction and never proposes `class_patterns` | 1.2.0 | `1bd90d5`, `636476c` (PR #9) | A new `discovery_method` field, and candidates for callers that declare no client library. |
 | `OI-3` | Dependency parsing misses Gradle version catalogs | 1.2.0 | `2585fe0`, `099d018` (PR #6) | Repos using version catalogs now report `dependencies_internal`, so they contribute candidates to api-client discovery for the first time. |
 | `OI-7` | The `sql` family matches on method name alone | 1.2.0 | `fbe967f`, `1339b60` (PR #5) | `sql` and `raw-code-payload` counts fall fleet-wide. |
 | `OI-8` | SQL built by formatting produces no node at all | 1.2.0 | `08fd682`, `37d753d` (PR #5) | More `sql` source nodes, including the embedded-quote concatenation shape that is the canonical injection form. |
@@ -412,6 +418,128 @@ Note the alias normalisation: Gradle maps `warehouse-service-client` in the cata
 ### Related observation
 
 This and the original empty-bindings defect share a failure mode: **a detection input degrading to empty without saying so.** Consider emitting a repo `note` when a `build.gradle*` contains `libs.` references but no catalog was resolved — the same "no silent caps" principle already applied to oversized-file skips.
+
+---
+
+---
+
+## OI-4 — Client discovery is single-direction and never proposes `class_patterns`
+
+### Resolution
+
+**Fixed in:** 1.2.0  
+**Commit:** `1bd90d5`, `636476c` (PR #9)  
+**Tests:** `tests/test_demand_side_discovery.py` (12 cases, incl. both safeguards and the unmatched-call-site metric)
+
+**What changed:** A demand-side pass mines call sites that resolve to a known service in a repo declaring no client library for it, enriching the supply-side candidate where one exists and creating a call-site-only candidate where none does. It reuses the OI-1-corrected path matcher, proposes `class_patterns` from the enclosing class, and records `discovery_method` so agreement between the two directions is visible.
+
+**Deviation from the proposed fix:** None on the design — sequential, enriching, both safeguards implemented. One limitation the section did not anticipate: the enclosing class is taken from the *file stem*, because the aggregation phase holds the metabase rather than the sources. Exact for Java and Kotlin, a proposal elsewhere.
+
+**Behaviour change:** `api-clients.discovered.json` gains `discovery_method` and, where a proposed `class_pattern` is too common across the fleet, a `warnings` list. Candidates now appear for repos that declare no client dependency at all. Nothing is auto-merged; every candidate is still reviewed before promotion.
+
+---
+
+_The original issue, verbatim:_
+
+
+**Severity:** Medium (capability gap). This section also answers "could discovery run from the other direction?" — yes, and the two directions are complementary rather than redundant.
+
+### Current behaviour
+
+`aggregators/api_client_discovery.py` mines in one direction only, which can be called **supply-side**:
+
+> a consumer declares a dependency on an artifact whose id looks like a client library → resolve that coordinate to the publishing repo → take candidate paths from that repo's `http-in` nodes.
+
+Two consequences:
+
+1. **`class_patterns` is always empty.** `_collect_candidates` hardcodes `"class_patterns": []`. The field appears in `_TUNABLE_FIELDS` — it is preserved once a reviewer edits it, but never proposed. Since `class_patterns` is the mechanism that catches call sites carrying no URL, discovery cannot generate the field that most needs generating.
+2. **A caller with no client library is structurally invisible.** A repo that hand-rolls HTTP (§2) has no `*-client` dependency to mine. Supply-side discovery cannot reach it by construction — no amount of dependency parsing finds a dependency that does not exist.
+
+### Proposed: add demand-side discovery
+
+Mine the opposite direction:
+
+> a call site that resolves to a known service, but whose repo declares no client library for it → propose a binding, or enrich an existing one, describing how that call site is recognised.
+
+Evidence already present in the metabase — no new extractor required:
+
+| Signal | Source | Yields |
+|---|---|---|
+| Unmatched outbound call sites | `graphs/service-call-unmatched.jsonl` | the work queue |
+| Route constants | `path-constant` nodes | candidate `paths` |
+| Resolvable hosts | `http-out` node `detail.host` | candidate `service_aliases` |
+| Deployment hostnames | `graphs/helm-service-hosts.jsonl` | candidate `service_aliases` |
+| Config base-URLs | config extractor nodes | candidate `service_aliases` |
+| **Service name as a literal** | any string literal equal to a known repo name or alias | high-confidence `target_repo` |
+| Enclosing class of the call site | `http-out` node `file` + nearest class declaration | candidate `class_patterns` |
+
+The last two rows are the valuable ones. A string constant whose value equals a known service name — a token audience, a config key, a queue name — is unusually strong evidence, and it is exactly the sort of marker that survives in hand-rolled clients which have no other identifying feature. The enclosing class name is precisely the `class_patterns` value a reviewer would otherwise have to derive by hand.
+
+### Parallel or sequential?
+
+**Sequential, with the demand-side pass enriching the supply-side output.** The two passes are not symmetric competitors; they produce *different fields for the same candidate*:
+
+| Field | Supply-side | Demand-side |
+|---|---|---|
+| `target_repo` | coordinate → identity index | route / host / name-literal match |
+| `maven_artifact` | authoritative | may not exist |
+| `import_prefix` | from groupId | — |
+| `paths` | target's `http-in` nodes | caller's route constants |
+| `service_aliases` | derived from repo name | observed hosts |
+| `class_patterns` | **always empty** | enclosing class |
+
+Running them in parallel yields two candidate sets that must be merged anyway, and the merge key is ambiguous for demand-side-only candidates — there is no artifact id to key on. Running demand-side second lets it do a keyed lookup:
+
+```
+supply-side pass
+  → candidates keyed by (target_repo, artifact)
+
+demand-side pass
+  → for each unmatched or weakly-matched call site:
+      resolve target_repo
+      if a candidate exists for that target:   enrich it
+          - append observed service_aliases
+          - append proposed class_patterns
+          - union observed paths
+          - upgrade confidence: both directions agree
+      else:                                    create a new candidate
+          - key (target_repo, "<hand-rolled>")
+          - maven_artifact: "" and import_prefix: "" (there is none)
+          - status: pending, flagged as call-site-only
+```
+
+Neither pass is expensive — both run in the aggregation phase with the fleet already in memory — so parallelism buys little wall-clock and costs merge complexity. Sequence for correctness, not speed.
+
+### Confidence from agreement
+
+Record how each candidate was found and score agreement explicitly:
+
+```python
+entry["discovery_method"] = "dependency" | "call-site" | "both"
+```
+
+`both` is materially stronger than either alone: a declared dependency *and* an observed call site resolving to the same service are independent lines of evidence. Conversely, `call-site` alone should sort lowest, since it rests on the path matching that §1 shows can be wrong.
+
+### Two safeguards this needs
+
+**Proposed `class_patterns` must be checked for distinctiveness.** Binding class patterns run in an **unguarded, language-agnostic tier** (`extractors/regex_extractors.py:257-259` — `language="any"`, no file guard, plain substring match after `re.escape`). A proposal such as `Client`, `ApiClient` or `ServiceGateway` would match across the fleet and manufacture phantom edges. Discovery should compute each proposal's corpus-wide occurrence and refuse or flag broad ones:
+
+```python
+MAX_PATTERN_REPOS = 3
+
+occurrences = _repos_containing_literal(records, proposed_class)
+if len(occurrences) > MAX_PATTERN_REPOS:
+    entry.setdefault("warnings", []).append(
+        f"class_pattern {proposed_class!r} appears in {len(occurrences)} repos; "
+        "too generic to be safe — narrow it before accepting"
+    )
+```
+
+**Guard against self-confirmation.** Demand-side discovery resolves targets by matching against routes and aliases that promoted bindings already influence. Once a binding is promoted, the edges it creates must not be re-ingested as fresh evidence for itself, or confidence inflates on every run. Record evidence provenance and exclude nodes whose `target_repo` was stamped by a binding — `detail.target_repo_evidence` already distinguishes these — from the demand-side input set.
+
+### Why this closes a loop
+
+`service-call-unmatched.jsonl` (added in 1.1.0) is both the input to demand-side discovery and the natural measure of its success: every accepted candidate should remove entries from it. That gives the discovery pass a regression metric it currently lacks — *unmatched call sites trending to zero* — rather than only a count of candidates produced.
 
 ---
 
