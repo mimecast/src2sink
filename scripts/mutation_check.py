@@ -592,6 +592,30 @@ CATALOGUE: tuple[Mutant, ...] = (
         selector="tests/test_prescreen.py",
         note="Operator-supplied text echoed into the reason unbounded.",
     ),
+    # --- Tier B: config detection (WI-10) -----------------------------------
+    Mutant(
+        id="CFG-M1",
+        file="src2sink/extractors/config.py",
+        old='_CONFIG_SUFFIXES = frozenset({".properties", ".yml", ".yaml", ".env"})',
+        new='_CONFIG_SUFFIXES = frozenset({".properties", ".yml", ".yaml"})',
+        selector="tests/test_phase1_config.py",
+        note=(
+            "A format drops out of config detection. Everything downstream — "
+            "data-store URLs, base URLs, credential-shaped keys — is only found "
+            "in files this gate says yes to."
+        ),
+    ),
+    Mutant(
+        id="CFG-M2",
+        file="src2sink/extractors/config.py",
+        old="    return suffix in _CONFIG_SUFFIXES or path_name in CONFIG_FILE_NAMES",
+        new="    return suffix in _CONFIG_SUFFIXES and path_name in CONFIG_FILE_NAMES",
+        selector="tests/test_phase1_config.py",
+        note=(
+            "Only the six conventional Spring names are treated as config, so "
+            "every other .yml/.properties in the fleet is skipped silently."
+        ),
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",

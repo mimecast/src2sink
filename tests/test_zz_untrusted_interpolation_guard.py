@@ -19,6 +19,8 @@ from __future__ import annotations
 import ast
 import pathlib
 
+import pytest
+
 # Sanitisers that make an untrusted value safe to interpolate.
 _ALLOWED = {"for_markdown", "for_table_cell", "for_mermaid_label", "redact_literals"}
 
@@ -75,8 +77,18 @@ def _violations(path: pathlib.Path) -> list[str]:
 
 
 def test_no_raw_detail_field_in_fstrings():
-    """Fail if any doc writer interpolates a raw detail field into an f-string."""
-    found = [v for t in _TARGETS for v in _violations(t)]
+    """Fail if any doc writer interpolates a raw detail field into an f-string.
+
+    Skips on a partial source tree. This test reads files by path rather than
+    exercising behaviour, and a scoped mutation run copies only the subtree it
+    mutates — reporting "no violations" against files that are simply absent
+    would be worse than saying nothing.
+    """
+    present = [t for t in _TARGETS if t.is_file()]
+    if len(present) != len(_TARGETS):
+        pytest.skip("partial source tree (e.g. a scoped mutation run)")
+
+    found = [v for t in present for v in _violations(t)]
     assert not found, (
         "untrusted detail field interpolated into an f-string without a sanitiser "
         "(wrap in for_markdown/for_table_cell/for_mermaid_label/redact_literals):\n  "
