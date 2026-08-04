@@ -120,7 +120,7 @@ def configure_from_path(
     # class patterns into http_out. Hoisting *this* import is what breaks —
     # hoisting http_out's side alone is fine, so the cycle survives a
     # one-at-a-time check and only fails when both are at module level.
-    from .extractors.http_out import configure_http_out_client_patterns
+    from .extractors.http_out import configure_http_out_client_patterns  # noqa: PLC0415
 
     p = Path(path)
     bindings = load_api_client_bindings(p, warn=warn)

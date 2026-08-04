@@ -105,9 +105,22 @@ pretty = true
 # ("imperative mood") would require rewriting 23 predicate docstrings from
 # "True when the receiver names a database handle" to "Return True when…", which
 # is noise rather than clarity for a boolean-returning function.
-select = ["E4", "E7", "E9", "F", "D1"]
+#
+# PLC0415 keeps imports at module level. 26 had drifted into function bodies and
+# only one was load-bearing; the rest were habit, including a constant that the
+# same package already imported at the top elsewhere. The rule has no autofix, so
+# it reports rather than moves — which is what makes it safe here: a real import
+# cycle must be answered with a `# noqa: PLC0415` naming the cycle, not silently
+# rewritten. Note that isort (`I`) does NOT cover this; it only orders the
+# top-level block and leaves a function-level import exactly where it sits.
+select = ["E4", "E7", "E9", "F", "D1", "PLC0415"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests document themselves through their names and module docstrings; requiring
 # one on every fixture helper adds ceremony without adding information.
-"tests/*" = ["D1"]
+#
+# Tests and gate scripts also import inside functions on purpose — to read a
+# module fresh after mutating config, or to assert on import behaviour itself.
+# PLC0415 protects the package, whose import graph is what a cycle can break.
+"tests/*" = ["D1", "PLC0415"]
+"scripts/*" = ["PLC0415"]
