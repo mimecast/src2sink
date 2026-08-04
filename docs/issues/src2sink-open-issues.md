@@ -9,116 +9,29 @@
 
 ---
 
-## 0. Context: how these were found
+## 0. Context: where these come from
 
-**§1–§4** came from a fleet scan of several hundred repositories, used to measure detection coverage for one heavily-consumed internal service. Coverage of that service's callers in the service-call graph rose from 1 to 22 after upgrading to 1.1.0. Investigating the callers that *remained* invisible surfaced those four issues. Three of them are general — not specific to the service used as the probe.
+Issues reach this document three ways, and the third has been the most
+productive:
 
-**§7–§9** came from a later review of the SQL families, unrelated to the fleet scan. Their evidence is measured `extract_from_file` output on 1.1.0 rather than fleet statistics.
+* **A fleet scan.** `OI-1` to `OI-4` came from measuring detection coverage for
+  one heavily-consumed internal service across several hundred repositories, and
+  investigating the callers that stayed invisible.
+* **A targeted review.** `OI-7` to `OI-12` came from reading the SQL families
+  and the dependency declarations directly, with measured `extract_from_file`
+  output as the evidence rather than fleet statistics.
+* **Work on the tests themselves.** `OI-13` was found while raising coverage on
+  a module nobody had tested directly — not by anyone reporting a wrong result.
 
-The running example is a fictitious service `commerce/warehouse-service`, which publishes a client library `warehouse-service-client` (group `com.example.commerce.warehouse.client`) and exposes `POST /stock`. It is consumed by a fictitious repo `fulfilment/fulfilment-commons`.
+Everything fixed is recorded in
+[`src2sink-closed-issues.md`](src2sink-closed-issues.md) with its resolution and
+commit; this file holds only what is still open, so its length is the backlog.
 
----
-
-## 4. Client discovery is single-direction and never proposes `class_patterns`  `OI-4`
-
-**Severity:** Medium (capability gap). This section also answers "could discovery run from the other direction?" — yes, and the two directions are complementary rather than redundant.
-
-### Current behaviour
-
-`aggregators/api_client_discovery.py` mines in one direction only, which can be called **supply-side**:
-
-> a consumer declares a dependency on an artifact whose id looks like a client library → resolve that coordinate to the publishing repo → take candidate paths from that repo's `http-in` nodes.
-
-Two consequences:
-
-1. **`class_patterns` is always empty.** `_collect_candidates` hardcodes `"class_patterns": []`. The field appears in `_TUNABLE_FIELDS` — it is preserved once a reviewer edits it, but never proposed. Since `class_patterns` is the mechanism that catches call sites carrying no URL, discovery cannot generate the field that most needs generating.
-2. **A caller with no client library is structurally invisible.** A repo that hand-rolls HTTP (§2) has no `*-client` dependency to mine. Supply-side discovery cannot reach it by construction — no amount of dependency parsing finds a dependency that does not exist.
-
-### Proposed: add demand-side discovery
-
-Mine the opposite direction:
-
-> a call site that resolves to a known service, but whose repo declares no client library for it → propose a binding, or enrich an existing one, describing how that call site is recognised.
-
-Evidence already present in the metabase — no new extractor required:
-
-| Signal | Source | Yields |
-|---|---|---|
-| Unmatched outbound call sites | `graphs/service-call-unmatched.jsonl` | the work queue |
-| Route constants | `path-constant` nodes | candidate `paths` |
-| Resolvable hosts | `http-out` node `detail.host` | candidate `service_aliases` |
-| Deployment hostnames | `graphs/helm-service-hosts.jsonl` | candidate `service_aliases` |
-| Config base-URLs | config extractor nodes | candidate `service_aliases` |
-| **Service name as a literal** | any string literal equal to a known repo name or alias | high-confidence `target_repo` |
-| Enclosing class of the call site | `http-out` node `file` + nearest class declaration | candidate `class_patterns` |
-
-The last two rows are the valuable ones. A string constant whose value equals a known service name — a token audience, a config key, a queue name — is unusually strong evidence, and it is exactly the sort of marker that survives in hand-rolled clients which have no other identifying feature. The enclosing class name is precisely the `class_patterns` value a reviewer would otherwise have to derive by hand.
-
-### Parallel or sequential?
-
-**Sequential, with the demand-side pass enriching the supply-side output.** The two passes are not symmetric competitors; they produce *different fields for the same candidate*:
-
-| Field | Supply-side | Demand-side |
-|---|---|---|
-| `target_repo` | coordinate → identity index | route / host / name-literal match |
-| `maven_artifact` | authoritative | may not exist |
-| `import_prefix` | from groupId | — |
-| `paths` | target's `http-in` nodes | caller's route constants |
-| `service_aliases` | derived from repo name | observed hosts |
-| `class_patterns` | **always empty** | enclosing class |
-
-Running them in parallel yields two candidate sets that must be merged anyway, and the merge key is ambiguous for demand-side-only candidates — there is no artifact id to key on. Running demand-side second lets it do a keyed lookup:
-
-```
-supply-side pass
-  → candidates keyed by (target_repo, artifact)
-
-demand-side pass
-  → for each unmatched or weakly-matched call site:
-      resolve target_repo
-      if a candidate exists for that target:   enrich it
-          - append observed service_aliases
-          - append proposed class_patterns
-          - union observed paths
-          - upgrade confidence: both directions agree
-      else:                                    create a new candidate
-          - key (target_repo, "<hand-rolled>")
-          - maven_artifact: "" and import_prefix: "" (there is none)
-          - status: pending, flagged as call-site-only
-```
-
-Neither pass is expensive — both run in the aggregation phase with the fleet already in memory — so parallelism buys little wall-clock and costs merge complexity. Sequence for correctness, not speed.
-
-### Confidence from agreement
-
-Record how each candidate was found and score agreement explicitly:
-
-```python
-entry["discovery_method"] = "dependency" | "call-site" | "both"
-```
-
-`both` is materially stronger than either alone: a declared dependency *and* an observed call site resolving to the same service are independent lines of evidence. Conversely, `call-site` alone should sort lowest, since it rests on the path matching that §1 shows can be wrong.
-
-### Two safeguards this needs
-
-**Proposed `class_patterns` must be checked for distinctiveness.** Binding class patterns run in an **unguarded, language-agnostic tier** (`extractors/regex_extractors.py:257-259` — `language="any"`, no file guard, plain substring match after `re.escape`). A proposal such as `Client`, `ApiClient` or `ServiceGateway` would match across the fleet and manufacture phantom edges. Discovery should compute each proposal's corpus-wide occurrence and refuse or flag broad ones:
-
-```python
-MAX_PATTERN_REPOS = 3
-
-occurrences = _repos_containing_literal(records, proposed_class)
-if len(occurrences) > MAX_PATTERN_REPOS:
-    entry.setdefault("warnings", []).append(
-        f"class_pattern {proposed_class!r} appears in {len(occurrences)} repos; "
-        "too generic to be safe — narrow it before accepting"
-    )
-```
-
-**Guard against self-confirmation.** Demand-side discovery resolves targets by matching against routes and aliases that promoted bindings already influence. Once a binding is promoted, the edges it creates must not be re-ingested as fresh evidence for itself, or confidence inflates on every run. Record evidence provenance and exclude nodes whose `target_repo` was stamped by a binding — `detail.target_repo_evidence` already distinguishes these — from the demand-side input set.
-
-### Why this closes a loop
-
-`service-call-unmatched.jsonl` (added in 1.1.0) is both the input to demand-side discovery and the natural measure of its success: every accepted candidate should remove entries from it. That gives the discovery pass a regression metric it currently lacks — *unmatched call sites trending to zero* — rather than only a count of candidates produced.
+The running example throughout is a fictitious service
+`commerce/warehouse-service`, which publishes a client library
+`warehouse-service-client` (group `com.example.commerce.warehouse.client`) and
+exposes `POST /stock`. It is consumed by a fictitious repo
+`fulfilment/fulfilment-commons`.
 
 ---
 
@@ -126,12 +39,13 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 
 | id | # | Issue | Effort | Value | Priority |
 |---|---|---|---|---|---|
-| OI-4 | 4 | Demand-side discovery | medium | generates the field that cannot be inferred otherwise | P2 |
+| OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 
-Everything above P2 has been fixed and moved to
-[`src2sink-closed-issues.md`](src2sink-closed-issues.md); what remains is the one
-capability addition. The ordering rationale for the fixed set is preserved there
-alongside each issue.
+Every issue from the original review is fixed and recorded in
+[`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
+rationale preserved alongside each one. `OI-13` was found later, while raising
+test coverage rather than while investigating a report — which is the argument
+for the coverage work paying for itself.
 
 ### Issue ids and lifecycle
 
@@ -159,3 +73,88 @@ The 1.1.0 work established the right pattern — the manifest binding count, the
 
 ---
 
+---
+
+## 13. Kotlin call sites are invisible to the AST pass  `OI-13`
+
+**Severity:** High — a whole supported language silently loses its SQL sinks.
+
+**Found:** while raising `extractors/ast_walk.py` coverage for WI-12; asserted there rather than fixed, because the fix changes detection output.
+
+### Symptom
+
+The same query, in the two languages the JVM half of the fleet is written in:
+
+```java
+// Java
+class StockDao { List<Stock> find(long id) {
+    return jdbcTemplate.query("SELECT ref FROM stock WHERE id = ?", mapper, id); } }
+```
+
+```kotlin
+// Kotlin — identical call, identical receiver, identical SQL
+class StockDao { fun find(id: Long): List<Stock> {
+    return jdbcTemplate.query("SELECT ref FROM stock WHERE id = ?", mapper, id) } }
+```
+
+Measured:
+
+```
+java    -> ['data-class-field/source', 'sql/sink']
+kotlin  -> ['data-class-field/source']
+```
+
+The Java file yields a `sql` execution sink. The Kotlin file yields none — and reports no error, no warning and no note.
+
+### Root cause
+
+`CALL_NODE_TYPES` correctly names Kotlin's call nodes:
+
+```python
+"kotlin": frozenset({"call_expression", "navigation_expression"}),
+```
+
+but `extract_call_name` routes Kotlin to the **Java** walker:
+
+```python
+if language in ("java", "kotlin"):
+    return call_name_java_kotlin(source, node)
+```
+
+and that walker's first line rejects everything Kotlin produces:
+
+```python
+if node.type != "method_invocation":      # a Java grammar type
+    return None
+```
+
+`method_invocation` does not exist in the Kotlin grammar — it uses `call_expression` wrapping a `navigation_expression`. So `iter_calls` finds the nodes, asks for their names, receives `None` for every one, and yields nothing. The two halves of the dispatch disagree and neither says so.
+
+### What is lost
+
+Everything downstream of the AST pass, for Kotlin only:
+
+* **`sql` sinks** — no execution sinks, so no SQL family from the AST tier at all;
+* **`raw-code-payload`** — requires `ctx.sql_execution_sinks`, which is always empty, so a Kotlin endpoint accepting a `sql` field and executing it is never correlated;
+* **`script-exec`** — `eval`/`exec`/`compile` call sites are never seen;
+* **receiver evidence** (`OI-7`) — with no call sites there is nothing to gate, so Kotlin SQL is found only when a *regex* tier happens to match a literal.
+
+Kotlin is a first-class target: `tree-sitter-kotlin` is one of the eight runtime dependencies and `.kt` files are scanned like any other. This is not an unsupported language degrading gracefully; it is a supported one failing silently.
+
+### Proposed fix
+
+A Kotlin-specific walker, `call_name_kotlin`, reading the grammar's own shapes: a `call_expression` whose callee is a `simple_identifier` (a bare call) or a `navigation_expression` (a call on a receiver, where the name is the last `navigation_suffix`). `extract_call_receiver` needs the matching branch — the receiver is the navigation expression's first child rather than an `object` field.
+
+The same dispatch bug is worth checking for elsewhere: any language whose entry in `CALL_NODE_TYPES` names node types the corresponding walker does not accept has this defect. A test that asserts *every* language in `CALL_NODE_TYPES` yields at least one named call for a representative source would catch the whole class, and is cheaper than auditing each walker by hand.
+
+### Suggested tests
+
+* The Kotlin fixture above yields a `sql` sink with `receiver == "jdbcTemplate"`, matching the Java result.
+* A bare Kotlin call (`execute(x)`) yields a name and no receiver.
+* A Kotlin endpoint with a `sql` field plus an execution sink yields `raw-code-payload`, as the Java equivalent does.
+* Every language in `CALL_NODE_TYPES` names at least one call in a representative snippet — the class-wide guard.
+* `tests/test_ast_walk.py::test_kotlin_calls_are_not_named_by_the_java_walker` asserts the *current* behaviour and must be replaced, not deleted: it is what would otherwise let this regress quietly.
+
+### Residual not covered
+
+Kotlin's regex tiers already work, so string-built SQL in Kotlin is detected today; this issue is only about the AST pass. Scala and other JVM languages are not scanned at all and are out of scope.
