@@ -43,6 +43,11 @@ itself, so the move is a *follow-up* commit — normally the release-prep commit
 which can close several issues at once. Do not leave a `TBD` in the sha column;
 an entry without a sha is not a record of anything.
 
+**`OI-5` and `OI-6` do not exist**, and never did — the ids were minted from
+section numbers, two of which were the Priority table and the Cross-cutting
+principle rather than issues. The gap in this index is an artefact of that, not a
+withdrawn issue. See the open-issues lifecycle section.
+
 **Do not repeat the issue text in `CHANGELOG.md`.** The changelog says what
 changed for a user; this file says why the detection was wrong. They serve
 different readers.

@@ -59,6 +59,20 @@ verbatim to the closed-issues document, with a fix description and the commit sh
 appended. This file is therefore always and only the open set: its length is the
 backlog. See the closed-issues header for the exact move procedure.
 
+**`OI-5` and `OI-6` do not exist.** The ids were originally minted from section
+numbers, and §5 and §6 were the Priority table and the Cross-cutting principle
+rather than issues — so the sequence inherited a hole. Nothing was dropped or
+withdrawn.
+
+That was a mistake worth naming, because it defeated half the point: ids exist so
+that a reference survives a section moving, and deriving them from section numbers
+imported exactly the accidents they were meant to escape. **Ids are now allocated
+sequentially from `OI-13` onward, independently of any section number, and are
+never reused or renumbered.** Renumbering to close the gap would be worse than the
+gap: these ids are cited from test docstrings, commit messages and the closed-issues
+records, and every one of those citations would silently start pointing at the
+wrong issue.
+
 ---
 
 ## 6. Cross-cutting principle
