@@ -264,7 +264,6 @@ def test_accepting_a_candidate_removes_unmatched_call_sites(tmp_path) -> None:
     """
     from src2sink import known_api_clients as kac
     from src2sink.aggregators.service_call_collect import collect_service_edges
-    from src2sink.extractors.http_out import configure_http_out_client_patterns
     from src2sink.known_api_clients import ApiClientBinding
 
     # A call site with no path and no host: invisible until a binding names it.
@@ -293,7 +292,6 @@ def test_accepting_a_candidate_removes_unmatched_call_sites(tmp_path) -> None:
         service_aliases=("warehouse-service",),
         class_patterns=("StockRequestProcessor",),
     ),))
-    configure_http_out_client_patterns(())
     try:
         _edges, after = collect_service_edges(records)
     finally:

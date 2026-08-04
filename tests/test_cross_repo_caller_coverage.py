@@ -29,7 +29,6 @@ from src2sink.aggregators.openapi_match import (
 from src2sink.aggregators.openapi_models import OpenApiSpec
 from src2sink.extractors.http_out import (
     build_path_symbol_table,
-    configure_http_out_client_patterns,
     get_binding_call_patterns,
 )
 from src2sink.extractors.regex_extractors import (
@@ -61,10 +60,8 @@ BINDING = ApiClientBinding(
 def bindings():
     """Configure the api-client binding registry for the duration of one test."""
     kac.configure_api_client_bindings((BINDING,))
-    configure_http_out_client_patterns((BINDING,))
     yield (BINDING,)
     kac.configure_api_client_bindings(())
-    configure_http_out_client_patterns(())
 
 
 def _nodes(source: str, language: str = "java", rel_path: str = "Caller.java"):
@@ -112,10 +109,13 @@ def _callers_of(records: list[dict], target: str = TARGET) -> set[str]:
 def test_binding_class_patterns_reach_the_extractor(bindings) -> None:
     """`class_patterns` must be visible to the extractor after configuration.
 
-    `regex_extractors` used to do `from .http_out import _BINDING_CLASS_RX`, which
-    snapshots the empty list at import time; `configure_http_out_client_patterns`
-    rebinds the module global, so the extractor's copy stayed empty forever and
-    every configured `class_patterns` binding was dead code.
+    `regex_extractors` used to do `from .http_out import _BINDING_CLASS_RX`,
+    snapshotting an empty list at import time, so the extractor's copy stayed
+    empty forever and every configured `class_patterns` binding was dead code.
+    That global no longer exists — patterns are derived on demand from the
+    binding registry — so the mistake is now unmakeable rather than guarded
+    against. This test remains as the end-to-end statement of the property: one
+    call to configure the registry, and the call-site tier is live.
     """
     assert [p.target_repo for p in get_binding_call_patterns()] == [TARGET]
 
@@ -639,7 +639,6 @@ def test_configure_from_path_wires_both_consumers(tmp_path) -> None:
         assert [c.target_repo for c in get_binding_call_patterns()] == [TARGET]
     finally:
         kac.configure_api_client_bindings(())
-        configure_http_out_client_patterns(())
 
 
 @pytest.mark.watchdog(60)

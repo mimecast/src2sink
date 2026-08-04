@@ -105,23 +105,17 @@ def configure_from_path(
     warn: bool = False,
     allow_empty: bool = False,
 ) -> tuple[ApiClientBinding, ...]:
-    """Load bindings from ``path`` and configure every consumer that needs them.
+    """Load bindings from ``path`` and install them as the active registry.
 
-    Single entry point for the ``--api-clients`` flag so no CLI can configure the
-    binding registry while forgetting the http-out class patterns (or vice versa).
+    Entry point for the ``--api-clients`` flag. Consumers derive whatever they
+    need from :func:`get_bindings` rather than being configured separately, so
+    this is the only call a CLI has to make — there is no second registry that
+    can be left stale.
 
     Raises:
         ApiClientConfigError: if the file yields no bindings and ``allow_empty``
             is false — a misconfigured file must not look like a clean run.
     """
-    # Deferred deliberately: this module and extractors.http_out import each
-    # other. http_out calls binding_target_for_text() to resolve a call site
-    # against the configured bindings; this function pushes those bindings'
-    # class patterns into http_out. Hoisting *this* import is what breaks —
-    # hoisting http_out's side alone is fine, so the cycle survives a
-    # one-at-a-time check and only fails when both are at module level.
-    from .extractors.http_out import configure_http_out_client_patterns  # noqa: PLC0415
-
     p = Path(path)
     bindings = load_api_client_bindings(p, warn=warn)
     if not bindings and not allow_empty:
@@ -132,7 +126,6 @@ def configure_from_path(
             "the reduced coverage."
         )
     configure_api_client_bindings(bindings)
-    configure_http_out_client_patterns(bindings)
     return bindings
 
 

@@ -618,6 +618,29 @@ CATALOGUE: tuple[Mutant, ...] = (
             "an enormous or hostile fleet grows it without limit."
         ),
     ),
+    Mutant(
+        id="CYC-M1",
+        file="src2sink/extractors/http_out.py",
+        old="    if cached is not None and cached[0] is bindings:",
+        new="    if cached is not None:",
+        selector="tests/test_import_graph.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Derived call-site patterns never invalidate, so reconfiguring the "
+            "binding registry leaves the extractor on the previous set — the "
+            "stale-second-copy failure the push/pull inversion removed."
+        ),
+    ),
+    Mutant(
+        id="CYC-M2",
+        file="src2sink/extractors/http_out.py",
+        old="    bindings = get_bindings()",
+        new="    bindings = ()",
+        selector="tests/test_import_graph.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Patterns stop deriving from the registry, silently disabling every "
+            "class_patterns binding — the original defect, in its new shape."
+        ),
+    ),
 )
 
 

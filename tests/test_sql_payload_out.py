@@ -24,7 +24,6 @@ from __future__ import annotations
 import pytest
 
 from src2sink import known_api_clients as kac
-from src2sink.extractors.http_out import configure_http_out_client_patterns
 from src2sink.extractors.unified import extract_from_file
 from src2sink.known_api_clients import ApiClientBinding
 
@@ -182,10 +181,8 @@ public class StockQueryForwarder {
 def bindings():
     """Configure one api-client binding for the duration of a test."""
     kac.configure_api_client_bindings((BINDING,))
-    configure_http_out_client_patterns((BINDING,))
     yield
     kac.configure_api_client_bindings(())
-    configure_http_out_client_patterns(())
 
 
 def test_binding_payload_fields_extend_the_vocabulary(bindings) -> None:
