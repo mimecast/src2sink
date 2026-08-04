@@ -25,6 +25,10 @@ reporting a wrong result:
 * **Measuring, rather than reasoning about, cost.** `OI-14` and `OI-15` came
   from profiling `trace` over a synthetic fleet. Both the reported symptom and
   the first hypothesis about its cause were wrong; see the `OI-14` resolution.
+* **Designing the next thing.** `OI-16` surfaced while writing
+  [`docs/plans/metabase-versioning-design.md`](../plans/metabase-versioning-design.md),
+  from asking what a cache key must contain. It had been live through every
+  release in this cycle.
 
 Everything fixed is recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md) with its resolution and
@@ -44,6 +48,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 |---|---|---|---|---|---|
 | OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
+| OI-16 | 16 | A detection fix never reaches a repo that has not changed | small | every detection fix silently fails to land fleet-wide | **P0** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -261,3 +266,104 @@ than a scan over every route in the fleet.
 The build phase itself still has to hold whatever the extractors need per repo.
 This issue is about the *aggregate* structures; a single pathological repository
 large enough to exhaust memory on its own is `TA-001`'s territory, not this one.
+
+---
+
+## 16. A detection fix never reaches a repo that has not changed  `OI-16`
+
+**Severity:** High — every detection fix this project has shipped is affected,
+and the failure is silent in both directions: the stale finding looks current,
+and the fix looks applied.
+
+**Found:** while designing metabase versioning
+([`docs/plans/metabase-versioning-design.md`](../plans/metabase-versioning-design.md)),
+not by anyone reporting a wrong result — which is the point.
+
+### Symptom
+
+Measured. A repo containing `httpClient.execute(req)`, with a prior record
+holding the false `sql` sink that `OI-7` removed, scanned by a build that
+*contains* the `OI-7` fix:
+
+```
+scan result: {'_skipped': True, 'group': 'grp', 'name': 'svc'}
+nodes still on disk: [('sql', 'execute')]
+analysed_at still: 2025-01-01T00:00:00+00:00
+record names the tool that made it: False
+```
+
+The false sink survives the fix that removed it, indefinitely, for as long as the
+repository does not happen to commit.
+
+### Root cause
+
+`build_metabase_v2.py:409-412` skips re-analysis when the repo's current git sha
+matches the sha in the existing JSON:
+
+```python
+if not force:
+    current_sha = detect_git_sha(repo_root)
+    if current_sha and current_sha == _read_existing_sha(json_path):
+        return {"_skipped": True, "group": group, "name": name}
+```
+
+The skip is keyed on **what was scanned** and not at all on **what scanned it**.
+A record's content is a function of both, so the cache key is missing half its
+inputs. Nothing detects this afterwards, because the record does not record which
+version of `src2sink` produced it — `tool_version` exists only in
+`run-manifest.json`, describing the *run*, not the contents.
+
+`schema_version` is not a substitute. It is checked on load, so a schema bump does
+force a rebuild — but every detection fix so far (`OI-1`, `OI-2`, `OI-7`..`OI-12`)
+changed extraction output *within* schema 2 and therefore did not.
+
+### What is lost
+
+* **Detection fixes do not land fleet-wide.** The improvements recorded against
+  each closed issue describe the repos that were rescanned, not the fleet.
+* **Detector semantics mix silently within one metabase.** A record written
+  before `OI-10` carries `parameterised: false`; one written after carries
+  `parameterised: "mixed"`. Aggregations run across both without noticing.
+* **The manifest misleads.** It stamps the current `tool_version` over a fleet
+  that was mostly produced by earlier versions.
+
+This is the cross-cutting shape §6 already names — a detection input that
+resolves to nothing without saying so. Here the input is "the detector that
+produced this record", and it resolves to unknown.
+
+### Proposed fix
+
+1. Record the detector identity on every repo record — a `detection_version`
+   field, distinct from the package version so that a docs-only release does not
+   invalidate the fleet.
+2. Include it in the skip key: skip only when the sha **and** the detection
+   version both match.
+3. Treat a record with no `detection_version` as stale, since we genuinely cannot
+   know what produced it. This forces one full rescan on upgrade, which should be
+   announced rather than discovered.
+4. Gate the version in CI, in the same family as the existing ratchets: fail the
+   build when anything under `src2sink/extractors/` (or the pattern, vocabulary
+   and binding inputs) changes without a `detection_version` bump. Without the
+   gate this fix degrades to "remember to bump it", which is the failure mode it
+   exists to remove.
+
+See §6 of the design document for why a hand-maintained version plus a gate is
+preferred to hashing the extractor sources.
+
+### Suggested tests
+
+* A repo whose sha is unchanged but whose record carries an older
+  `detection_version` **is** rescanned.
+* A repo whose sha and detection version both match is skipped — the existing
+  incremental behaviour must survive.
+* A record with no `detection_version` is treated as stale.
+* The CI gate fires on an extractor change with no bump, and does not fire on a
+  change elsewhere. This is the test that matters: the gate is the fix.
+* Regression: a record holding a pre-`OI-7` false `sql` sink is replaced, not
+  preserved, by a build containing the fix — the exact scenario measured above.
+
+### Residual not covered
+
+Version-skew between a consumer and the provider it pins is a different problem
+with a different fix; see §7 of the design document. This issue is only about the
+metabase drifting from the *tool*.
