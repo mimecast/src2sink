@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..graph_common import (
@@ -11,6 +12,11 @@ from ..graph_common import (
     match_path_in_inbound_index,
     repo_id,
     resolve_repo_for_host,
+)
+from .openapi_edges import (
+    build_openapi_inbound_index,
+    discover_openapi_specs,
+    match_http_out_to_openapi,
 )
 from .service_call_index import InboundRow, build_inbound_index
 from .service_call_models import CallEdge
@@ -337,16 +343,10 @@ def merge_openapi_edges(
     repos_root: Any,
 ) -> int:
     """Append OpenAPI-matched edges; returns count added."""
-    from pathlib import Path
 
     root = Path(repos_root)
     if not root.is_dir():
         return 0
-    from .openapi_edges import (
-        build_openapi_inbound_index,
-        discover_openapi_specs,
-        match_http_out_to_openapi,
-    )
 
     specs = discover_openapi_specs(root)
     if not specs:

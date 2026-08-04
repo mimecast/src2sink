@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 
-from .node_factory import make_node
+from ..constants import CONFIG_FILE_NAMES
 from ..schema import FlowEdge, FlowNode
+from .node_factory import make_node
 
 # v1 security-sensitive keys (properties / YAML flattened keys)
 # Flat properties / env style (v1 parity)
@@ -219,7 +220,6 @@ _CONFIG_SUFFIXES = frozenset({".properties", ".yml", ".yaml", ".env"})
 
 def is_config_path(path_name: str, suffix: str) -> bool:
     """True when a file name/suffix identifies it as a config file for this extractor."""
-    from ..constants import CONFIG_FILE_NAMES
 
     # The name check is retained as a belt-and-braces for a file whose suffix
     # does not survive path parsing; it is currently subsumed by the suffix set.

@@ -1,6 +1,6 @@
-# src2sink 1.1.0 — Open Detection Issues and Proposed Fixes
+# src2sink — Open Detection Issues and Proposed Fixes
 
-**Version reviewed:** src2sink 1.1.0
+**Version reviewed:** src2sink 2.0.0
 **Status:** every issue in this document is **open**. Fixed issues are removed from here and recorded in [`src2sink-closed-issues.md`](src2sink-closed-issues.md) with their fix and commit sha, so the length of this file is the backlog. Earlier defects (empty-binding silent failure, `api-client-consumer` nodes never reaching the call graph, class-name-anchored call-site regexes, constant/enum indirection, binding aliases, unmatched-ref reporting) were fixed in 1.1.0 before that convention existed and are not repeated here.
 
 **Citing an issue:** use the stable `OI-n` id shown on each heading, not the section number — section numbers do not survive the move to the closed-issues file. See §5.
@@ -25,6 +25,14 @@ reporting a wrong result:
 * **Measuring, rather than reasoning about, cost.** `OI-14` and `OI-15` came
   from profiling `trace` over a synthetic fleet. Both the reported symptom and
   the first hypothesis about its cause were wrong; see the `OI-14` resolution.
+* **Asking whether the stated purpose is delivered.** `OI-17` came from
+  checking the claim in the tool's own name — source to sink — against a
+  three-file layered service. It is not delivered, and nothing said so.
+* **Designing the next thing.** `OI-16` surfaced while writing
+  [`docs/plans/metabase-versioning-design.md`](../plans/metabase-versioning-design.md),
+  from asking what a cache key must contain. It had been live through every
+  release in this cycle, and is now fixed and recorded in the closed-issues
+  file.
 
 Everything fixed is recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md) with its resolution and
@@ -44,6 +52,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 |---|---|---|---|---|---|
 | OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
+| OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -261,3 +270,159 @@ than a scan over every route in the fleet.
 The build phase itself still has to hold whatever the extractors need per repo.
 This issue is about the *aggregate* structures; a single pathological repository
 large enough to exhaust memory on its own is `TA-001`'s territory, not this one.
+
+---
+
+## 17. Nothing connects an entrypoint to a sink inside a service  `OI-17`
+
+**Severity:** Critical — this is the capability the tool is named for. `src2sink`
+finds sources and it finds sinks; it does not connect them.
+
+**Found:** by asking directly whether the stated purpose — untrusted input
+reaching component A, passed to B, arriving at a database call in B — is
+actually delivered. It is not, and no existing issue says so.
+
+### Symptom
+
+The canonical layered shape, three files, with the request value concatenated
+into SQL at the end of it:
+
+```java
+// StockController.java
+@RestController class StockController {
+    private final StockService stockService;
+    @PostMapping("/stock")
+    public StockResult submit(@RequestBody StockRequest req) {
+        return stockService.process(req.getFilter());
+    }
+}
+// StockService.java
+@Service class StockService {
+    private final StockDao stockDao;
+    public StockResult process(String filter) { return stockDao.findMatching(filter); }
+}
+// StockDao.java
+@Repository class StockDao {
+    private final JdbcTemplate jdbcTemplate;
+    public StockResult findMatching(String filter) {
+        return jdbcTemplate.query("SELECT ref FROM stock WHERE " + filter, mapper);
+    }
+}
+```
+
+Measured on 2.0.0:
+
+```
+StockController.java   -> ['http-in/source']
+StockService.java      -> (nothing)
+StockDao.java          -> ['sql/source', 'data-class-field/source', 'sql/sink']
+edges produced: 0
+```
+
+Both ends are found. The injectable sink is correctly reported as concatenated.
+**Nothing links them**, so the finding a reviewer needs — *this endpoint reaches
+that injection* — is never stated.
+
+### Root cause
+
+Three gaps, each of which alone would be enough.
+
+**Nodes have no scope.** A `FlowNode` records `file` and `line` and nothing about
+the method it sits in. There is no "entrypoint 1 of B" to reason about, only a
+line number.
+
+**No declarations are extracted.** `CALL_NODE_TYPES` covers call *sites* only.
+Nothing indexes `method_declaration`, so there is nothing for a call to resolve
+*to*.
+
+**The only intra-service link is same-file co-occurrence.**
+`link_raw_code_payload_endpoints` takes a `FileExtractionContext` — one file — and
+fires when an HTTP endpoint, a SQL-shaped field name and an execution sink all
+appear in it. In a layered service they are in three different files, so it never
+fires. The `intra-repo` and `cross-repo` values of `FlowEdge.kind` are declared in
+`schema.py` and **never emitted**; the only `make_edge` call in the codebase
+produces `intra-file`.
+
+### Feasibility — prototyped, not assumed
+
+Around 60 lines of tree-sitter over those three files, using only declared field
+types:
+
+```
+class index:
+  StockController   fields={'stockService': 'StockService'}  methods=['submit']
+  StockService      fields={'stockDao': 'StockDao'}          methods=['process','unrelated']
+  StockDao          fields={'jdbcTemplate': 'JdbcTemplate'}  methods=['findMatching']
+
+  T1 high  StockController.submit -> StockService.process
+  T1 high  StockService.process   -> StockDao.findMatching
+  --  unresolved: jdbcTemplate.query   (external type — and already the flagged sink)
+
+PATH: StockController.submit -> StockService.process -> StockDao.findMatching
+```
+
+**Java and Kotlin declare field types, so receiver resolution is syntactic.**
+`private final StockService stockService` says what `stockService.process()`
+binds to; no compiler, no type inference. The constructor-injected Spring shape
+that dominates the fleet is precisely the resolvable case. `unrelated()` was
+correctly excluded.
+
+### Reachability is not proof — and the difference is cheap
+
+Call reachability alone would report every endpoint as reaching every sink its
+service can touch. Chaining *argument into parameter* makes it evidence:
+
+```
+StockController.submit:5 -> StockService.process   arg 'req.getFilter()' binds param 'filter'
+  StockService.process:3 -> StockDao.findMatching  arg 'filter' binds param 'filter'
+    SINK jdbcTemplate.query(...)  <- carries ['"SELECT ref FROM stock WHERE " + filter']  ** TAINTED **
+```
+
+A decoy `safe(String x)` calling `countAll()` — a static query — was **pruned**,
+because no tainted argument reaches it. That pruning is the difference between a
+finding and a list of everything.
+
+### Proposed fix
+
+Four pieces, in dependency order:
+
+1. **Method-level structure.** Extract declarations (class, name, parameters,
+   line span) and stamp the enclosing method onto every node. `OI-13` (Kotlin
+   call sites invisible to the AST pass) becomes a prerequisite rather than a
+   nice-to-have, since half the fleet is Kotlin.
+2. **A repo symbol table.** Class → field types, method signatures, superclass.
+   Built once per repo version, which fits the content-addressed model in the
+   versioning design.
+3. **Tiered call resolution**, with the tier recorded on every edge:
+   * **T1** receiver typed from a declared field, parameter or local — `high`;
+   * **T2** interface resolved to implementations — `medium`, and explicitly
+     ambiguous when there is more than one;
+   * **T3** name unique in the repo — `low`; not unique — dropped.
+4. **Tainted-path search.** BFS from entrypoint parameters to sinks, pruning any
+   hop that carries no tainted argument, with confidence degrading along the path
+   and a floor below which nothing is emitted.
+
+The path itself is the proof: each hop cites `file:line`, the resolution tier,
+and the argument that carried the value.
+
+### Suggested tests
+
+* The three-file fixture above yields one path, from `submit` to the concatenated
+  `jdbcTemplate.query`, and `unrelated`/`countAll` appear in none.
+* A decoy method taking no tainted argument is pruned, not merely ranked lower.
+* An interface with two implementations produces an explicitly ambiguous `T2`
+  edge, never a confident one.
+* A path of four `medium` hops does not report as `medium`.
+* Kotlin and Java equivalents of the fixture produce the same path — the
+  cross-language parity guard `OI-13` also needs.
+* A cycle (`a` calls `b` calls `a`) terminates.
+
+### Residual not covered
+
+Reflection, dynamic proxies, lambdas passed as callbacks, and queue or event
+hops are out of reach syntactically and will be missed. Python and JavaScript
+lack declared types, so T1 is largely unavailable there and results will be much
+weaker — this issue's value is concentrated in the JVM fleet. Full dataflow
+(field writes, collections, returned values) is out of scope: the proposal
+tracks arguments into parameters, which covers the common shape and should be
+described as exactly that rather than as taint analysis.

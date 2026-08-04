@@ -7,6 +7,22 @@ from typing import Any
 
 SCHEMA_VERSION = 2
 
+# What *produced* a record, as distinct from what a record is shaped like.
+#
+# Bump this whenever a change could alter extraction output — a new family, a
+# changed guard, an adjusted pattern or vocabulary. It is part of the incremental
+# scan's cache key, so bumping it is what makes a detection fix reach repositories
+# that have not themselves changed. Before it existed, the skip was keyed on the
+# repo sha alone and every fix stopped at the repos that happened to have
+# committed since (OI-16).
+#
+# Deliberately not the package version: a docs-only release would invalidate the
+# whole fleet for nothing. Deliberately not a hash of the extractor sources
+# either, which would fire on a comment. `scripts/detection_version_check.py`
+# holds the honesty line — it fails the build when a detection input changes
+# without a bump here.
+DETECTION_VERSION = 1
+
 
 @dataclasses.dataclass
 class FlowNode:
@@ -53,6 +69,7 @@ class RepoSummaryV2:
     """Per-repo metabase record (v2). Phase 1+ populates nodes and edges."""
 
     schema_version: int = SCHEMA_VERSION
+    detection_version: int = DETECTION_VERSION
     group: str = ""
     name: str = ""
     path: str = ""

@@ -40,7 +40,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Copied into each mutant's sandbox. Kept minimal: the suite must run, but a
 # mutant should never be able to touch the real working tree.
-_SANDBOX_CONTENTS = ("src2sink", "tests", "pyproject.toml")
+# `scripts` is here because the gates are load-bearing code: a mutated gate that
+# still passes means the gate was decorative. Tests reach them via sys.path, so
+# they must be present in the sandbox for a mutant to have any effect.
+_SANDBOX_CONTENTS = ("src2sink", "tests", "scripts", "pyproject.toml")
 
 # A mutant may hang where the original terminated (that is itself a defect worth
 # catching), so every run is bounded.
@@ -807,6 +810,52 @@ CATALOGUE: tuple[Mutant, ...] = (
         note=(
             "Path cache unbounded — keys are paths read from scanned repos, so "
             "an enormous or hostile fleet grows it without limit."
+        ),
+    ),
+    Mutant(
+        id="CYC-M1",
+        file="src2sink/extractors/http_out.py",
+        old="    if cached is not None and cached[0] is bindings:",
+        new="    if cached is not None:",
+        selector="tests/test_import_graph.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Derived call-site patterns never invalidate, so reconfiguring the "
+            "binding registry leaves the extractor on the previous set — the "
+            "stale-second-copy failure the push/pull inversion removed."
+        ),
+    ),
+    Mutant(
+        id="CYC-M2",
+        file="src2sink/extractors/http_out.py",
+        old="    bindings = get_bindings()",
+        new="    bindings = ()",
+        selector="tests/test_import_graph.py tests/test_cross_repo_caller_coverage.py",
+        note=(
+            "Patterns stop deriving from the registry, silently disabling every "
+            "class_patterns binding — the original defect, in its new shape."
+        ),
+    ),
+    Mutant(
+        id="OI16-M1",
+        file="src2sink/build_metabase_v2.py",
+        old='        data.get("git_sha") == current_sha\n'
+            '        and data.get("detection_version") == DETECTION_VERSION',
+        new='        data.get("git_sha") == current_sha',
+        selector="tests/test_detection_version.py",
+        note=(
+            "Skip keyed on the repo sha alone again, so a record built by an "
+            "older detector is never rebuilt — the whole of OI-16."
+        ),
+    ),
+    Mutant(
+        id="OI16-M2",
+        file="scripts/detection_version_check.py",
+        old="    if recorded_version != version_now:",
+        new="    if recorded_version != version_now or True:",
+        selector="tests/test_detection_fingerprint_gate.py",
+        note=(
+            "The gate stops failing on a changed extractor with an unbumped "
+            "version, which is the only case it exists to catch."
         ),
     ),
 )

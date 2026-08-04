@@ -6,6 +6,8 @@ import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from tree_sitter import Language, Parser
+
 if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
 
@@ -30,14 +32,12 @@ def load_language(language_id: str) -> Language:
     module_name, attr = _LANGUAGE_MODULES[language_id]
     mod = importlib.import_module(module_name)
     factory = getattr(mod, attr)
-    from tree_sitter import Language
 
     return Language(factory())
 
 
 def make_parser(language_id: str) -> Parser:
     """Return a tree-sitter Parser configured for ``language_id``."""
-    from tree_sitter import Parser
 
     return Parser(load_language(language_id))
 

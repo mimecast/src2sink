@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..graph_common import extract_urls_and_paths
+from ..known_api_clients import binding_target_for_text, get_bindings
 from .symbols import build_symbol_table
 
 if TYPE_CHECKING:
@@ -124,12 +125,10 @@ class BindingCallPattern:
     client: str
 
 
-_BINDING_CLASS_RX: list[BindingCallPattern] = []
-
-
-def configure_http_out_client_patterns(bindings: Iterable[ApiClientBinding]) -> None:
+def _build_binding_call_patterns(
+    bindings: Iterable[ApiClientBinding],
+) -> list[BindingCallPattern]:
     """Build per-binding class-pattern regex entries from loaded ApiClientBindings."""
-    global _BINDING_CLASS_RX  # noqa: PLW0603
     patterns: list[BindingCallPattern] = []
     for b in bindings:
         if not b.class_patterns:
@@ -148,19 +147,39 @@ def configure_http_out_client_patterns(bindings: Iterable[ApiClientBinding]) -> 
             paths=tuple(b.paths),
             client=b.maven_artifact,
         ))
-    _BINDING_CLASS_RX = patterns
+    return patterns
+
+
+# (bindings identity, patterns derived from them). Derived lazily and discarded
+# when the registry is swapped, mirroring ``known_api_clients._alias_matcher``.
+_BINDING_CLASS_CACHE: tuple[
+    tuple[ApiClientBinding, ...], list[BindingCallPattern]
+] | None = None
 
 
 def get_binding_call_patterns() -> list[BindingCallPattern]:
-    """Return the currently configured binding class-pattern call sites.
+    """Return the binding class-pattern call sites for the configured bindings.
 
-    Callers must go through this accessor rather than importing
-    ``_BINDING_CLASS_RX`` by name: ``configure_http_out_client_patterns`` rebinds
-    the module global, so a ``from ... import _BINDING_CLASS_RX`` snapshot taken
-    at import time stays permanently empty and silently disables every
-    ``class_patterns`` binding.
+    Derived from :func:`known_api_clients.get_bindings` on demand rather than
+    pushed in by a second configuration call. That inversion is what keeps the
+    registry from importing this module — it previously had to, in order to
+    refresh a copy of its own state, which made the two modules mutually
+    dependent and the package importable only in some orders.
+
+    It also removes the failure it used to invite: a caller that configured the
+    registry but forgot the extractor silently disabled every ``class_patterns``
+    binding, and there is now no second thing to forget. For the same reason,
+    never bind the result at import time — it is only correct for the bindings
+    current when it was called.
     """
-    return _BINDING_CLASS_RX
+    global _BINDING_CLASS_CACHE  # noqa: PLW0603
+    bindings = get_bindings()
+    cached = _BINDING_CLASS_CACHE
+    if cached is not None and cached[0] is bindings:
+        return cached[1]
+    patterns = _build_binding_call_patterns(bindings)
+    _BINDING_CLASS_CACHE = (bindings, patterns)
+    return patterns
 
 
 # URL / path on same line or builder chain
@@ -293,7 +312,6 @@ def enrich_http_out_detail(
     # against the configured binding aliases keeps the cross-repo hop rather than
     # dropping the edge entirely.
     if "host" not in detail:
-        from ..known_api_clients import binding_target_for_text
 
         hint = binding_target_for_text(blob)
         if hint:

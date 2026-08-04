@@ -118,8 +118,6 @@ def _clear_api_client_bindings():
     the leak by forgetting a ``finally``.
     """
     from src2sink import known_api_clients as kac
-    from src2sink.extractors.http_out import configure_http_out_client_patterns
 
     yield
     kac.configure_api_client_bindings(())
-    configure_http_out_client_patterns(())

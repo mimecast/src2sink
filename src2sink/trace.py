@@ -31,8 +31,11 @@ from .graph_common import (
     repo_name_aliases,
     store_key_from_node,
 )
-from .internal_groups import add_internal_groups_arguments, apply_internal_groups_from_args
-from .known_api_clients import get_bindings
+from .internal_groups import (
+    add_internal_groups_arguments,
+    apply_internal_groups_from_args,
+)
+from .known_api_clients import ApiClientConfigError, configure_from_path, get_bindings
 from .renderers.markdown import md_table
 from .sanitize import UNTRUSTED_CONTENT_NOTICE, redact_literals
 
@@ -605,7 +608,6 @@ def main() -> int:
     apply_internal_groups_from_args(args)
 
     if args.api_clients:
-        from .known_api_clients import ApiClientConfigError, configure_from_path
         try:
             configure_from_path(
                 args.api_clients,

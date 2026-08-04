@@ -18,6 +18,7 @@ File path: `repos/<group>/<repo>.md` (human-readable),
 | `path` | string | Filesystem path relative to `repos/` |
 | `git_sha` | string | HEAD commit SHA of the analysed tree (if a `.git` directory is present) |
 | `analysed_at` | ISO-8601 datetime | When the script last ran on this repo |
+| `detection_version` | integer | Which detector produced this record. Together with `git_sha` it forms the incremental scan's cache key: a record whose detector is older than the running build is rebuilt rather than reused. A record without this field predates it and is always treated as stale. See `OI-16`. |
 
 ### `language`
 
@@ -459,6 +460,7 @@ repo and a `raw-code-payload` in another are recorded independently.
 ```json
 {
   "schema_version": 2,
+  "detection_version": 1,
   "group": "acme",
   "name": "sql-runner-api",
   "nodes": [{ "id": "...", "kind": "sink", "family": "sql", ... }],

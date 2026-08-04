@@ -58,17 +58,18 @@ different readers.
 
 | id | Issue | Fixed in | Commit | Behaviour change for consumers |
 |---|---|---|---|---|
-| `OI-1` | Version prefixes outrank real route names in path matching | 1.2.0 | `ccf471d`, `759235d` (PR #5) | Edges resolved through a bare `/v1` or `/api` disappear; edges that ranked `low` through a version prefix are now `medium`. |
-| `OI-2` | Context guards suppress fully custom HTTP wrappers | 1.2.0 | `b56df04`, `22bf572` (PR #7) | In-house wrapper call sites now produce `http-out` nodes, so those callers appear in the graphs. |
-| `OI-4` | Client discovery is single-direction and never proposes `class_patterns` | 1.2.0 | `1bd90d5`, `636476c` (PR #9) | A new `discovery_method` field, and candidates for callers that declare no client library. |
-| `OI-3` | Dependency parsing misses Gradle version catalogs | 1.2.0 | `2585fe0`, `099d018` (PR #6) | Repos using version catalogs now report `dependencies_internal`, so they contribute candidates to api-client discovery for the first time. |
-| `OI-7` | The `sql` family matches on method name alone | 1.2.0 | `fbe967f`, `1339b60` (PR #5) | `sql` and `raw-code-payload` counts fall fleet-wide. |
-| `OI-8` | SQL built by formatting produces no node at all | 1.2.0 | `08fd682`, `37d753d` (PR #5) | More `sql` source nodes, including the embedded-quote concatenation shape that is the canonical injection form. |
-| `OI-9` | An outbound request carrying a SQL payload has no home family | 1.2.0 | `9be4d7c`, `63674c7` (PR #8) | New `sql-payload-out` family, its own taint catalogue, and a `sql_payload_out` index count. |
-| `OI-10` | `parameterised` is reported as a safety property it cannot establish | 1.2.0 | `33554b1` (PR #5) | `detail.parameterised` changes from boolean to a posture string; old metabases still load. |
-| `OI-11` | A base-query constant hides the concatenation appended to it | 1.2.0 | `ce7e6fd`, `3d10d27` (PR #5) | The base-query-plus-clause shape now produces a finding and reports `mixed` rather than `parameterised`. |
-| `OI-12` | Four unused runtime dependencies pull in sixty packages | 1.2.0 | `b54f74a` (PR #4, then #5) | Runtime closure falls from 68 packages to 8, all MIT or PSFL — no copyleft of any kind. |
-| `OI-14` | Trace rebuilds the whole fleet graph for every target | 1.2.0 | `651683a` (PR #15) | None — same reports, materially faster. `run_trace` gains an optional `service_edges` argument. |
+| `OI-1` | Version prefixes outrank real route names in path matching | 2.0.0 | `ccf471d`, `759235d` (PR #5) | Edges resolved through a bare `/v1` or `/api` disappear; edges that ranked `low` through a version prefix are now `medium`. |
+| `OI-2` | Context guards suppress fully custom HTTP wrappers | 2.0.0 | `b56df04`, `22bf572` (PR #7) | In-house wrapper call sites now produce `http-out` nodes, so those callers appear in the graphs. |
+| `OI-4` | Client discovery is single-direction and never proposes `class_patterns` | 2.0.0 | `1bd90d5`, `636476c` (PR #9) | A new `discovery_method` field, and candidates for callers that declare no client library. |
+| `OI-3` | Dependency parsing misses Gradle version catalogs | 2.0.0 | `2585fe0`, `099d018` (PR #6) | Repos using version catalogs now report `dependencies_internal`, so they contribute candidates to api-client discovery for the first time. |
+| `OI-7` | The `sql` family matches on method name alone | 2.0.0 | `fbe967f`, `1339b60` (PR #5) | `sql` and `raw-code-payload` counts fall fleet-wide. |
+| `OI-8` | SQL built by formatting produces no node at all | 2.0.0 | `08fd682`, `37d753d` (PR #5) | More `sql` source nodes, including the embedded-quote concatenation shape that is the canonical injection form. |
+| `OI-9` | An outbound request carrying a SQL payload has no home family | 2.0.0 | `9be4d7c`, `63674c7` (PR #8) | New `sql-payload-out` family, its own taint catalogue, and a `sql_payload_out` index count. |
+| `OI-10` | `parameterised` is reported as a safety property it cannot establish | 2.0.0 | `33554b1` (PR #5) | `detail.parameterised` changes from boolean to a posture string; old metabases still load. |
+| `OI-11` | A base-query constant hides the concatenation appended to it | 2.0.0 | `ce7e6fd`, `3d10d27` (PR #5) | The base-query-plus-clause shape now produces a finding and reports `mixed` rather than `parameterised`. |
+| `OI-12` | Four unused runtime dependencies pull in sixty packages | 2.0.0 | `b54f74a` (PR #4, then #5) | Runtime closure falls from 68 packages to 8, all MIT or PSFL — no copyleft of any kind. |
+| `OI-14` | Trace rebuilds the whole fleet graph for every target | 2.0.0 | `651683a` (PR #15) | None — same reports, materially faster. `run_trace` gains an optional `service_edges` argument. |
+| `OI-16` | A detection fix never reaches a repo that has not changed | 2.0.0 | `6779191` (PR #19) | Records gain `detection_version`; the first run after upgrading rescans the whole fleet, and findings from superseded detectors disappear. |
 
 ---
 
@@ -76,7 +77,7 @@ different readers.
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `ccf471d`, `759235d` (PR #5)  
 **Tests:** `tests/test_graph_common.py` (13-row confidence table, both directions), `tests/test_cross_repo_caller_coverage.py::test_version_prefix_does_not_outrank_a_route_name`, `tests/test_trace_render.py::test_trace_path_filter_keeps_version_prefix_semantics`
 
@@ -211,7 +212,7 @@ assert path_templates_match("/v1/orders", "/v1/invoices") is None
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `b56df04`, `22bf572` (PR #7)  
 **Tests:** `tests/test_http_guard_evidence.py` (10 cases incl. three precision guards), snapshot `java-wrapper-caller`
 
@@ -320,7 +321,7 @@ A fixture file containing only a route constant, a `client.post(ROUTE, ...)` cal
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `2585fe0`, `099d018` (PR #6)  
 **Tests:** `tests/test_gradle_version_catalogs.py` (15 cases), fixture repo `fulfilment/catalog-consumer`
 
@@ -428,7 +429,7 @@ This and the original empty-bindings defect share a failure mode: **a detection 
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `1bd90d5`, `636476c` (PR #9)  
 **Tests:** `tests/test_demand_side_discovery.py` (12 cases, incl. both safeguards and the unmatched-call-site metric)
 
@@ -550,7 +551,7 @@ if len(occurrences) > MAX_PATTERN_REPOS:
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `fbe967f`, `1339b60` (PR #5)  
 **Tests:** `tests/test_sql_sink_evidence.py` (24 cases), snapshot `java-stock-proxy` (asserts an *absence*)
 
@@ -656,7 +657,7 @@ A SQL statement assembled in one file and executed in another is still invisible
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `08fd682`, `37d753d` (PR #5)  
 **Tests:** `tests/test_sql_source_construction.py` (14 cases), snapshot `java-stock-dao`
 
@@ -731,7 +732,7 @@ SQL assembled across multiple statements (`sb.append("SELECT …"); sb.append(re
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `9be4d7c`, `63674c7` (PR #8)  
 **Tests:** `tests/test_sql_payload_out.py` (10 cases), fixture repo `fulfilment/query-forwarder`
 
@@ -815,7 +816,7 @@ Field detection must cover setters (`setSql(`), builders (`.sql(`), assignment (
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `33554b1` (PR #5)  
 **Tests:** `tests/test_sql_sink_evidence.py` (posture cases incl. mixed, operand-order, legacy boolean)
 
@@ -832,7 +833,7 @@ _The original issue, verbatim:_
 
 **Severity:** High — a false *safe* label is more dangerous than a false finding.
 
-**Introduced by:** the OI-7 fix (commit `1339b60`, 1.2.0-dev). The 1.1.0 field was differently wrong (`"?" in call_text or ":" in call_text`); this section is about the replacement, not the original.
+**Introduced by:** the OI-7 fix (commit `1339b60`, 2.0.0-dev). The 1.1.0 field was differently wrong (`"?" in call_text or ":" in call_text`); this section is about the replacement, not the original.
 
 ### Symptom
 
@@ -938,7 +939,7 @@ A statement whose SQL keyword lives in a constant and whose *appended* fragments
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `ce7e6fd`, `3d10d27` (PR #5)  
 **Tests:** `tests/test_sql_source_construction.py` and `tests/test_sql_sink_evidence.py` (constant-mediated cases)
 
@@ -1032,7 +1033,7 @@ Cross-file constants, and a base query assembled through a `StringBuilder` acros
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `b54f74a` (PR #4, then #5)  
 **Tests:** `tests/test_dependency_pinning.py::test_every_runtime_dependency_is_imported_somewhere`
 
@@ -1099,7 +1100,7 @@ Package metadata does not cover the C grammars vendored inside the `tree-sitter-
 
 ### Resolution
 
-**Fixed in:** 1.2.0  
+**Fixed in:** 2.0.0  
 **Commit:** `cf38c3d` (red), `651683a` (fix) — PR #15  
 **Tests:** `tests/test_trace_fleet_scaling.py` — six cases: precomputed edges change nothing, supplied edges are not rebuilt, a batch of three targets builds the graph once, the memoised segment split is immutable, both path helpers memoise, and the cache is bounded. Mutants `OI14-M1`..`OI14-M5`.
 
@@ -1168,3 +1169,145 @@ cheaper, it does not remove the scan. Removing the scan needs the keyed index
 described in `OI-15`.
 
 ---
+
+
+## OI-16 — A detection fix never reaches a repo that has not changed
+
+### Resolution
+
+**Fixed in:** 2.0.0  
+**Commit:** `f17fcbc` (red), `6779191` (fix) — PR #19  
+**Tests:** `tests/test_detection_version.py` (record names its detector; unchanged repo still skipped; older *and* absent detector both force a rescan; the pre-`OI-7` false sink is replaced), `tests/test_detection_fingerprint_gate.py` (the gate itself), `tests/test_build_internals.py::test_existing_record_is_current`. Mutants `OI16-M1`, `OI16-M2`.
+
+**What changed.** `DETECTION_VERSION` joins `SCHEMA_VERSION` in `schema.py` and is
+written onto every record; `_read_existing_sha` became
+`_existing_record_is_current`, which requires the sha **and** the detector to
+match before a repo is skipped. A record with no `detection_version` is treated
+as stale rather than current — it predates the field, so what produced it is
+unknowable, and assuming the running detector is exactly how this survived six
+releases.
+
+`scripts/detection_version_check.py` is what makes the version trustworthy: it
+fingerprints the detection inputs by content and freezes them against the
+version, so changing an extractor without a bump fails the build. Without it the
+fix degrades to "remember to bump it", which is the same silent-discipline
+failure in a new place.
+
+**Deviation.** The issue proposed a CI gate keyed on `git diff` against the base
+branch. Rejected on inspection of the workflow: `actions/checkout` runs at
+depth 1, so a diff-based gate would either need a full fetch or degrade to
+passing when it could not resolve a base ref — and a gate that silently passes
+is worse than no gate, because it is believed. The content fingerprint behaves
+identically locally and in CI, and reuses the freeze/`--update` shape the
+complexity ratchet already established.
+
+Also extended beyond the issue: `scripts/` now enters the mutation sandbox. The
+gates are load-bearing code, and a mutated gate that still passes means the gate
+was decorative.
+
+**Behaviour change.** The first build after upgrading rescans **every**
+repository, because no existing record carries a `detection_version`. That is a
+one-off cost and should be planned rather than discovered. After it, findings
+produced by superseded detectors disappear — most visibly the false `sql` sinks
+from `OI-7`, which until now persisted on any repo that had not committed since.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** High — every detection fix this project has shipped is affected,
+and the failure is silent in both directions: the stale finding looks current,
+and the fix looks applied.
+
+**Found:** while designing metabase versioning
+([`docs/plans/metabase-versioning-design.md`](../plans/metabase-versioning-design.md)),
+not by anyone reporting a wrong result — which is the point.
+
+### Symptom
+
+Measured. A repo containing `httpClient.execute(req)`, with a prior record
+holding the false `sql` sink that `OI-7` removed, scanned by a build that
+*contains* the `OI-7` fix:
+
+```
+scan result: {'_skipped': True, 'group': 'grp', 'name': 'svc'}
+nodes still on disk: [('sql', 'execute')]
+analysed_at still: 2025-01-01T00:00:00+00:00
+record names the tool that made it: False
+```
+
+The false sink survives the fix that removed it, indefinitely, for as long as the
+repository does not happen to commit.
+
+### Root cause
+
+`build_metabase_v2.py:409-412` skips re-analysis when the repo's current git sha
+matches the sha in the existing JSON:
+
+```python
+if not force:
+    current_sha = detect_git_sha(repo_root)
+    if current_sha and current_sha == _read_existing_sha(json_path):
+        return {"_skipped": True, "group": group, "name": name}
+```
+
+The skip is keyed on **what was scanned** and not at all on **what scanned it**.
+A record's content is a function of both, so the cache key is missing half its
+inputs. Nothing detects this afterwards, because the record does not record which
+version of `src2sink` produced it — `tool_version` exists only in
+`run-manifest.json`, describing the *run*, not the contents.
+
+`schema_version` is not a substitute. It is checked on load, so a schema bump does
+force a rebuild — but every detection fix so far (`OI-1`, `OI-2`, `OI-7`..`OI-12`)
+changed extraction output *within* schema 2 and therefore did not.
+
+### What is lost
+
+* **Detection fixes do not land fleet-wide.** The improvements recorded against
+  each closed issue describe the repos that were rescanned, not the fleet.
+* **Detector semantics mix silently within one metabase.** A record written
+  before `OI-10` carries `parameterised: false`; one written after carries
+  `parameterised: "mixed"`. Aggregations run across both without noticing.
+* **The manifest misleads.** It stamps the current `tool_version` over a fleet
+  that was mostly produced by earlier versions.
+
+This is the cross-cutting shape §6 already names — a detection input that
+resolves to nothing without saying so. Here the input is "the detector that
+produced this record", and it resolves to unknown.
+
+### Proposed fix
+
+1. Record the detector identity on every repo record — a `detection_version`
+   field, distinct from the package version so that a docs-only release does not
+   invalidate the fleet.
+2. Include it in the skip key: skip only when the sha **and** the detection
+   version both match.
+3. Treat a record with no `detection_version` as stale, since we genuinely cannot
+   know what produced it. This forces one full rescan on upgrade, which should be
+   announced rather than discovered.
+4. Gate the version in CI, in the same family as the existing ratchets: fail the
+   build when anything under `src2sink/extractors/` (or the pattern, vocabulary
+   and binding inputs) changes without a `detection_version` bump. Without the
+   gate this fix degrades to "remember to bump it", which is the failure mode it
+   exists to remove.
+
+See §6 of the design document for why a hand-maintained version plus a gate is
+preferred to hashing the extractor sources.
+
+### Suggested tests
+
+* A repo whose sha is unchanged but whose record carries an older
+  `detection_version` **is** rescanned.
+* A repo whose sha and detection version both match is skipped — the existing
+  incremental behaviour must survive.
+* A record with no `detection_version` is treated as stale.
+* The CI gate fires on an extractor change with no bump, and does not fire on a
+  change elsewhere. This is the test that matters: the gate is the fix.
+* Regression: a record holding a pre-`OI-7` false `sql` sink is replaced, not
+  preserved, by a build containing the fix — the exact scenario measured above.
+
+### Residual not covered
+
+Version-skew between a consumer and the provider it pins is a different problem
+with a different fix; see §7 of the design document. This issue is only about the
+metabase drifting from the *tool*.
