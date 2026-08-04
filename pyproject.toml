@@ -69,8 +69,12 @@ src2sink-baseline = "src2sink.record_fleet_baseline:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Coverage is reported and gated on every run (Phase E). Current coverage ~82%.
-addopts = "--cov=src2sink --cov-report=term-missing --cov-fail-under=80"
+# Coverage is reported and gated on every run. The global floor ratchets: it is
+# set just under current coverage so it catches a real regression, and is raised
+# when coverage rises. Per-module floors live in tests/test_zz_security_coverage_gate.py
+# (security modules at 90%, detection modules at 88%), since coverage.py has a
+# single global fail_under and no per-module concept.
+addopts = "--cov=src2sink --cov-report=term-missing --cov-fail-under=85"
 markers = [
     "fleet: fleet-wide regression (needs metabase/repos v2 JSONs)",
 ]

@@ -55,3 +55,50 @@ def test_security_modules_meet_90pct(cov):
             f"{name} at {pct:.1f}%" for name, pct in sorted(shortfalls.items())
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# WI-12 — detection-critical modules
+# ---------------------------------------------------------------------------
+
+from src2sink import graph_common  # noqa: E402
+from src2sink.extractors import (  # noqa: E402
+    ast_walk,
+    http_out,
+    patterns,
+    regex_extractors,
+    symbols,
+    ts_extractors,
+    unified,
+)
+
+# Wrong output from these is the failure mode the whole tool exists to avoid, and
+# 1.2.0 fixed five defects that all lived here.
+DETECTION_MODULES = (
+    ast_walk, graph_common, http_out, patterns, regex_extractors,
+    symbols, ts_extractors, unified,
+)
+# Deliberately 88 rather than 90. The residue in `ast_walk` and
+# `regex_extractors` is defensive `is None` guards on tree-sitter fields that the
+# parser does not produce in practice; reaching them means contorting a test to
+# move a number, which is how a coverage floor starts rewarding padding instead
+# of testing. 88 is above where both modules sat before this work (71% and 86%)
+# and still fails on a real regression.
+MIN_DETECTION_COVERAGE = 88.0
+
+
+def test_detection_modules_meet_88pct(cov):
+    """Fail the run if a detection-critical module drops below the floor."""
+    if cov is None:
+        pytest.skip("coverage not active — run under pytest-cov to enforce this gate")
+
+    shortfalls = {
+        module.__name__: pct
+        for module in DETECTION_MODULES
+        if (pct := _covered_percent(cov, module)) < MIN_DETECTION_COVERAGE
+    }
+
+    assert not shortfalls, (
+        f"detection modules below the {MIN_DETECTION_COVERAGE:.0f}% coverage gate: "
+        + ", ".join(f"{name} at {pct:.1f}%" for name, pct in sorted(shortfalls.items()))
+    )
