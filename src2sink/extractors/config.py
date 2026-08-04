@@ -210,15 +210,17 @@ def extract_from_config(
     return nodes, edges
 
 
+# The formats this extractor can read. Everything else about config detection
+# follows from this set: the Spring conventional names, their `application-*`
+# profile variants and Helm's `values.yaml` all end in one of these, so the
+# named-case branches this function used to carry were unreachable — which is
+# why a mutation sweep left 28 unkillable mutants in them.
+_CONFIG_SUFFIXES = frozenset({".properties", ".yml", ".yaml", ".env"})
+
+
 def is_config_path(path_name: str, suffix: str) -> bool:
     """True when a file name/suffix identifies it as a config file for this extractor."""
 
-    if path_name in CONFIG_FILE_NAMES:
-        return True
-    if path_name.startswith("application-") and suffix in {".yml", ".yaml", ".properties"}:
-        return True
-    if suffix in {".properties", ".yml", ".yaml", ".env"}:
-        return True
-    if path_name in {"values.yaml", "values.yml"} or path_name.endswith(".values.yaml"):
-        return True
-    return False
+    # The name check is retained as a belt-and-braces for a file whose suffix
+    # does not survive path parsing; it is currently subsumed by the suffix set.
+    return suffix in _CONFIG_SUFFIXES or path_name in CONFIG_FILE_NAMES

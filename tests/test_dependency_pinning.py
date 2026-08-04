@@ -167,6 +167,13 @@ def test_every_runtime_dependency_is_imported_somewhere() -> None:
     and were the sole source of every non-permissive licence in the tree
     (OI-12). This asserts they cannot come back unnoticed.
     """
+    # This test reads the source tree rather than behaviour, so it needs the
+    # *whole* tree. A scoped mutation run copies only the subtree it mutates,
+    # and every import outside it then looks missing. Detect that and skip
+    # rather than report a dependency as unused.
+    if not (REPO_ROOT / "src2sink" / "repo_utils.py").is_file():
+        pytest.skip("partial source tree (e.g. a scoped mutation run)")
+
     sources = "\n".join(
         p.read_text(encoding="utf-8", errors="replace")
         for p in (REPO_ROOT / "src2sink").rglob("*.py")
