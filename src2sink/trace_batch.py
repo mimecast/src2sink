@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 from .aggregators.payload_producers import build_producer_indices
+from .aggregators.service_calls import collect_service_edges
 from .graph_common import load_v2_repo_records
 from .internal_groups import add_internal_groups_arguments, apply_internal_groups_from_args
 from .trace import render_trace_markdown, run_trace
@@ -83,11 +84,16 @@ def batch_trace(
     out_dir = metabase_root / "graphs" / "traces"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # All three are fleet-wide and target-independent, so they are built once
+    # here rather than per target. The service-call graph in particular is the
+    # dominant cost of a trace, and rebuilding it per target made a batch
+    # quadratic in fleet size (OI-14).
     records = load_v2_repo_records(metabase_root)
     producer_indices = build_producer_indices(
         metabase_root,
         repos_root=scan_repos,
     )
+    service_edges, _unmatched = collect_service_edges(records)
 
     written = 0
     skipped = 0
@@ -107,6 +113,7 @@ def batch_trace(
                 scan_repos=scan_repos is not None,
                 records=records,
                 producer_indices=producer_indices,
+                service_edges=service_edges,
             )
             out_path.write_text(render_trace_markdown(report), encoding="utf-8")
             written += 1

@@ -210,10 +210,6 @@
     "src2sink/trace.py:render_trace_markdown": {
       "cyclomatic": 14,
       "cognitive": 8
-    },
-    "src2sink/trace.py:run_trace": {
-      "cyclomatic": 11,
-      "cognitive": 14
     }
   }
 }

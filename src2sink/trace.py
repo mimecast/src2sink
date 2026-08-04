@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .aggregators.payload_producers import build_producer_indices
-from .aggregators.service_calls import collect_service_edges
+from .aggregators.service_calls import CallEdge, collect_service_edges
 from .graph_common import (
     extract_urls_and_paths,
     host_matches_repo,
@@ -159,12 +159,16 @@ def _collect_target_facts(
 
 
 def _find_upstream_from_graph(
-    records: list[dict[str, Any]],
+    edges: list[CallEdge],
     target: str,
     path_filter: str | None,
 ) -> list[UpstreamHit]:
-    """Find upstream callers of the target from previously-collected service-call graph edges."""
-    edges, _ = collect_service_edges(records)
+    """Filter the fleet service-call graph down to edges arriving at ``target``.
+
+    Takes the edge list rather than the records it was built from: the graph is
+    fleet-wide and target-independent, so building it here made a batch of N
+    traces rebuild the whole thing N times (OI-14).
+    """
     hits: list[UpstreamHit] = []
     want = normalize_path_template(path_filter) if path_filter else None
 
@@ -396,6 +400,30 @@ def _merge_producer_indices(
                 )
 
 
+def _resolve_fleet_derivations(
+    metabase_root: Path,
+    repos_root: Path | None,
+    records: list[dict[str, Any]],
+    service_edges: list[CallEdge] | None,
+    producer_indices: list[Any] | None,
+) -> tuple[list[CallEdge], list[Any]]:
+    """Build whichever fleet-wide derivations a caller did not supply.
+
+    Both describe the fleet, not the trace target, so a caller tracing more than
+    one target builds them once and passes them down. Computing them per target
+    is what made batch tracing quadratic in fleet size (OI-14) — the
+    service-call graph especially, which dominates the cost of a trace.
+
+    Called only after the target is known to exist, so an unknown target fails
+    without paying for either build.
+    """
+    if service_edges is None:
+        service_edges, _unmatched = collect_service_edges(records)
+    if producer_indices is None:
+        producer_indices = build_producer_indices(metabase_root, repos_root=repos_root)
+    return service_edges, producer_indices
+
+
 def run_trace(
     metabase_root: Path,
     target: str,
@@ -405,18 +433,26 @@ def run_trace(
     scan_repos: bool = False,
     records: list[dict[str, Any]] | None = None,
     producer_indices: list[Any] | None = None,
+    service_edges: list[CallEdge] | None = None,
 ) -> TraceReport:
-    """Run a full endpoint-anchored trace: target facts plus upstream callers from all sources."""
-    if records is None:
-        records = load_v2_repo_records(metabase_root)
+    """Run a full endpoint-anchored trace: target facts plus upstream callers from all sources.
+
+    ``records``, ``producer_indices`` and ``service_edges`` are fleet-wide and
+    independent of ``target``; see :func:`_resolve_fleet_derivations`.
+    """
+    records = load_v2_repo_records(metabase_root) if records is None else records
     data = _target_record(records, target)
     if data is None:
         raise SystemExit(f"Target repo not found in v2 metabase: {target}")
 
+    service_edges, indices = _resolve_fleet_derivations(
+        metabase_root, repos_root, records, service_edges, producer_indices,
+    )
+
     report = _collect_target_facts(data, path_filter)
     upstream: dict[tuple[str, str], UpstreamHit] = {}
 
-    for hit in _find_upstream_from_graph(records, report.target_repo, path_filter):
+    for hit in _find_upstream_from_graph(service_edges, report.target_repo, path_filter):
         upstream[(hit.source_repo, hit.kind)] = hit
     for hit in _find_upstream_from_nodes(records, report.target_repo, path_filter):
         key = (hit.source_repo, hit.kind)
@@ -429,9 +465,6 @@ def run_trace(
             if key not in upstream:
                 upstream[key] = hit
 
-    indices = producer_indices
-    if indices is None:
-        indices = build_producer_indices(metabase_root, repos_root=repos_root)
     _merge_producer_indices(upstream, indices, report.target_repo, path_filter)
 
     report.upstream = sorted(
