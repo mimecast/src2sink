@@ -19,9 +19,14 @@ import json
 
 import pytest
 
-import src2sink.graph_common as gc
-from src2sink.trace import run_trace
-from src2sink.trace_batch import batch_trace
+# Imported as module objects, not symbols: two of these tests monkeypatch
+# ``<module>.collect_service_edges`` to count fleet-graph builds, which needs the
+# module itself. Binding the symbols as well would import the same module two
+# ways and leave a reader guessing which reference a patch affects.
+from src2sink import graph_common as gc
+from src2sink import trace as trace_mod
+from src2sink import trace_batch as batch_mod
+from src2sink.aggregators.service_calls import collect_service_edges
 
 _CONSUMER = {
     "schema_version": 2,
@@ -69,13 +74,13 @@ def _seed(tmp_path, targets=(("commerce/warehouse-service", "/stock"),)):
 
 def _count_collector_calls(monkeypatch, module):
     """Patch ``module.collect_service_edges`` with a counting passthrough."""
-    from src2sink.aggregators.service_calls import collect_service_edges as real
-
     calls: list[int] = []
 
     def counted(records):
         calls.append(1)
-        return real(records)
+        # The module-level name still points at the real collector: monkeypatch
+        # rebinds the attribute on ``module``, not this reference.
+        return collect_service_edges(records)
 
     monkeypatch.setattr(module, "collect_service_edges", counted)
     return calls
@@ -84,14 +89,11 @@ def _count_collector_calls(monkeypatch, module):
 def test_run_trace_accepts_precomputed_service_edges(tmp_path):
     """Supplying the fleet edge list must not change what the trace reports."""
     _seed(tmp_path)
-    from src2sink.aggregators.service_calls import collect_service_edges
-    from src2sink.graph_common import load_v2_repo_records
-
-    records = load_v2_repo_records(tmp_path)
+    records = gc.load_v2_repo_records(tmp_path)
     edges, _ = collect_service_edges(records)
 
-    computed = run_trace(tmp_path, "commerce/warehouse-service")
-    supplied = run_trace(
+    computed = trace_mod.run_trace(tmp_path, "commerce/warehouse-service")
+    supplied = trace_mod.run_trace(
         tmp_path, "commerce/warehouse-service", records=records, service_edges=edges,
     )
     assert [(h.source_repo, h.kind, h.confidence) for h in supplied.upstream] == [
@@ -103,15 +105,11 @@ def test_run_trace_accepts_precomputed_service_edges(tmp_path):
 def test_run_trace_does_not_rebuild_supplied_edges(tmp_path, monkeypatch):
     """Given edges, the trace must not recompute the fleet-wide graph."""
     _seed(tmp_path)
-    import src2sink.trace as trace_mod
-    from src2sink.aggregators.service_calls import collect_service_edges
-    from src2sink.graph_common import load_v2_repo_records
-
-    records = load_v2_repo_records(tmp_path)
+    records = gc.load_v2_repo_records(tmp_path)
     edges, _ = collect_service_edges(records)
     calls = _count_collector_calls(monkeypatch, trace_mod)
 
-    run_trace(
+    trace_mod.run_trace(
         tmp_path, "commerce/warehouse-service", records=records, service_edges=edges,
     )
     assert calls == [], "supplied edges were ignored and the fleet graph rebuilt"
@@ -124,17 +122,14 @@ def test_batch_trace_builds_the_fleet_graph_once(tmp_path, monkeypatch):
         ("commerce/warehouse-service", "/stock/dispatch"),
         ("commerce/warehouse-service", "/stock/reserve"),
     ))
-    import src2sink.trace as trace_mod
-    import src2sink.trace_batch as batch_mod
-
     # Count builds wherever they happen: the batch hoist and the per-target path
     # both draw on the same budget of one.
     calls = _count_collector_calls(monkeypatch, batch_mod)
     monkeypatch.setattr(
-        trace_mod, "collect_service_edges", getattr(batch_mod, "collect_service_edges"),
+        trace_mod, "collect_service_edges", batch_mod.collect_service_edges,
     )
 
-    written, _skipped, errors = batch_trace(tmp_path)
+    written, _skipped, errors = batch_mod.batch_trace(tmp_path)
     assert (written, errors) == (3, 0)
     assert len(calls) == 1, f"fleet graph rebuilt {len(calls)}x for 3 targets"
 
