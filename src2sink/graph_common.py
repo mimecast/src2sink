@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -71,6 +72,17 @@ def iter_nodes(data: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield {**node, "repo": rid}
 
 
+# These two helpers are pure, tiny, and called with the *same* few thousand
+# route strings millions of times over a fleet-sized run — collecting the
+# service-call graph for 400 repos spent most of its 38s here (OI-14). The cache
+# is bounded because the keys are paths read out of scanned repositories: an
+# unbounded cache would let a hostile or merely enormous fleet grow it without
+# limit. 64k entries comfortably holds a large fleet's distinct routes while
+# capping the cache at a few tens of MB.
+_PATH_CACHE_MAX = 65_536
+
+
+@lru_cache(maxsize=_PATH_CACHE_MAX)
 def normalize_path_template(path: str) -> str:
     """Collapse path params to a single form for matching."""
     if not path or path == "?":
@@ -88,17 +100,21 @@ _VERSION_SEGMENT_RX = re.compile(r"^v\d+$", re.I)
 _GENERIC_SEGMENTS = frozenset({"api", "rest", "internal", "public", "service", "services"})
 
 
-def _significant_segments(path: str) -> list[str]:
+@lru_cache(maxsize=_PATH_CACHE_MAX)
+def _significant_segments(path: str) -> tuple[str, ...]:
     """Return the segments of a normalised path that actually name a destination.
 
     `/v1` and `/api` are not destinations — they say which edition of an API you
     are addressing, not what you are addressing. Dropping them is what stops a
     repo exposing a bare `/v1` from matching every `/v1/...` path in the fleet.
+
+    Returns a tuple, not a list: the result is cached and therefore shared by
+    every caller asking about the same path, so it must not be mutable.
     """
-    return [
+    return tuple(
         s for s in path.split("/")
         if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS
-    ]
+    )
 
 
 def path_templates_match(outbound: str, inbound: str) -> str | None:

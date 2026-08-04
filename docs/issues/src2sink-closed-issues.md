@@ -68,6 +68,7 @@ different readers.
 | `OI-10` | `parameterised` is reported as a safety property it cannot establish | 1.2.0 | `33554b1` (PR #5) | `detail.parameterised` changes from boolean to a posture string; old metabases still load. |
 | `OI-11` | A base-query constant hides the concatenation appended to it | 1.2.0 | `ce7e6fd`, `3d10d27` (PR #5) | The base-query-plus-clause shape now produces a finding and reports `mixed` rather than `parameterised`. |
 | `OI-12` | Four unused runtime dependencies pull in sixty packages | 1.2.0 | `b54f74a` (PR #4, then #5) | Runtime closure falls from 68 packages to 8, all MIT or PSFL — no copyleft of any kind. |
+| `OI-14` | Trace rebuilds the whole fleet graph for every target | 1.2.0 | `651683a` (PR #15) | None — same reports, materially faster. `run_trace` gains an optional `service_edges` argument. |
 
 ---
 
@@ -1091,5 +1092,79 @@ Remove all four from `[project.dependencies]` and regenerate `uv.lock`. Not move
 ### Residual not covered
 
 Package metadata does not cover the C grammars vendored inside the `tree-sitter-*` wheels, whose upstream licences have not been verified here. Dev dependencies are unaudited beyond noting that `pathspec` (MPL-2.0) arrives via `mypy`.
+
+---
+
+## OI-14 — Trace rebuilds the whole fleet graph for every target
+
+### Resolution
+
+**Fixed in:** 1.2.0  
+**Commit:** `cf38c3d` (red), `651683a` (fix) — PR #15  
+**Tests:** `tests/test_trace_fleet_scaling.py` — six cases: precomputed edges change nothing, supplied edges are not rebuilt, a batch of three targets builds the graph once, the memoised segment split is immutable, both path helpers memoise, and the cache is bounded. Mutants `OI14-M1`..`OI14-M5`.
+
+**What changed.** `_find_upstream_from_graph` now takes the edge list rather than
+the records it is built from, and `run_trace` accepts a `service_edges` argument
+alongside the `records` and `producer_indices` it already accepted; `trace_batch`
+builds all three once. Separately, `normalize_path_template` and
+`_significant_segments` are memoised into a bounded LRU, and the latter returns a
+tuple because a cached result is shared between callers and must not be mutable.
+The three "compute if not supplied" branches moved into
+`_resolve_fleet_derivations`, both to keep `run_trace` under its frozen
+complexity score and so that an unknown target still fails before paying for
+either build.
+
+**Deviation.** The obvious framing — "trace walks every repo on every
+invocation" — turned out to be wrong, and measuring first is what caught it.
+Loading all 300 repo records took **0.02s**; `collect_service_edges` took
+**22.64s**. The file walk was never the problem. Fixing the walk would have
+bought nothing.
+
+**Behaviour change.** None. Identical reports, and the new argument is optional.
+
+---
+
+_This issue was found and fixed in the same PR, so unlike the entries above it
+was never staged in the open-issues file. What follows was written from the
+measurements rather than moved verbatim._
+
+### Symptom
+
+`src2sink-trace` was slow over a real fleet, and a batch run disproportionately
+so — enough that batch tracing was effectively not run.
+
+### Root cause
+
+Two independent costs, neither visible in the output.
+
+**Per-target recomputation.** `run_trace` called `collect_service_edges(records)`
+through `_find_upstream_from_graph`, which then discarded every edge not arriving
+at the target. The graph is fleet-wide and target-independent, so a batch of N
+targets built the identical graph N times. `trace_batch` had already hoisted
+record loading and producer indices out of its loop, which is why this one was
+easy to miss — the loop *looked* hoisted.
+
+**A quadratic graph build.** Each path lookup in
+`match_path_in_inbound_index` linearly scans every indexed inbound route, and
+each comparison re-normalised both route strings from scratch. Measured on a
+synthetic fleet of N repos x 40 nodes:
+
+| repos | before | after |
+|---|---|---|
+| 50 | 0.60s | 0.14s |
+| 100 | 2.41s | 0.55s |
+| 200 | 9.45s | 2.19s |
+| 400 | 38.28s | 9.15s |
+
+A clean 4x per doubling in both columns. `cProfile` at 150 repos attributed it to
+`path_templates_match` (2.25M calls) driving `normalize_path_template` (4.5M
+calls) over the same few thousand route strings.
+
+### Measured effect
+
+10 traces over a 200-repo fleet: **22.05s → 0.04s**. The graph build itself is
+**4.2x** faster and *still quadratic* — memoisation makes each comparison
+cheaper, it does not remove the scan. Removing the scan needs the keyed index
+described in `OI-15`.
 
 ---

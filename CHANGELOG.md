@@ -49,6 +49,13 @@ each is reproduced by a named regression test.
   *and* the call site was reported safe. Constants are now resolved through a
   per-file symbol table, the same mechanism already used for constant-mediated
   URLs.
+- **Tracing rebuilt the whole fleet service-call graph for every target
+  (`OI-14`).** The graph is fleet-wide and target-independent, so a batch of N
+  traces built the identical graph N times and then filtered it N times. It is
+  now built once per run: 10 traces over a 200-repo fleet fell from 22.05s to
+  0.04s. Separately, the graph build itself re-normalised every candidate route
+  string on every comparison — 4.5M calls for 150 repos — which memoisation cuts
+  by 4.2x (400 repos: 38.28s to 9.15s). Reports are unchanged.
 
 ### Changed
 

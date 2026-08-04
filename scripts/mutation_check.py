@@ -749,6 +749,66 @@ CATALOGUE: tuple[Mutant, ...] = (
             "text, so a ternary `?` or a `$1` in code counts as a bind parameter."
         ),
     ),
+    Mutant(
+        id="OI14-M1",
+        file="src2sink/trace.py",
+        old="    service_edges, indices = _resolve_fleet_derivations(\n"
+            "        metabase_root, repos_root, records, service_edges, producer_indices,\n"
+            "    )",
+        new="    service_edges, indices = _resolve_fleet_derivations(\n"
+            "        metabase_root, repos_root, records, None, producer_indices,\n"
+            "    )",
+        selector="tests/test_trace_fleet_scaling.py",
+        note=(
+            "Supplied fleet edges discarded, so every target rebuilds the "
+            "fleet-wide graph again — the OI-14 defect, restored silently since "
+            "the report is identical either way."
+        ),
+    ),
+    Mutant(
+        id="OI14-M2",
+        file="src2sink/trace_batch.py",
+        old="    service_edges, _unmatched = collect_service_edges(records)",
+        new="    service_edges = None",
+        selector="tests/test_trace_fleet_scaling.py",
+        note=(
+            "Batch stops hoisting the fleet graph out of its target loop, "
+            "returning the cost to O(targets x fleet)."
+        ),
+    ),
+    Mutant(
+        id="OI14-M3",
+        file="src2sink/graph_common.py",
+        old="@lru_cache(maxsize=_PATH_CACHE_MAX)\ndef normalize_path_template(path: str) -> str:",
+        new="def normalize_path_template(path: str) -> str:",
+        selector="tests/test_trace_fleet_scaling.py",
+        note=(
+            "Route normalisation memoisation removed, restoring the quadratic "
+            "graph build (4x per doubling of the fleet)."
+        ),
+    ),
+    Mutant(
+        id="OI14-M4",
+        file="src2sink/graph_common.py",
+        old="    return tuple(\n        s for s in path.split(\"/\")",
+        new="    return list(\n        s for s in path.split(\"/\")",
+        selector="tests/test_trace_fleet_scaling.py",
+        note=(
+            "Cached segment split hands back a mutable list, so one caller's "
+            "edit would corrupt every later lookup of the same path."
+        ),
+    ),
+    Mutant(
+        id="OI14-M5",
+        file="src2sink/graph_common.py",
+        old="_PATH_CACHE_MAX = 65_536",
+        new="_PATH_CACHE_MAX = None",
+        selector="tests/test_trace_fleet_scaling.py",
+        note=(
+            "Path cache unbounded — keys are paths read from scanned repos, so "
+            "an enormous or hostile fleet grows it without limit."
+        ),
+    ),
 )
 
 
