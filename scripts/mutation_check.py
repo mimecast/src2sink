@@ -541,6 +541,57 @@ CATALOGUE: tuple[Mutant, ...] = (
             "iterator — the normal case when a consumer stops early."
         ),
     ),
+    # --- Tier A: the malicious-content pre-screen (WI-10) --------------------
+    Mutant(
+        id="PRE-M1",
+        file="src2sink/prescreen.py",
+        old="    if head:\n        ratio = head.count(_REPLACEMENT_CHAR) / len(head)",
+        new="    if True:\n        ratio = head.count(_REPLACEMENT_CHAR) / len(head)",
+        selector="tests/test_prescreen.py",
+        note=(
+            "Empty-file guard removed: an empty file divides by zero and aborts "
+            "the scan of a repo rather than skipping one file."
+        ),
+    ),
+    Mutant(
+        id="PRE-M2",
+        file="src2sink/prescreen.py",
+        old="_MAX_REPLACEMENT_RATIO = 0.10",
+        new="_MAX_REPLACEMENT_RATIO = 0.50",
+        selector="tests/test_prescreen.py",
+        note=(
+            "The binary-content threshold moves. A screen's thresholds are its "
+            "whole behaviour, and the previous tests used ~98% replacement "
+            "characters so anything from 1% to 97% passed them equally."
+        ),
+    ),
+    Mutant(
+        id="PRE-M3",
+        file="src2sink/prescreen.py",
+        old="            if len(line) > _MAX_LINE_BYTES:",
+        new="            if len(line) >= _MAX_LINE_BYTES:",
+        selector="tests/test_prescreen.py",
+        note="Off-by-one on the minified-line cap: a line exactly at the limit is skipped.",
+    ),
+    Mutant(
+        id="PRE-M4",
+        file="src2sink/prescreen.py",
+        old="_BINARY_SNIFF_CHARS = 8192",
+        new="_BINARY_SNIFF_CHARS = 128",
+        selector="tests/test_prescreen.py",
+        note=(
+            "The sniff window narrows, so binary files stop being recognised. "
+            "The window is a deliberate cost trade-off, not an arbitrary number."
+        ),
+    ),
+    Mutant(
+        id="PRE-M5",
+        file="src2sink/prescreen.py",
+        old='                return f"matched configured indicator: {ind[:40]}"',
+        new='                return f"matched configured indicator: {ind}"',
+        selector="tests/test_prescreen.py",
+        note="Operator-supplied text echoed into the reason unbounded.",
+    ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
         id="OI1-M1",

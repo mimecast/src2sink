@@ -79,3 +79,82 @@ def test_analyse_repo_skips_flagged_file_with_note(tmp_path):
     assert summary.language_breakdown.get("java") == 1
     # The packed file did not contribute nodes.
     assert not any(n.file.endswith("packed.js") for n in summary.nodes)
+
+
+# ---------------------------------------------------------------------------
+# Boundaries and edges (WI-10, Tier A)
+#
+# A mutation sweep left 12 survivors here at 100% line coverage. The tests above
+# assert "something was flagged" or "nothing was", which is the right question
+# but blind to *where* each threshold sits — and a screen's thresholds are its
+# entire behaviour. Move one and the module still passes every test above while
+# quarantining half the fleet, or none of it.
+# ---------------------------------------------------------------------------
+
+from src2sink.prescreen import (  # noqa: E402
+    _BINARY_SNIFF_CHARS,
+    _MAX_REPLACEMENT_RATIO,
+)
+
+
+def test_empty_text_is_screened_without_dividing_by_zero(tmp_path):
+    """An empty file is legal and common; the ratio check must not run on it.
+
+    The `if head:` guard is the only thing standing between an empty file and a
+    ZeroDivisionError in the pre-screen — which would abort scanning a repo
+    rather than skipping one file.
+    """
+    assert screen(tmp_path / "empty.java", "") is None
+
+
+def test_replacement_ratio_threshold_sits_where_it_claims(tmp_path):
+    """Just over the ratio is flagged; just under is not.
+
+    Existing tests used ~98% replacement characters, so any threshold from 1% to
+    97% would have passed them equally.
+    """
+    over = "�" * 11 + "a" * 89          # 11% > 10%
+    under = "�" * 10 + "a" * 90         # exactly 10%, not over
+    assert screen(tmp_path / "a.dat", over) is not None
+    assert screen(tmp_path / "b.dat", under) is None
+    assert _MAX_REPLACEMENT_RATIO == 0.10, "the tests above encode this threshold"
+
+
+def test_oversized_line_threshold_is_exclusive(tmp_path):
+    """A line exactly at the cap passes; one byte over is flagged."""
+    assert screen(tmp_path / "a.js", "a" * MAX_LINE_BYTES) is None
+    assert screen(tmp_path / "b.js", "a" * (MAX_LINE_BYTES + 1)) is not None
+
+
+def test_the_binary_sniff_window_is_deliberately_bounded(tmp_path):
+    """A null byte past the sniff window is *not* flagged, and that is by design.
+
+    The check is a cheap head-sniff, not a full scan: reading every byte of every
+    file to find a null would cost more than it saves. Pinning the boundary keeps
+    that a decision rather than an accident — and stops the window being widened
+    or narrowed without someone noticing the cost change.
+    """
+    # Literal sizes, and an explicit assertion on the constant. Deriving the
+    # fixture from `_BINARY_SNIFF_CHARS` made this test adapt to any change in
+    # it — a mutation run caught that: shrinking the window to 128 shrank the
+    # test's own input and it passed regardless. A test that reads the value it
+    # is checking cannot detect that value changing.
+    assert _BINARY_SNIFF_CHARS == 8192, "the literal sizes below encode this window"
+    assert screen(tmp_path / "a.bin", "a" * 8000 + "\x00") == "binary content (null byte)"
+    assert screen(tmp_path / "b.bin", "a" * 9000 + "\x00") is None
+
+
+def test_binary_is_reported_before_an_indicator_match(tmp_path):
+    """Order matters: the cheapest, most certain reason should be the one given."""
+    reason = screen(
+        tmp_path / "x.bin", "\x00 powershell -enc", indicators=("powershell -enc",),
+    )
+    assert reason == "binary content (null byte)"
+
+
+def test_a_long_indicator_is_truncated_in_the_reason(tmp_path):
+    """The reason echoes operator-supplied text, so its length is bounded."""
+    indicator = "z" * 200
+    reason = screen(tmp_path / "x.txt", "prefix " + indicator, indicators=(indicator,))
+    assert reason is not None
+    assert len(reason) < 100, reason
