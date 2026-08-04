@@ -25,7 +25,11 @@ from pathlib import Path
 from .aggregators.payload_producers import build_producer_indices
 from .aggregators.service_calls import collect_service_edges
 from .graph_common import load_v2_repo_records
-from .internal_groups import add_internal_groups_arguments, apply_internal_groups_from_args
+from .internal_groups import (
+    add_internal_groups_arguments,
+    apply_internal_groups_from_args,
+)
+from .known_api_clients import ApiClientConfigError, configure_from_path
 from .trace import render_trace_markdown, run_trace
 
 INVALID_PATH_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
@@ -167,7 +171,6 @@ def main() -> int:
     apply_internal_groups_from_args(args)
 
     if args.api_clients:
-        from .known_api_clients import ApiClientConfigError, configure_from_path
         try:
             configure_from_path(
                 args.api_clients,

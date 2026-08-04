@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 
-from .node_factory import make_node
+from ..constants import CONFIG_FILE_NAMES
 from ..schema import FlowEdge, FlowNode
+from .node_factory import make_node
 
 # v1 security-sensitive keys (properties / YAML flattened keys)
 # Flat properties / env style (v1 parity)
@@ -211,7 +212,6 @@ def extract_from_config(
 
 def is_config_path(path_name: str, suffix: str) -> bool:
     """True when a file name/suffix identifies it as a config file for this extractor."""
-    from ..constants import CONFIG_FILE_NAMES
 
     if path_name in CONFIG_FILE_NAMES:
         return True

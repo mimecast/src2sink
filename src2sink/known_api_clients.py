@@ -114,6 +114,12 @@ def configure_from_path(
         ApiClientConfigError: if the file yields no bindings and ``allow_empty``
             is false — a misconfigured file must not look like a clean run.
     """
+    # Deferred deliberately: this module and extractors.http_out import each
+    # other. http_out calls binding_target_for_text() to resolve a call site
+    # against the configured bindings; this function pushes those bindings'
+    # class patterns into http_out. Hoisting *this* import is what breaks —
+    # hoisting http_out's side alone is fine, so the cycle survives a
+    # one-at-a-time check and only fails when both are at module level.
     from .extractors.http_out import configure_http_out_client_patterns
 
     p = Path(path)

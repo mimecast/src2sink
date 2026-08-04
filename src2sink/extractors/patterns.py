@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 
+from ..known_api_clients import get_bindings
+from ..vocabulary import RAW_SQL_PAYLOAD_FIELD_NAMES
 from .symbols import build_symbol_table, iter_concatenated_symbols
 
 # JDBC / native SQL execution (used for raw-code-payload correlation)
@@ -181,8 +183,6 @@ def payload_field_names() -> tuple[frozenset[str], frozenset[str]]:
     input, which is why the two are kept apart — the second earns higher
     confidence than the first.
     """
-    from ..known_api_clients import get_bindings
-    from ..vocabulary import RAW_SQL_PAYLOAD_FIELD_NAMES
 
     declared = frozenset(f for b in get_bindings() for f in b.payload_fields if f)
     return frozenset(RAW_SQL_PAYLOAD_FIELD_NAMES), declared

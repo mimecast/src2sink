@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterator
 
+from .known_api_clients import binding_alias_index
 from .schema import SCHEMA_VERSION
 
 # Hosts that are not useful service-graph targets (v1 parity).
@@ -229,7 +230,6 @@ def build_repo_alias_index(records: list[dict[str, Any]]) -> dict[str, str]:
     an internal service) still resolves to a repo. Binding aliases never override
     a real repo name — a repo record is the stronger evidence.
     """
-    from .known_api_clients import binding_alias_index
 
     mapping: dict[str, str] = {}
     for data in records:

@@ -6,10 +6,13 @@ src2sink-build from per-repo dependency data; manual edits to
 """
 
 from __future__ import annotations
+
 import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+from ..repo_utils import _build_component_identity_index
 
 STATUS_PENDING = "pending"
 STATUS_CLONED = "cloned"
@@ -153,7 +156,6 @@ def fix_flagged_mappings(metabase_root: Path, repos_root: Path) -> int:
     if not isinstance(mappings, list) or not mappings:
         return 0
 
-    from ..repo_utils import _build_component_identity_index
 
     by_coord, by_name, by_full = _build_component_identity_index(repos_root)
 

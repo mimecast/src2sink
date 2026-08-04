@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..graph_common import extract_urls_and_paths
+from ..known_api_clients import binding_target_for_text
 from .symbols import build_symbol_table
 
 if TYPE_CHECKING:
@@ -293,7 +294,6 @@ def enrich_http_out_detail(
     # against the configured binding aliases keeps the cross-repo hop rather than
     # dropping the edge entirely.
     if "host" not in detail:
-        from ..known_api_clients import binding_target_for_text
 
         hint = binding_target_for_text(blob)
         if hint:

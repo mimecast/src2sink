@@ -30,7 +30,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from ..graph_common import load_v2_repo_records, repo_id
+from ..graph_common import load_v2_repo_records, match_path_in_inbound_index, repo_id
+from ..repo_utils import _build_component_identity_index
+from .library_source_map import _resolve_clone_path
+from .service_call_index import build_inbound_index
 
 DISCOVERED_FILE = "api-clients.discovered.json"
 
@@ -195,8 +198,6 @@ def _demand_side_observations(
     that hand-rolls HTTP has no ``*-client`` dependency, so no amount of
     dependency parsing finds it (OI-4).
     """
-    from ..graph_common import match_path_in_inbound_index
-    from .service_call_index import build_inbound_index
 
     inbound = build_inbound_index(records)
     memo: dict[str, tuple[list[Any], str]] = {}
@@ -358,8 +359,6 @@ def discover_api_clients(
     ``status`` and tuned fields of any candidate a reviewer has already accepted
     or rejected. Never touches the authoritative ``api-clients.json``.
     """
-    from ..repo_utils import _build_component_identity_index
-    from .library_source_map import _resolve_clone_path
 
     records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
     by_coord, by_name, by_full = _build_component_identity_index(repos_root)

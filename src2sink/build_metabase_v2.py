@@ -13,18 +13,39 @@ import re
 import sys
 from collections import Counter
 from collections.abc import Iterator
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from .internal_groups import add_internal_groups_arguments, apply_internal_groups_from_args
+from . import prescreen, repo_utils
+from .aggregators.api_client_discovery import (
+    DISCOVERED_FILE,
+    discover_api_clients,
+    promote_api_clients,
+)
+from .aggregators.graphs import aggregate_graphs_v2
+from .aggregators.library_source_map import (
+    fix_flagged_mappings,
+    generate_library_source_map,
+)
+from .aggregators.phase3 import aggregate_phase3_v2
+from .aggregators.pii_flow_v2 import write_pii_flow_v2
+from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
+from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
+from .extractors.config import extract_from_config, is_config_path
+from .extractors.unified import extract_from_file
+from .internal_groups import (
+    add_internal_groups_arguments,
+    apply_internal_groups_from_args,
+    configure_internal_group_patterns,
+)
+from .known_api_clients import ApiClientConfigError, configure_from_path, get_bindings
 from .limits import (
     DEFAULT_MAX_FILES_PER_REPO,
     DEFAULT_PER_REPO_TIMEOUT_S,
     map_with_timeout,
 )
-from . import prescreen
-from .safe_paths import is_escaping_symlink
-from .sanitize import redact_literals
+from .renderers.markdown import merge_with_manual, render_repo_md_v2
 from .repo_utils import (
     classify_frameworks,
     detect_build_systems,
@@ -34,16 +55,8 @@ from .repo_utils import (
     parse_package_json_dependencies,
     parse_pom_dependencies,
 )
-
-from .aggregators.graphs import aggregate_graphs_v2
-from .aggregators.phase3 import aggregate_phase3_v2
-from .aggregators.pii_flow_v2 import write_pii_flow_v2
-from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
-from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
-from .extractors.config import extract_from_config, is_config_path
-from .extractors.unified import extract_from_file
-from .known_api_clients import get_bindings
-from .renderers.markdown import merge_with_manual, render_repo_md_v2
+from .safe_paths import is_escaping_symlink
+from .sanitize import redact_literals
 from .schema import SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -112,7 +125,6 @@ def _apply_max_file_bytes(max_file_bytes: int) -> None:
     """
     global _MAX_FILE_BYTES  # noqa: PLW0603
     _MAX_FILE_BYTES = max_file_bytes
-    from . import repo_utils
     repo_utils.MAX_FILE_BYTES = max_file_bytes
 
 
@@ -461,8 +473,6 @@ def _worker_init(
     prescreen_indicators: tuple[str, ...],
 ) -> None:
     """Multiprocessing pool initializer: configure this worker's global scan settings."""
-    from .internal_groups import configure_internal_group_patterns
-    from .known_api_clients import configure_from_path
     global _MAX_FILES_PER_REPO  # noqa: PLW0603
     _MAX_FILES_PER_REPO = max_files_per_repo
     _apply_max_file_bytes(max_file_bytes)
@@ -477,7 +487,6 @@ def _worker_init(
 
 def _tool_version() -> str:
     """Return the installed src2sink package version, or "unknown" if not installed."""
-    from importlib.metadata import PackageNotFoundError, version
 
     try:
         return version("src2sink")
@@ -668,7 +677,6 @@ def _configure_api_clients(
     """
     if not api_clients_path:
         return 0
-    from .known_api_clients import ApiClientConfigError, configure_from_path
     # warn=True only here (the single top-level load) so a malformed sensitive
     # config is surfaced once, not silently ignored (I-3) and not per-worker.
     try:
@@ -713,10 +721,6 @@ def _generate_source_map(
     metabase_root: Path, jsons: list[Path], repos_root: Path, *, prefix: str
 ) -> None:
     """Regenerate the library source map, then resolve any flagged entries from on-disk manifests."""
-    from .aggregators.library_source_map import (
-        fix_flagged_mappings,
-        generate_library_source_map,
-    )
 
     generate_library_source_map(metabase_root, jsons)
     fixed = fix_flagged_mappings(metabase_root, repos_root)
@@ -868,13 +872,11 @@ def main() -> int:
     metabase_root.mkdir(parents=True, exist_ok=True)
 
     if args.fix_source_map:
-        from .aggregators.library_source_map import fix_flagged_mappings
         fixed = fix_flagged_mappings(metabase_root, repos_root)
         print(f"Resolved {fixed} flagged source-map entries from pom.xml")
         return 0
 
     if args.promote_api_clients:
-        from .aggregators.api_client_discovery import promote_api_clients
         target = Path(args.api_clients) if args.api_clients else Path("api-clients.json")
         merged = promote_api_clients(metabase_root, target)
         print(f"Promoted {merged} accepted candidate binding(s) into {target.name}")
@@ -910,10 +912,6 @@ def main() -> int:
         aggregate_graphs_v2(metabase_root, jsons, repos_root=repos_root)
         _generate_source_map(metabase_root, jsons, repos_root, prefix="")
         if args.discover_api_clients:
-            from .aggregators.api_client_discovery import (
-                DISCOVERED_FILE,
-                discover_api_clients,
-            )
             n = discover_api_clients(metabase_root, jsons, repos_root)
             print(f"Discovered {n} candidate api-client binding(s) → metabase/{DISCOVERED_FILE}")
     _write_run_manifest(
