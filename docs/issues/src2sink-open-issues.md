@@ -53,6 +53,8 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
 | OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
+| OI-24 | 24 | The equality shortcut bypasses the significant-segment filter | small | `/v1` matches `/v1` at `high`, reinstating OI-1 | **P1** |
+| OI-25 | 25 | Placeholder and operation-verb segments treated as destinations | small | `/{id}` matches `/{name}`; `/search` matches `/search` at `high` | **P1** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -426,3 +428,123 @@ weaker — this issue's value is concentrated in the JVM fleet. Full dataflow
 (field writes, collections, returned values) is out of scope: the proposal
 tracks arguments into parameters, which covers the common shape and should be
 described as exactly that rather than as taint analysis.
+
+---
+
+## 24. The equality shortcut bypasses the significant-segment filter  `OI-24`
+
+**Severity:** High — reinstates `OI-1` for every pair of identical meaningless
+paths, at `high` confidence.
+
+**Found:** reported from a separate review session; confirmed by measurement.
+
+### Symptom
+
+```
+  /v1       vs /v1       -> high    significant: () / ()
+  /api      vs /api      -> high    significant: () / ()
+  /service  vs /service  -> high    significant: () / ()
+  /v1       vs /v1/stock -> None    significant: () / ('stock',)
+```
+
+Two repositories each exposing a bare `/v1` produce a `high`-confidence
+cross-repo edge — the exact defect `OI-1` was raised to remove. The last line
+shows the guard working when the paths are *not* identical, which is what hid
+this: only the equality case leaks.
+
+### Root cause
+
+`path_templates_match` returns before it asks whether either side names
+anything:
+
+```python
+if o == i:
+    return "high"          # <-- returns here
+
+op = _significant_segments(o)
+ip = _significant_segments(i)
+if not op or not ip:       # <-- the guard OI-1 added, never reached
+    return None
+```
+
+The shortcut was presumably added as an optimisation — identical strings are
+obviously the same route. They are not: `/v1` is the same *string*, and no route
+at all.
+
+### Proposed fix
+
+Compute the significant segments and apply the emptiness guard **before** the
+equality check. Equality then means "the same meaningful route", which is what
+`high` is supposed to assert.
+
+### Suggested tests
+
+* Every generic and version segment fails to match itself: `/v1`, `/v2`, `/api`,
+  `/rest`, `/internal`, `/public`, `/service`, `/services`.
+* Real routes still match exactly: `/stock` vs `/stock` stays `high`.
+* `/orders/{id}` vs `/orders/{ref}` stays `high` — normalisation makes them the
+  same route, and that is a genuine equality.
+
+---
+
+## 25. Placeholder and operation-verb segments are treated as destinations  `OI-25`
+
+**Severity:** High — same class as `OI-24`, and the two compound: both defects
+surface through the equality shortcut.
+
+**Found:** reported from a separate review session; confirmed by measurement.
+
+### Symptom
+
+```
+  /{id}     vs /{name}   -> high    significant: ('{}',)     / ('{}',)
+  /create   vs /create   -> high    significant: ('create',) / ('create',)
+  /search   vs /search   -> high    significant: ('search',) / ('search',)
+```
+
+A placeholder names nothing at all; an operation verb names what you are doing
+rather than what you are addressing. Both are exactly the argument that removed
+`/api` and `/service` in `OI-1`.
+
+### Root cause
+
+`_significant_segments` drops version segments and a fixed set of layer names.
+It does not drop the collapsed path parameter `{}` that
+`normalize_path_template` produces, and it has no notion of an operation name.
+
+### Proposed fix — and why the two halves differ
+
+**Placeholders are dropped.** `{}` names nothing under any circumstances, so it
+is filtered exactly like `/api`.
+
+**Operation verbs are *not* dropped.** This is the part that needs care:
+`/v1/query` reduces to `('query',)` and is a real route of a real query service —
+the fixture in `tests/test_sql_payload_out.py` uses it. Filtering verbs out would
+delete legitimate endpoints, replacing false edges with missing ones.
+
+Instead, a match whose significant segments are **entirely** operation verbs is
+capped at `low`. Two services both exposing `/search` is weak evidence, not no
+evidence, and `low` is what the confidence ladder already means by that.
+
+### Behaviour change worth stating
+
+`/orders/create` and `/orders/delete` stop matching each other. They are
+different endpoints on the same service, and conflating them was never intended —
+but any consumer relying on the previous behaviour would see those edges
+disappear.
+
+### Suggested tests
+
+* `/{id}` vs `/{name}` does not match; `/orders/{id}/lines` still reduces to
+  `('orders', 'lines')` and matches its equivalent at `high`.
+* Each bare operation verb matches itself at `low`, never `high`.
+* `/v1/query` still resolves to `('query',)` and still matches `/query`.
+* A verb alongside a resource keeps full strength: `/orders/create` vs
+  `/orders/create` is `high`, and `/orders/create` vs `/users/create` is `None`.
+
+### Residual not covered
+
+The operation-verb list is a fixed vocabulary and will not cover every project's
+naming. A verb that is genuinely a resource name in some service (`/search` as a
+search *service*) is capped to `low` rather than lost, which is the deliberate
+trade: recall is preserved, confidence is not overstated.

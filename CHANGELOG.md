@@ -7,6 +7,23 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Identical but meaningless paths matched at `high` confidence (`OI-24`).**
+  `path_templates_match` returned on string equality *before* asking whether
+  either side named a destination, so two repos both exposing a bare `/v1` — or
+  `/api`, or `/service` — produced a high-confidence cross-repo edge. That is the
+  defect `OI-1` was raised to remove, surviving through the one path that never
+  reached the guard `OI-1` added.
+- **Path placeholders and operation verbs counted as destinations (`OI-25`).**
+  `/{id}` matched `/{name}`, and `/search` matched `/search`, both at `high`.
+  Placeholders are now filtered like `/api`. Operation verbs are deliberately
+  *not* filtered — `/v1/query` is a real route of a real query service — but a
+  match resting entirely on verbs is capped at `low`.
+  **Behaviour change:** `/orders/create` and `/orders/delete` no longer match
+  each other. They are different endpoints, and conflating them was never
+  intended.
+
 ## [2.0.0] - 2026-08-04
 
 Detection correctness. Where 1.1.0 recovered callers that were missing, this work

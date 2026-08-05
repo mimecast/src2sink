@@ -99,6 +99,20 @@ def normalize_path_template(path: str) -> str:
 
 _VERSION_SEGMENT_RX = re.compile(r"^v\d+$", re.I)
 _GENERIC_SEGMENTS = frozenset({"api", "rest", "internal", "public", "service", "services"})
+# `normalize_path_template` collapses every path parameter to this. It names no
+# destination at all — `/{id}` and `/{name}` are the same shape and nothing else,
+# so matching on it is a coincidence of syntax (OI-25).
+_PLACEHOLDER_SEGMENT = "{}"
+
+# Segments naming an *operation* rather than a destination. Deliberately NOT
+# removed by `_significant_segments`: `/v1/query` reduces to ("query",) and is a
+# real route of a real query service, so dropping these would delete legitimate
+# endpoints. Instead a match resting *only* on them is capped at `low` — two
+# services both exposing `/search` is weak evidence, not none (OI-25).
+_OPERATION_SEGMENTS = frozenset({
+    "create", "update", "delete", "remove", "add", "save", "edit", "put", "patch",
+    "get", "fetch", "read", "list", "all", "search", "find", "query", "count",
+})
 
 
 @lru_cache(maxsize=_PATH_CACHE_MAX)
@@ -108,14 +122,28 @@ def _significant_segments(path: str) -> tuple[str, ...]:
     `/v1` and `/api` are not destinations — they say which edition of an API you
     are addressing, not what you are addressing. Dropping them is what stops a
     repo exposing a bare `/v1` from matching every `/v1/...` path in the fleet.
+    A collapsed path parameter (`{}`) is dropped for the same reason, one step
+    further: it names nothing whatsoever, so `/{id}` and `/{name}` share only a
+    shape (OI-25).
+
+    Operation verbs are *not* dropped — see :data:`_OPERATION_SEGMENTS` for why
+    removing them would delete real routes. They are handled by grading instead.
 
     Returns a tuple, not a list: the result is cached and therefore shared by
     every caller asking about the same path, so it must not be mutable.
     """
     return tuple(
         s for s in path.split("/")
-        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS
+        if s
+        and s != _PLACEHOLDER_SEGMENT
+        and not _VERSION_SEGMENT_RX.match(s)
+        and s.lower() not in _GENERIC_SEGMENTS
     )
+
+
+def _names_only_an_operation(segments: tuple[str, ...]) -> bool:
+    """True if every significant segment names an operation rather than a thing."""
+    return bool(segments) and all(s.lower() in _OPERATION_SEGMENTS for s in segments)
 
 
 def path_templates_match(outbound: str, inbound: str) -> str | None:
@@ -137,14 +165,30 @@ def path_templates_match(outbound: str, inbound: str) -> str | None:
     i = normalize_path_template(inbound)
     if not o or not i:
         return None
-    if o == i:
-        return "high"
 
     op = _significant_segments(o)
     ip = _significant_segments(i)
-    # A side that reduces to nothing names a version or a layer, not a route.
+    # A side that reduces to nothing names a version, a layer or a placeholder,
+    # not a route. This is checked *before* the equality shortcut: two repos both
+    # exposing a bare `/v1` are identical strings and still name nothing, and
+    # returning early on equality is how that scored `high` (OI-24).
     if not op or not ip:
         return None
+
+    label = _structural_match(o, i, op, ip)
+    if label is not None and _names_only_an_operation(op) and _names_only_an_operation(ip):
+        # Everything that matched was a verb: `/search` against `/search` says
+        # both sides do a search, not that either calls the other (OI-25).
+        return "low"
+    return label
+
+
+def _structural_match(
+    o: str, i: str, op: tuple[str, ...], ip: tuple[str, ...]
+) -> str | None:
+    """Grade two normalised paths by how much of their meaning coincides."""
+    if o == i:
+        return "high"
     if op == ip:
         return "medium"
 

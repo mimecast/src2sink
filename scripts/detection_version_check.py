@@ -157,8 +157,16 @@ def check_fingerprint(
         "only repositories that happen to commit afterwards (OI-16).\n"
         "Bump DETECTION_VERSION in src2sink/schema.py, then re-freeze with:\n"
         "  uv run python scripts/detection_version_check.py --update\n"
-        "If the change genuinely cannot affect output (a comment, a docstring), "
-        "re-freezing without a bump is the deliberate, reviewable escape hatch."
+        "\n"
+        "Re-freezing WITHOUT a bump is the deliberate, reviewable escape hatch, "
+        "and there are two honest reasons for it:\n"
+        "  1. the change cannot affect output at all (a comment, a docstring);\n"
+        "  2. it affects only *aggregate* output, which is recomputed from "
+        "records on every run and so is never served stale — some watched files "
+        "straddle both paths, `graph_common` most of all, and the fingerprint is "
+        "file-level so it cannot tell them apart.\n"
+        "Anything else means records built by the previous detector would be "
+        "kept, so bump."
     )
 
 

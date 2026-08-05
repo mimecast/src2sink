@@ -21,7 +21,7 @@
     "src2sink/extractors/symbols.py": "c3516ca04394e0abc9cdd9f137f8b107b11488fe1fd6bf4dd7db3effb53e0ee4",
     "src2sink/extractors/ts_extractors.py": "466e00661c1f87db54888f6da47ec0e930089a2cd041f86cc9f67e522f0fa57d",
     "src2sink/extractors/unified.py": "4d17f661f386129c5389763ef34d92a65417e2dfb386a842f9835279e29d2266",
-    "src2sink/graph_common.py": "e67d17cc422cf6da9e7869189e9933e8b31cc6c72357403e1c7c38162571a14f",
+    "src2sink/graph_common.py": "2bb3bc61c9cd589e9a1bc60b5e3df2b34ff198d7e7396c25ae50c918079fdcf4",
     "src2sink/internal_groups.py": "382ecc2c855820f64990cd5d3f43af8f208b7325b744124091cb34ebdc378e20",
     "src2sink/known_api_clients.py": "450107cf45481387dc115f9bbfef76c6a22c4e3e91e44dbfe88e8e2bc35ef1fa",
     "src2sink/library_taint_java.py": "12d05afc412b4b46d3de92ec1951dfa3408cd97ef1b87d906ef7ed6988267f16",
