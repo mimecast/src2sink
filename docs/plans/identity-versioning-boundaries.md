@@ -398,26 +398,104 @@ correctly forces a fleet rescan.
 
 ---
 
-## 7. Open questions — these need your decision
+## 7. Open questions — **answered 2026-08-05**, except Q6
 
-1. **Is the label set closed or open?** Fixed kinds (`tag:`, `branch:`, `wip:`,
-   `env:`) or arbitrary user labels? Open is more useful and much harder to query
-   predictably.
-2. **What is a collector, concretely?** A stored named query, or an ad-hoc
-   predicate at call time? Stored ones are reviewable and cacheable; ad-hoc ones
-   are more flexible and impossible to validate.
-3. **When a consumer pins a range (`^1.4.2`) and no lockfile exists, what does the
-   collector select?** Every satisfying version we hold, the newest, or nothing
-   with a recorded "unresolvable" reason?
-4. **Does an unresolved dependency version block the edge, or label it?** Blocking
-   loses real edges; labelling risks them being read as confident.
-5. **How far do we chase parent POMs?** In-repo only, or across the fleet (§4.2
-   shows across-fleet works, but returns HEAD rather than the pinned version)?
-6. **Who curates the boundary catalogue, and how are additions reviewed?** It is a
-   detection input, so every addition changes fleet output and forces a rescan.
-7. **Do we need `OI-21` (non-HTTP entry points) before `OI-17` (reachability)?**
-   Reachability from an incomplete set of entry points produces confident,
-   incomplete answers — arguably worse than none.
+Recorded as given, with the consequence of each spelled out so the decision can
+be checked against what it implies. Q6 was badly posed and is restated below.
 
-Question 7 is the one I would want settled first: it decides whether the 3.0 plan
-sequences `OI-21` ahead of Phase 2 or accepts a known blind spot and labels it.
+### Q1 — label set: **fixed kinds**
+
+`tag:`, `branch:`, `wip:`, `env:` and nothing else without a code change.
+
+*Consequence:* collectors can be validated at write time and the storage schema
+can index the kind. A new kind becomes a reviewed change rather than something a
+caller invents, which is the point.
+
+### Q2 — collector: **stored named query, defined in config**
+
+Not code, so adding one does not need a release.
+
+*Consequence:* the definitions become a **configuration input**, like
+`api-clients.json`. That brings the same obligations: a syntax error must be a
+hard error rather than a silently empty result (the 1.1.0 empty-bindings defect),
+and the loaded count belongs in the run manifest. Whether a collector change
+forces a rescan needs deciding — it selects rather than extracts, so probably not,
+which usefully keeps it out of `DETECTION_VERSION`.
+
+### Q3 — range with no lockfile: **closest version with a matching signature, if available**
+
+*Consequence:* this cannot be answered until `OI-17` records signatures per
+version, so it degrades until then. The order is: exact archived version → closest
+satisfying version whose signature set matches → closest satisfying version →
+unresolved. The basis must be recorded, since "closest with matching signature"
+is a materially weaker claim than "the pinned version".
+
+### Q4 — provider endpoint deleted: **label as drift, keep it**
+
+*Consequence:* the edge survives with a `drift` marker, so history is not
+rewritten and stale consumers stay visible — which is the finding, not the noise.
+Renderers must show the marker prominently; a low-fidelity edge rendered like any
+other is worse than a dropped one.
+
+### Q5 — parent POMs: **build a fleet-wide map of POM locations while traversing**
+
+Find `pom.xml` (or XML files, reading the header and failing fast when it is not a
+POM) during the fleet walk, so parents are retrievable by lookup afterwards.
+
+*Consequence:* the walk already visits every file, so this is close to free, and
+it removes the need to guess parent locations. Two things it does not solve, both
+already recorded in §4.2: the located POM is that repo at **HEAD** rather than at
+the pinned version, and an external parent is not in the fleet at all. Both stay
+`unresolved`/labelled rather than guessed.
+
+### Q6 — restated, because the original was unclear
+
+**What I should have asked:** §4.4 proposes a *boundary catalogue* — one
+declarative table mapping library identifiers to what they mean, generalising
+`SQL_DB_IMPORT_RX`, which today is the only such list and covers SQL alone:
+
+```
+import pattern            ->  role      family            mechanism
+org.springframework.jdbc  ->  sink      sql               database
+com.fasterxml.jackson     ->  source    deserialization   untrusted input
+org.apache.commons.exec   ->  sink      script-exec       process
+```
+
+Two things need deciding about it, and neither is about the format:
+
+1. **Where does it live** — Python constants like `vocabulary.py` today, or a
+   config file like `api-clients.json`? Config means additions need no release;
+   constants mean they are code-reviewed and covered by the existing gates.
+2. **What happens on an addition.** The catalogue is a *detection input*: a new
+   entry changes what is detected, so it must bump `DETECTION_VERSION` and
+   trigger a **fleet-wide rescan**. If it lives in config, additions become easy
+   *and* expensive at the same time — the cost is invisible at the point of
+   editing. That tension is the real question: how do we stop a one-line
+   catalogue addition quietly triggering a full re-scan of the fleet?
+
+### Q7 — non-HTTP entry points before reachability: **yes**
+
+`OI-21` lands before `OI-17`.
+
+*Consequence:* this is the sequencing change, and it reorders the 3.0 plan.
+Reachability computed from an incomplete entry-point set produces confident,
+incomplete answers — "no path from any entrypoint" when the entrypoint was a
+`@KafkaListener` the tool cannot see. Phase 2 therefore becomes: entry-point
+coverage → Kotlin AST parity (`OI-13`) → reachability. It makes Phase 2 longer
+before anything is demonstrable, which is the cost of the decision and worth
+naming.
+
+---
+
+## 8. What these answers change
+
+* **`OI-21` moves ahead of `OI-17`** in the 3.0 plan (Q7). The plan needs
+  updating; it currently sequences reachability first.
+* **Collector definitions become a config input** (Q2), inheriting the
+  hard-error-on-empty and manifest-count obligations that `api-clients.json` has.
+* **Q3 depends on `OI-17`** — signature-matched version selection cannot exist
+  before signatures do. Until then it degrades to "closest satisfying version".
+* **A fleet-wide POM map** (Q5) is a new, cheap piece of the build phase, and it
+  belongs with `OI-18` rather than in the 3.0 work.
+* **Q6 is unresolved** and blocks nothing yet, but should be settled before the
+  boundary catalogue is written rather than after.
