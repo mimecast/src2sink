@@ -621,27 +621,66 @@ CATALOGUE: tuple[Mutant, ...] = (
     ),
     # --- OI-1 / OI-1 companion: version prefixes are not route names --------
     Mutant(
+        # Re-derived when OI-24 moved the equality shortcut below the filter and
+        # OI-25 added the placeholder term; the defect is unchanged.
         id="OI1-M1",
         file="src2sink/graph_common.py",
-        old="        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS",
-        new="        if s",
-        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py",
+        old="        and not _VERSION_SEGMENT_RX.match(s)\n"
+            "        and s.lower() not in _GENERIC_SEGMENTS",
+        new="",
+        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py"
+                 " tests/test_path_match_significance.py",
         note="Significance filtering removed — `/v1` becomes a destination again.",
     ),
     Mutant(
+        id="OI24-M1",
+        file="src2sink/graph_common.py",
+        old="    label = _structural_match(o, i, op, ip)",
+        new='    if o == i:\n        return "high"\n    label = _structural_match(o, i, op, ip)',
+        selector="tests/test_path_match_significance.py",
+        note=(
+            "The equality shortcut restored above the significance guard, so two "
+            "repos both exposing a bare `/v1` match at high again."
+        ),
+    ),
+    Mutant(
+        id="OI25-M1",
+        file="src2sink/graph_common.py",
+        old="        and s != _PLACEHOLDER_SEGMENT\n",
+        new="",
+        selector="tests/test_path_match_significance.py",
+        note="`/{id}` counts as a destination again, so `/{id}` matches `/{name}`.",
+    ),
+    Mutant(
+        id="OI25-M2",
+        file="src2sink/graph_common.py",
+        old="    if label is not None and _names_only_an_operation(op) and _names_only_an_operation(ip):",
+        new="    if False:",
+        selector="tests/test_path_match_significance.py",
+        note=(
+            "Verb-only matches stop being capped, so `/search` against `/search` "
+            "is high-confidence evidence that one service calls the other."
+        ),
+    ),
+    Mutant(
+        # Re-derived alongside OI1-M1 when the filter became a multi-line
+        # condition; the defect is unchanged.
         id="OI1-M2",
         file="src2sink/graph_common.py",
-        old="        if s and not _VERSION_SEGMENT_RX.match(s) and s.lower() not in _GENERIC_SEGMENTS",
-        new="        if s and not _VERSION_SEGMENT_RX.match(s)",
-        selector="tests/test_graph_common.py",
+        old="        and s.lower() not in _GENERIC_SEGMENTS\n",
+        new="",
+        selector="tests/test_graph_common.py tests/test_path_match_significance.py",
         note="Generic segments (`/api`, `/service`) treated as route names again.",
     ),
     Mutant(
         id="OI1-M3",
         file="src2sink/graph_common.py",
-        old="    if not op or not ip:\n        return None\n    if op == ip:\n        return \"medium\"",
-        new="    if not op or not ip:\n        return \"low\"\n    if op == ip:\n        return \"medium\"",
-        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py",
+        # Re-derived when OI-24 split the ladder into _structural_match: the
+        # emptiness guard and the equality rung are no longer adjacent lines.
+        old="    if not op or not ip:\n        return None",
+        new="    if not op or not ip:\n        return \"low\"",
+        selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py"
+                 " tests/test_path_match_significance.py",
         note="A side with no significant segment matches weakly instead of not at all.",
     ),
     Mutant(
