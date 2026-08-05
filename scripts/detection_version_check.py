@@ -44,9 +44,23 @@ class FrozenFingerprint(TypedDict):
 _ROOT = Path(__file__).resolve().parent.parent
 FINGERPRINT_FILE = Path("scripts/detection-fingerprint.json")
 
-# Every file whose content can change what an extractor emits. Directories are
-# expanded to their .py files, so a new module inside one is picked up
-# automatically — a new *directory* is not, which is why the set is explicit.
+# Every file whose content can change what ends up in a **repo record**.
+# Directories are expanded to their .py files, so a new module inside one is
+# picked up automatically — a new *directory* is not, which is why the set is
+# explicit.
+#
+# This originally listed only `extractors/` plus the vocabularies, on the
+# assumption that "detection" meant extraction. It does not: a record is
+# produced by everything on the path from `build_metabase_v2` down, and a change
+# to dependency parsing in `repo_utils` altered records while the gate stayed
+# green. `tests/test_detection_input_coverage.py` now derives this set from the
+# import closure rather than trusting the list, because a hand-maintained list
+# drifts the moment an import changes — which is how that gap opened.
+#
+# Aggregators, renderers and models are deliberately absent: they run *after*
+# records are written and their artefacts are rebuilt from records on every run,
+# so they are never served stale. Fingerprinting them would force fleet-wide
+# rescans to fix output that was already being regenerated.
 DETECTION_INPUT_DIRS = ("src2sink/extractors",)
 DETECTION_INPUT_FILES = (
     "src2sink/constants.py",
@@ -54,6 +68,15 @@ DETECTION_INPUT_FILES = (
     "src2sink/library_taint_java.py",
     "src2sink/prescreen.py",
     "src2sink/known_api_clients.py",
+    # Produce or shape record content directly.
+    "src2sink/build_metabase_v2.py",  # dependency parsing, analyse_repo_v2, summary_to_dict
+    "src2sink/repo_utils.py",         # pom/package.json parsing, frameworks, build systems
+    "src2sink/internal_groups.py",    # the internal/external decision on every dependency
+    "src2sink/graph_common.py",       # url/path extraction feeding node detail
+    "src2sink/sanitize.py",           # redaction applied to detail on the way in
+    "src2sink/limits.py",             # per-repo caps decide what gets scanned at all
+    "src2sink/safe_paths.py",         # decides which files are eligible to scan
+    "src2sink/schema.py",             # record shape and field defaults
 )
 
 
