@@ -419,3 +419,167 @@ speeds up work that versioning would let us **not do at all**.
 * The cache survives concurrent widening from two threads.
 * Peak memory does not scale with worker count beyond a stated bound.
 
+## 33. Discovery's two passes never agree: `discovery_method: "both"` is unreachable OI-33
+
+**Severity:** Medium — no wrong output, but the highest-value candidates are silently split into two weaker halves.
+**Status:** open. Found on the first successful discovery run (226 candidates), once the quadratic scan was fixed and the pass could complete at all.
+
+### Symptom
+
+```
+discovery_method: dependency  125
+discovery_method: call-site   101
+discovery_method: both          0
+```
+
+Never one. `both` is the strongest signal the design produces — a declared dependency *and* an observed call site independently resolving to the same service — and §4 explicitly calls for it. It cannot currently occur.
+
+### Root cause
+
+The two passes emit `target_repo` in different shapes. Segment counts across the 226 candidates:
+
+| pass | 2 segments | 3 | 4 | empty |
+|---|---|---|---|---|
+| call-site (`_apply_demand_side`) | **101** | 0 | 0 | 0 |
+| dependency (`_collect_candidates`) | 32 | **79** | 6 | **8** |
+
+The demand-side pass derives `target_repo` from `repo_id(data)`, which is `f"{group}/{name}"` — the metabase's canonical identity. The supply-side pass takes it from `resolve(coord)`, the component-identity index, which resolves a coordinate to *the directory declaring it*. When the declaring directory is a build module inside a repo, that is one or more segments deeper than the repo id.
+
+`_apply_demand_side` then does an exact-string lookup:
+
+```python
+by_target = {c["target_repo"]: (k, c) for k, c in cands.items() if c["target_repo"]}
+...
+existing = by_target.get(target)          # target is "group/repo"
+if existing is not None:                  # key is "group/repo/module" -> never hits
+    ...
+    cand["discovery_method"] = "both"     # unreachable for 79 of 117 candidates
+```
+
+The merge logic is correct. It is fed a key it can never match.
+
+### Impact
+
+Resolving the supply-side values to their owning repo id yields **23 candidates that should be `both`** — the ones two independent evidence paths agree on. Today a reviewer sees them as two unrelated `dependency` and `call-site` entries and triages each on weaker evidence, with nothing indicating they corroborate.
+
+Two further consequences of the same malformed value:
+
+- A 3- or 4-segment `target_repo` matches no node in the graph, so those 79 candidates would produce **broken edges** if promoted as-is — not merely unmerged ones.
+- The **8 empty-string** targets are the same resolver failing outright. They should be dropped or flagged, not emitted as candidates with `target_repo: ""`.
+
+### Proposed fix
+
+**Do not truncate to two segments.** `group/subgroup/repo` is a legitimate GitLab path and this estate contains such repos (see §11), so a segment-count rule would corrupt them. Resolve against the set of ids the metabase actually knows, longest match first:
+
+```python
+def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
+    """Map a resolved coordinate path to the repo id that owns it.
+
+    The identity index resolves a coordinate to the directory that declares it,
+    which may be a build module *inside* a repo. Truncating to two segments is
+    wrong — `group/subgroup/repo` is a valid path — so match the longest known
+    repo id instead. That resolves in-repo modules and nested repos alike, and
+    depends on neither path depth nor on `.git` being present (65 of 746 repos
+    in the observed fleet have no `.git` at all).
+    """
+    parts = resolved.split("/")
+    for n in range(len(parts), 0, -1):
+        candidate = "/".join(parts[:n])
+        if candidate in known:
+            return candidate
+    return None
+```
+
+Apply it where `_collect_candidates` sets `target_repo`, so both passes speak one identity from the start. Verified against the fleet: **117 of 117** supply-side targets resolve to a known repo id, none unresolvable.
+
+Keep the raw resolved path — it is strictly more information than the repo id, and §11 may want it:
+
+```python
+cand["target_repo"] = _canonical_repo_id(resolved, known) or ""
+cand["target_module"] = resolved      # e.g. "group/repo/some-client"
+```
+
+### Suggested tests
+
+```python
+KNOWN = frozenset({"group/repo", "group/subgroup"})
+
+def test_module_path_resolves_to_owning_repo():
+    assert _canonical_repo_id("group/repo/some-client", KNOWN) == "group/repo"
+
+def test_nested_repo_id_is_not_truncated():
+    assert _canonical_repo_id("group/subgroup", KNOWN) == "group/subgroup"
+
+def test_unknown_path_is_not_guessed():
+    assert _canonical_repo_id("other/thing/deep", KNOWN) is None
+
+def test_both_is_reachable():
+    # supply-side and demand-side candidates for one service must merge
+    ...  # assert discovery_method == "both"
+```
+
+The last one matters most: `both` has never occurred in a real run, so nothing currently exercises that branch.
+
+---
+
+## 34. Repo discovery is two levels deep, so nested-subgroup projects are merged OI-34
+
+**Severity:** Medium–High, but **needs a product decision before any fix** — the current behaviour may be intended.
+**Status:** open question, not a confirmed defect.
+
+### Observation
+
+`_discover_repos` walks exactly two levels:
+
+```python
+for group_dir in sorted(repos_root.iterdir()):
+    for repo_dir in sorted(group_dir.iterdir()):
+        ...   # everything below repo_dir is treated as repo *content*
+```
+
+Every metabase record therefore has a two-segment id — 746 of 746 in the observed fleet, zero nested. But the estate does contain nested-subgroup projects: the staging manifests list paths such as `group/connector/vendor-a/topic-service` and `group/connector/vendor-b/task-service` as **separate projects**, and on disk they sit under one second-level directory.
+
+The result is a single node standing in for many projects:
+
+| metabase record | build-bearing subdirectories it subsumes |
+|---|---|
+| `group/connector` | 41 |
+
+Across the fleet, **15 records have three or more build-bearing subdirectories and no build file of their own**, collectively subsuming **111 sub-projects**. Those are aggregates rather than repos in any meaningful sense.
+
+### Why it matters for detection
+
+- Every edge to or from any subsumed project is attributed to the aggregate, so the graph cannot say *which* service is involved.
+- A call *between* two subsumed projects becomes a self-edge, and `_append_path_edge` drops self-edges outright — so genuine cross-project calls disappear entirely.
+- It explains §10's identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
+
+### Why this is a question, not a fix
+
+Two defensible positions, and the right answer depends on intent:
+
+1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. §10's fix is the whole answer).
+2. **The project is the unit of analysis.** Nested-subgroup projects deserve their own nodes, and the two-level walk is under-counting the fleet.
+
+These conflict, and the same directory layout supports both readings — an aggregate of 41 sub-projects and a monorepo with 41 modules look identical on disk.
+
+### If option 2 is chosen, note what will not work
+
+- **`.git` presence is not a usable discriminator.** 65 of 746 scanned repos have no `.git` at all, history having been stripped during staging. Absence proves nothing.
+- **Path depth is not a discriminator either.** Both a nested repo and an in-repo module are "one level deeper".
+- A build file at the sub-directory is weak on its own: multi-module builds put one in every module.
+
+The most reliable signal available is **external**: the staging manifest already enumerates true project paths (`path_with_namespace` per project). Feeding that list in — as an optional `--repo-manifest` — would let the scanner split on real project boundaries without inferring them from the filesystem at all.
+
+### Minimum change regardless of the decision
+
+Record what was aggregated, so the coarseness is visible rather than assumed:
+
+```python
+summary.notes.append(
+    f"aggregate: {n} build-bearing subdirectories treated as one repo; "
+    "edges involving them cannot be attributed to a sub-project"
+)
+```
+
+Today a 41-project aggregate and a single-service repo are indistinguishable in the output. That is §13 again.
+
