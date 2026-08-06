@@ -72,7 +72,7 @@ different readers.
 | `OI-16` | A detection fix never reaches a repo that has not changed | 2.0.0 | `6779191` (PR #19) | Records gain `detection_version`; the first run after upgrading rescans the whole fleet, and findings from superseded detectors disappear. |
 | `OI-24` | The equality shortcut bypasses the significant-segment filter | 2.1.0 | `45c2ca3` (PR #23) | Edges resolved through two identical meaningless paths (`/v1` to `/v1`) disappear. |
 | `OI-25` | Placeholder and operation-verb segments treated as destinations | 2.1.0 | `45c2ca3` (PR #23) | `/{id}` no longer matches `/{name}`; verb-only matches drop from `high` to `low`; `/orders/create` and `/orders/delete` stop matching each other. |
-| `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `TBD` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
+| `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 
 ---
 
@@ -1487,7 +1487,7 @@ trade: recall is preserved, confidence is not overstated.
 ### Resolution
 
 **Fixed in:** 2.1.0 (unreleased)  
-**Commit:** see the index row — PR #28  
+**Commit:** `13c0444` (red), `feba873` (fix) — PR #28  
 **Tests:** `tests/test_oi26_receiver_scope.py` (13 cases: four non-database receivers, the `ps`/`pstmt` vocabulary, the receiver-less rescue, the library-hint override, and the fabricated endpoint). Mutants `OI26-M1`..`OI26-M3`.
 
 **What changed.** The three evidence signals are no longer interchangeable.
