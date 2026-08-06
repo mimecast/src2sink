@@ -76,7 +76,7 @@ different readers.
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 | `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
-| `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `TBD` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
+| `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
 
 ---
 
@@ -1873,7 +1873,7 @@ found" from "none looked for".
 ### Resolution
 
 **Fixed in:** 2.2.0 (unreleased)  
-**Commit:** `8c0aeb1` (red), see the index row (fix) — PR #34  
+**Commit:** `8c0aeb1` (red), `9456ead` (fix) — PR #34  
 **Tests:** `tests/test_oi13_kotlin_parity.py` (Java/Kotlin family parity, receiver on the sink, the `OI-26` guard holding in Kotlin, `raw-code-payload` and `script-exec` parity) and `tests/test_ast_walk.py` (name and receiver extraction, single-yield, the class-wide guard, defensive branches). Mutants `OI13-M1`, `OI13-M3`.
 
 **What changed.** `call_name_java_kotlin` split into `call_name_java` and a new
