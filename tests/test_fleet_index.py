@@ -24,15 +24,15 @@ import sqlite3
 
 import pytest
 
+# Imported as a module object rather than by symbol: one test patches
+# ``index_store.DERIVATION_VERSION`` to prove the signature depends on it, and a
+# ``from`` import would bind the value so the patch could not be seen. Using one
+# style throughout keeps a reader from having to work out which reference a
+# patch affects — the same reasoning `test_trace_fleet_scaling.py` records.
 from src2sink import graph_common as gc
+from src2sink import index_store as store
 from src2sink import trace as trace_mod
 from src2sink.aggregators.graphs import write_fleet_index
-from src2sink.index_store import (
-    INDEX_VERSION,
-    fleet_signature,
-    index_path,
-    open_index,
-)
 from src2sink.trace import run_trace
 
 _CONSUMER = {
@@ -176,7 +176,7 @@ def test_a_stale_index_is_not_used(tmp_path, monkeypatch):
     """
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
-    assert open_index(tmp_path, paths) is not None, "index should start fresh"
+    assert store.open_index(tmp_path, paths) is not None, "index should start fresh"
 
     changed = dict(_SECOND_CONSUMER)
     changed["nodes"] = [
@@ -187,7 +187,7 @@ def test_a_stale_index_is_not_used(tmp_path, monkeypatch):
         json.dumps(changed), encoding="utf-8",
     )
 
-    assert open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
+    assert store.open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
 
 
 def test_a_stale_index_falls_back_rather_than_failing(tmp_path):
@@ -221,7 +221,7 @@ def test_a_new_repo_invalidates_the_index(tmp_path):
         "nodes": [], "edges": [], "dependencies_internal": [],
     }), encoding="utf-8")
 
-    assert open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
+    assert store.open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
 
 
 def test_a_removed_repo_invalidates_the_index(tmp_path):
@@ -231,7 +231,7 @@ def test_a_removed_repo_invalidates_the_index(tmp_path):
     write_fleet_index(tmp_path, paths)
 
     (tmp_path / "repos" / "billing" / "invoice-service.json").unlink()
-    assert open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
+    assert store.open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
 
 
 def test_an_index_from_a_different_version_is_rejected(tmp_path, monkeypatch):
@@ -239,19 +239,19 @@ def test_an_index_from_a_different_version_is_rejected(tmp_path, monkeypatch):
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
 
-    with sqlite3.connect(index_path(tmp_path)) as conn:
+    with sqlite3.connect(store.index_path(tmp_path)) as conn:
         conn.execute(
             "UPDATE meta SET value = ? WHERE key = 'index_version'",
-            (str(INDEX_VERSION + 1),),
+            (str(store.INDEX_VERSION + 1),),
         )
 
-    assert open_index(tmp_path, paths) is None
+    assert store.open_index(tmp_path, paths) is None
 
 
 def test_a_missing_index_is_a_cache_miss_not_an_error(tmp_path):
     """A metabase built before this existed must still trace."""
     _seed(tmp_path)
-    assert open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
+    assert store.open_index(tmp_path, gc.v2_record_paths(tmp_path)) is None
 
     report = run_trace(tmp_path, _TARGET_ID)
     assert report.target_repo == _TARGET_ID
@@ -266,9 +266,9 @@ def test_a_corrupt_index_is_a_cache_miss_not_an_error(tmp_path):
     """
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
-    index_path(tmp_path).write_bytes(b"this is not a database")
+    store.index_path(tmp_path).write_bytes(b"this is not a database")
 
-    assert open_index(tmp_path, paths) is None
+    assert store.open_index(tmp_path, paths) is None
     assert run_trace(tmp_path, _TARGET_ID).target_repo == _TARGET_ID
 
 
@@ -296,24 +296,18 @@ def test_supplied_fleet_data_bypasses_the_index(tmp_path):
     assert report.target_repo == _TARGET_ID
 
 
-def test_the_signature_folds_in_the_versions_that_produced_the_records(tmp_path):
+def test_the_signature_folds_in_the_versions_that_produced_the_records(tmp_path, monkeypatch):
     """A record's meaning can change without its bytes changing.
 
     `DERIVATION_VERSION` governs what is derived from a record; if it moves, an
     index built under the old one describes findings the tool no longer agrees
     with. Size and mtime cannot see that, so the versions are hashed in.
     """
-    import src2sink.index_store as store
-
     paths = _seed(tmp_path)
-    before = fleet_signature(paths)
+    before = store.fleet_signature(paths)
 
-    monkey = store.DERIVATION_VERSION + 1
-    original, store.DERIVATION_VERSION = store.DERIVATION_VERSION, monkey
-    try:
-        assert fleet_signature(paths) != before
-    finally:
-        store.DERIVATION_VERSION = original
+    monkeypatch.setattr(store, "DERIVATION_VERSION", store.DERIVATION_VERSION + 1)
+    assert store.fleet_signature(paths) != before
 
 
 def test_the_index_covers_every_repo_in_the_metabase(tmp_path):
@@ -321,7 +315,7 @@ def test_the_index_covers_every_repo_in_the_metabase(tmp_path):
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
 
-    with open_index(tmp_path, paths) as index:
+    with store.open_index(tmp_path, paths) as index:
         assert index.repo_ids() == [
             "billing/invoice-service",
             "commerce/warehouse-service",
@@ -338,12 +332,12 @@ def test_a_vanished_record_invalidates_rather_than_crashing(tmp_path):
     """
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
-    before = fleet_signature(paths)
+    before = store.fleet_signature(paths)
 
     (tmp_path / "repos" / "billing" / "invoice-service.json").unlink()
 
-    assert fleet_signature(paths) != before
-    assert open_index(tmp_path, paths) is None
+    assert store.fleet_signature(paths) != before
+    assert store.open_index(tmp_path, paths) is None
 
 
 def test_producer_hits_are_recorded_against_their_target(tmp_path):
@@ -355,7 +349,7 @@ def test_producer_hits_are_recorded_against_their_target(tmp_path):
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
 
-    with open_index(tmp_path, paths) as index:
+    with store.open_index(tmp_path, paths) as index:
         assert list(index.producer_hits_for("nobody/at-all")) == []
         for row in index.producer_hits_for(_TARGET_ID):
             assert row.target_repo == _TARGET_ID
@@ -370,6 +364,6 @@ def test_only_outbound_families_are_stored(tmp_path):
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
 
-    with open_index(tmp_path, paths) as index:
+    with store.open_index(tmp_path, paths) as index:
         families = {n.family for n in index.outbound_nodes()}
     assert families == {"http-out"}, "sql/http-in nodes must not be stored"
