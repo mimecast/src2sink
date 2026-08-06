@@ -86,6 +86,7 @@ DETECTION_INPUT_FILES = (
     "src2sink/safe_paths.py",         # decides which files are eligible to scan
     "src2sink/schema.py",             # record shape and field defaults
     "src2sink/dependencies.py",       # manifest/lockfile parsing -> dependencies_internal
+    "src2sink/maven.py",              # pom version resolution -> dependencies_internal
 )
 
 

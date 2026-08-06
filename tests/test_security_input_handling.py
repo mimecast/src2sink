@@ -18,7 +18,8 @@ import pytest
 
 from src2sink import repo_utils
 from src2sink.build_metabase_v2 import analyse_repo_v2, iter_repo_files
-from src2sink.repo_utils import _read_pom_identity, detect_git_sha, parse_pom_dependencies
+from src2sink.maven import resolve_pom_dependencies
+from src2sink.repo_utils import _read_pom_identity, detect_git_sha
 from src2sink.safe_paths import is_escaping_symlink, is_within, resolve_within
 
 VALID_SHA = "a" * 40  # 40-hex: a plausible git SHA used as the "secret" payload
@@ -181,11 +182,11 @@ def test_analyse_repo_does_not_ingest_symlinked_secret(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_parse_pom_dependencies_blocks_billion_laughs(tmp_path):
+def test_resolve_pom_dependencies_blocks_billion_laughs(tmp_path):
     pom = tmp_path / "pom.xml"
     pom.write_text(_BILLION_LAUGHS, encoding="utf-8")
     # Must return quickly with no expansion (watchdog would fire on a hang).
-    assert parse_pom_dependencies(pom) == []
+    assert resolve_pom_dependencies(pom, tmp_path) == []
 
 
 def test_read_pom_identity_blocks_billion_laughs(tmp_path):
@@ -197,7 +198,7 @@ def test_read_pom_identity_blocks_billion_laughs(tmp_path):
 def test_normal_pom_still_parses(tmp_path):
     pom = tmp_path / "pom.xml"
     pom.write_text(_NORMAL_POM, encoding="utf-8")
-    deps = parse_pom_dependencies(pom)
+    deps = resolve_pom_dependencies(pom, tmp_path)
     assert any(
         d["groupId"] == "org.dep" and d["artifactId"] == "lib" and d["version"] == "1.0"
         for d in deps

@@ -73,6 +73,8 @@ different readers.
 | `OI-24` | The equality shortcut bypasses the significant-segment filter | 2.1.0 | `45c2ca3` (PR #23) | Edges resolved through two identical meaningless paths (`/v1` to `/v1`) disappear. |
 | `OI-25` | Placeholder and operation-verb segments treated as destinations | 2.1.0 | `45c2ca3` (PR #23) | `/{id}` no longer matches `/{name}`; verb-only matches drop from `high` to `low`; `/orders/create` and `/orders/delete` stop matching each other. |
 | `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
+| `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
+| `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 
 ---
 
@@ -1592,3 +1594,193 @@ the observation layer first — **not** for leaving this unfixed.
 * A bare `execute(sql)` with no receiver is still rescued by file evidence.
 * No `raw-code-payload` node is produced for an endpoint whose only "sink" was an
   HTTP call in a SQL-bearing file.
+
+## OI-19 — Dependency parsing covers two of nine ecosystems, and reads no lockfile
+
+### Resolution
+
+**Fixed in:** 2.1.0 (unreleased)  
+**Commit:** `1cdc8c7` (red), `a42c487` (fix) — PR #30  
+**Tests:** `tests/test_polyglot_dependencies.py` — Go requires, internal/external classification of a module path, Python lock-vs-manifest, npm lock-vs-manifest, and the unparsed-ecosystem note. Mutants `OI19-M1`..`OI19-M3`.
+
+**What changed.** `src2sink/dependencies.py` parses `go.mod`, `pyproject.toml`
+with `uv.lock`/`poetry.lock`, and `package.json` with `package-lock.json`.
+Dependencies carry `version_kind`: `resolved`, `range` or `unresolved`.
+
+**Deviation.** The issue framed Maven as the reference case. Measurement inverted
+that: Maven is the *hardest* ecosystem, and Go states exact versions outright
+while npm and Python commit a lockfile holding the resolved answer. So the rule
+became **lockfile first**, and the clever cross-repo resolution became `OI-18`'s
+problem rather than the general one.
+
+`yarn.lock` and `pnpm-lock.yaml` are deliberately unparsed — bespoke formats — so
+those repos fall back to the manifest range, recorded as a range.
+
+**Behaviour change.** Go and Python repos report `dependencies_internal` for the
+first time, so cross-repo discovery reaches them. Every dependency gains
+`version_kind`. A repo whose ecosystem is recognised but unparsed now carries a
+note instead of an empty list that read as a result.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** Medium — for most of the fleet `dependencies_internal: []` means
+"not implemented" and is indistinguishable from "no internal dependencies".
+
+### Symptom
+
+| | |
+|---|---|
+| **Identity** | polyglot — 9 ecosystems recognised |
+| **Dependencies** | Java + npm only — 4 parsers |
+| **Lockfiles** | **never read.** `yarn.lock` and `pnpm-lock.yaml` are touched at `repo_utils.py:224` solely to detect the build system |
+
+### Root cause
+
+Two wrong assumptions. **That Maven is representative** — it is the hardest
+ecosystem, while three others keep exact versions in a committed file nothing
+reads. **That a manifest states a version** — npm and Python manifests state
+*ranges*; the lockfile holds the resolved answer, and it is committed.
+
+| Ecosystem | Where exact versions live | Parsed today | Effort |
+|---|---|---|---|
+| **Go** | `go.mod` — exact, MVS, no ranges | no | trivial |
+| **Python** | `uv.lock` / `poetry.lock` / pinned requirements | no | small |
+| **npm/yarn/pnpm** | the lockfile | `package.json` only, i.e. ranges | small |
+| **Maven** | parent chain + properties + BOM | literal only | `OI-18` |
+| **Gradle** | catalogue + `ext` + computed | catalogue only (`OI-3`) | hard ceiling |
+
+### Proposed fix
+
+**Lockfile first; inheritance chasing only where no lockfile convention exists.**
+Go `go.mod`; Python lock then manifest; npm lockfile then manifest range marked
+*as* a range. Plus ecosystem-aware internal detection —
+`is_internal_coordinate` only ever receives Maven/Gradle/npm coordinates, so a Go
+module path and a Python distribution name are never tested.
+
+### A consequence to design for
+
+**A range is not a version.** Where no lockfile exists the honest record is a
+constraint, and anything consuming it must handle "satisfies `^1.4.2`" rather
+than "equals 1.4.2". Recording a range as a version would repeat `OI-18` in a new
+ecosystem.
+
+### Suggested tests
+
+* A Go repo reports internal `require` entries with exact versions.
+* A Python repo with a lockfile reports resolved versions; without one, ranges
+  marked as ranges.
+* An npm repo reports the lockfile's resolved version, not the manifest range.
+* Internal detection recognises a Go module path and a Python distribution name.
+* A repo with genuinely no internal dependencies is distinguishable in the record
+  from one the tool cannot parse.
+
+### Residual not covered
+
+Rust, PHP, .NET and Ruby stay identity-only. A deliberate stop — but the record
+must say "not parsed" rather than `[]`.
+
+## OI-18 — Dependency versions are recorded unresolved
+
+### Resolution
+
+**Fixed in:** 2.1.0 (unreleased)  
+**Commit:** `0060158` (red), `a20a0c5` (fix) — PR #31  
+**Tests:** `tests/test_maven_resolution.py` — nine cases across the five tiers, the BOM exclusion, the placeholder rule, and both property-chain terminations. Mutants `OI18-M1`..`OI18-M4`.
+
+**What changed.** `src2sink/maven.py` resolves versions offline in tiers, and
+records which tier answered: `literal`, `property`, `parent-in-repo`,
+`parent-in-fleet`, `unresolved`. `<dependencyManagement>` is read for versions
+only and no longer emits the BOM as a dependency. An unresolved version is
+recorded as empty with `version_kind: unresolved`, never as `${...}`.
+
+**The tier that makes it work offline** is `parent-in-fleet`: every internal repo
+is already cloned, so a parent POM in another repository is a file read. No
+`mvn`, no registry, no downloaded binaries. An external parent
+(`spring-boot-starter-parent`) is deliberately left unresolved — it governs
+external dependency versions, which are not tracked, so the one tier needing the
+network is the one tier not needed.
+
+**Imprecision recorded rather than hidden:** a sibling repo is at HEAD, not
+necessarily at the version the consumer pins, so the entry carries
+`parent_resolved_at: head`.
+
+**Deviation.** A cycle-detecting `seen` set was written for property expansion
+and the mutation gate proved it unreachable — the depth bound terminates
+`${a}` -> `${b}` -> `${a}` either way, so the set changed how quickly the answer
+arrived and never what it was. Removed, and the mutant re-derived to guard the
+bound instead.
+
+Also removed `repo_utils.parse_pom_dependencies`, superseded and unused. Its
+billion-laughs XXE tests were retargeted to the new resolver rather than deleted
+with it — the protection is the same `defusedxml` path, and the test is what says
+so.
+
+**Behaviour change.** Recorded versions change from `${property}` strings and
+empty strings to resolved values or an explicit unresolved. BOM coordinates stop
+appearing in `dependencies_internal`, so any edge built on one disappears.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** Medium — the tool records placeholders and empty strings in a field
+consumers read as a version, and invents a dependency that does not exist.
+
+### Symptom
+
+Measured against `parse_pom_dependencies` on four POM shapes:
+
+```
+literal version                      -> [('warehouse-client', '1.4.2')]        OK
+property-interpolated                -> [('warehouse-client', '${warehouse.version}')]
+inherited from parent                -> [('warehouse-client', '<empty>')]
+BOM-managed (dependencyManagement)   -> [('platform-bom', '7.2.0'), ('warehouse-client', '<empty>')]
+```
+
+Only the literal case works. Properties, parent inheritance and BOM imports are
+the norm in enterprise Maven, so most recorded versions are a `${property}`
+string or an empty string presented as a version — and in the BOM case
+`platform-bom` is emitted as a **dependency in its own right**, an edge to an
+artefact the code never calls.
+
+### Root cause
+
+`parse_pom_dependencies` reads `<version>` as text. Maven resolves it from four
+places and the parser knows one. `<dependencyManagement>` is additionally read as
+if it were `<dependencies>`, which produces the phantom BOM edge.
+
+### Proposed fix
+
+Resolve offline, in tiers, recording which tier answered: `literal`, `property`
+(same file), `parent-in-repo`, `parent-in-fleet` (via the identity index), else
+`unresolved`.
+
+**Demonstrated feasible without `mvn`, a registry, or downloading anything** —
+the identity index already maps `(group, name)` to a clone path, so a parent POM
+in another repository is a file read. See
+[`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §4.2.
+
+Two rules matter more than the tiers:
+
+1. **An unresolved version is recorded as unresolved**, never as `${...}` or `""`.
+2. **`<dependencyManagement>` entries are not dependencies.** They constrain
+   versions; the BOM edge must go.
+
+**Known imprecision, to be labelled not hidden:** a parent POM read from a
+sibling repo is that repo at HEAD, not at the pinned version. Record
+`parent-resolved-at: head`.
+
+### Suggested tests
+
+* Each of the four shapes resolves or is explicitly `unresolved`.
+* A parent in another repo resolves through the identity index as `parent-in-fleet`.
+* A `<dependencyManagement>` entry never appears in `dependencies_internal`.
+* An external parent yields `unresolved`, not a guess.
+* A property referring to another property terminates rather than looping.
+
+### Residual not covered
+
+Gradle's resolution is a program, not a document. `OI-3` handled version
+catalogues, the tractable part; anything beyond should report `unresolved`.

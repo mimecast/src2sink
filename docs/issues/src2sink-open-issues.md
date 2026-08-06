@@ -59,12 +59,11 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
 | OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
-| OI-18 | 18 | Dependency versions are recorded unresolved | medium | placeholders and empty strings presented as versions, plus a phantom BOM edge | **P1** |
-| OI-19 | 19 | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | medium | `dependencies_internal: []` means "not implemented" for most of the fleet | **P1** |
 | OI-20 | 20 | Only SQL has a library evidence catalogue | large | deserialization has no family at all; every other sink type is pattern-only | **P1** |
 | OI-21 | 21 | Entry points are HTTP-annotation-only | large | queue consumers, gRPC, GraphQL, file watchers, CLI and env are invisible | **P0** |
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
+| OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -449,130 +448,6 @@ described as exactly that rather than as taint analysis.
 
 ---
 
-## 18. Dependency versions are recorded unresolved  `OI-18`
-
-**Severity:** Medium — the tool records placeholders and empty strings in a field
-consumers read as a version, and invents a dependency that does not exist.
-
-### Symptom
-
-Measured against `parse_pom_dependencies` on four POM shapes:
-
-```
-literal version                      -> [('warehouse-client', '1.4.2')]        OK
-property-interpolated                -> [('warehouse-client', '${warehouse.version}')]
-inherited from parent                -> [('warehouse-client', '<empty>')]
-BOM-managed (dependencyManagement)   -> [('platform-bom', '7.2.0'), ('warehouse-client', '<empty>')]
-```
-
-Only the literal case works. Properties, parent inheritance and BOM imports are
-the norm in enterprise Maven, so most recorded versions are a `${property}`
-string or an empty string presented as a version — and in the BOM case
-`platform-bom` is emitted as a **dependency in its own right**, an edge to an
-artefact the code never calls.
-
-### Root cause
-
-`parse_pom_dependencies` reads `<version>` as text. Maven resolves it from four
-places and the parser knows one. `<dependencyManagement>` is additionally read as
-if it were `<dependencies>`, which produces the phantom BOM edge.
-
-### Proposed fix
-
-Resolve offline, in tiers, recording which tier answered: `literal`, `property`
-(same file), `parent-in-repo`, `parent-in-fleet` (via the identity index), else
-`unresolved`.
-
-**Demonstrated feasible without `mvn`, a registry, or downloading anything** —
-the identity index already maps `(group, name)` to a clone path, so a parent POM
-in another repository is a file read. See
-[`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §4.2.
-
-Two rules matter more than the tiers:
-
-1. **An unresolved version is recorded as unresolved**, never as `${...}` or `""`.
-2. **`<dependencyManagement>` entries are not dependencies.** They constrain
-   versions; the BOM edge must go.
-
-**Known imprecision, to be labelled not hidden:** a parent POM read from a
-sibling repo is that repo at HEAD, not at the pinned version. Record
-`parent-resolved-at: head`.
-
-### Suggested tests
-
-* Each of the four shapes resolves or is explicitly `unresolved`.
-* A parent in another repo resolves through the identity index as `parent-in-fleet`.
-* A `<dependencyManagement>` entry never appears in `dependencies_internal`.
-* An external parent yields `unresolved`, not a guess.
-* A property referring to another property terminates rather than looping.
-
-### Residual not covered
-
-Gradle's resolution is a program, not a document. `OI-3` handled version
-catalogues, the tractable part; anything beyond should report `unresolved`.
-
----
-
-## 19. Dependency parsing covers two of nine ecosystems, and reads no lockfile  `OI-19`
-
-**Severity:** Medium — for most of the fleet `dependencies_internal: []` means
-"not implemented" and is indistinguishable from "no internal dependencies".
-
-### Symptom
-
-| | |
-|---|---|
-| **Identity** | polyglot — 9 ecosystems recognised |
-| **Dependencies** | Java + npm only — 4 parsers |
-| **Lockfiles** | **never read.** `yarn.lock` and `pnpm-lock.yaml` are touched at `repo_utils.py:224` solely to detect the build system |
-
-### Root cause
-
-Two wrong assumptions. **That Maven is representative** — it is the hardest
-ecosystem, while three others keep exact versions in a committed file nothing
-reads. **That a manifest states a version** — npm and Python manifests state
-*ranges*; the lockfile holds the resolved answer, and it is committed.
-
-| Ecosystem | Where exact versions live | Parsed today | Effort |
-|---|---|---|---|
-| **Go** | `go.mod` — exact, MVS, no ranges | no | trivial |
-| **Python** | `uv.lock` / `poetry.lock` / pinned requirements | no | small |
-| **npm/yarn/pnpm** | the lockfile | `package.json` only, i.e. ranges | small |
-| **Maven** | parent chain + properties + BOM | literal only | `OI-18` |
-| **Gradle** | catalogue + `ext` + computed | catalogue only (`OI-3`) | hard ceiling |
-
-### Proposed fix
-
-**Lockfile first; inheritance chasing only where no lockfile convention exists.**
-Go `go.mod`; Python lock then manifest; npm lockfile then manifest range marked
-*as* a range. Plus ecosystem-aware internal detection —
-`is_internal_coordinate` only ever receives Maven/Gradle/npm coordinates, so a Go
-module path and a Python distribution name are never tested.
-
-### A consequence to design for
-
-**A range is not a version.** Where no lockfile exists the honest record is a
-constraint, and anything consuming it must handle "satisfies `^1.4.2`" rather
-than "equals 1.4.2". Recording a range as a version would repeat `OI-18` in a new
-ecosystem.
-
-### Suggested tests
-
-* A Go repo reports internal `require` entries with exact versions.
-* A Python repo with a lockfile reports resolved versions; without one, ranges
-  marked as ranges.
-* An npm repo reports the lockfile's resolved version, not the manifest range.
-* Internal detection recognises a Go module path and a Python distribution name.
-* A repo with genuinely no internal dependencies is distinguishable in the record
-  from one the tool cannot parse.
-
-### Residual not covered
-
-Rust, PHP, .NET and Ruby stay identity-only. A deliberate stop — but the record
-must say "not parsed" rather than `[]`.
-
----
-
 ## 20. Only SQL has a library evidence catalogue  `OI-20`
 
 **Severity:** High — whole classes of dangerous boundary are invisible, and one
@@ -751,3 +626,71 @@ unresolved (`${revision}`), record it as unresolved — the `OI-18` rule.
 * An unresolvable own-version is recorded as unresolved, not as the placeholder.
 * A consumer pinning an older version of a scanned provider is reportable
   without any historical scan.
+
+---
+
+## 27. Internal-prefix and api-client configuration must be written by hand  `OI-27`
+
+**Severity:** High — a first scan against an unconfigured fleet produces a clean,
+empty result rather than an error, which is the failure §6 names.
+
+**Found:** requested by a 2.0.0 user, alongside the namespaced-POM defect.
+
+### Symptom
+
+`internal-groups.json` decides which coordinates count as internal, and
+`api-clients.json` declares the client-library bindings. Both must be written by
+hand before a scan means anything. Without them:
+
+* `is_internal_coordinate` matches nothing, so **every** dependency is external
+  and `dependencies_internal` is empty fleet-wide;
+* no bindings load, so cross-repo API-client detection is off — the defect a hard
+  error was added for in 1.1.0, which only covers a file that exists and yields
+  zero, not a file that was never written.
+
+Someone running the tool for the first time gets a metabase that parses, renders,
+and says almost nothing — with no indication that the reason is configuration.
+
+### Proposed fix
+
+**Propose candidates from what the scan already saw, and require review before
+they take effect.**
+
+The evidence is present without any new extraction:
+
+| Signal | Source | Proposes |
+|---|---|---|
+| Common coordinate prefixes across repos | every parsed manifest | `internal-groups` candidates |
+| Repos that publish a `*-client` artifact | identity index | `api-clients` candidates |
+| Coordinates depended on but never published in the fleet | dependencies vs identity | likely external, so *not* a candidate |
+| Repo name appearing as a string literal | existing extraction (`OI-4`) | `service_aliases` |
+
+Group prefixes cluster hard in practice — a fleet of several hundred repos
+usually shares two or three — so the top candidates by repo count are close to
+the answer.
+
+**Review is not optional.** A wrong internal prefix is not a small error: it
+decides every dependency's `kind`, so `^com\.` would make the entire Maven world
+internal. Candidates go to a file the tool refuses to use until a human has
+accepted them, in the shape `OI-4` already established for discovered bindings
+(`status: pending`), and the run manifest records how many were accepted.
+
+**A missing config file must not read as an empty one.** If neither the config
+nor an accepted candidate file exists, the scan should stop and say what to do,
+rather than produce a metabase in which nothing is internal.
+
+### Suggested tests
+
+* An unconfigured fleet produces candidates rather than an empty result.
+* A pending candidate does not affect classification until accepted.
+* A prefix matching an implausible share of the fleet is flagged rather than
+  proposed silently — the distinctiveness safeguard `OI-4` specifies for
+  `class_patterns`.
+* A scan with no configuration and no accepted candidates fails loudly.
+* Accepting a candidate is recorded in the run manifest.
+
+### Residual not covered
+
+Discovery cannot see a repository the fleet does not contain, so an internal
+library consumed but never scanned still looks external. That is the same
+boundary `OI-18`'s `parent-in-fleet` tier has, and for the same reason.

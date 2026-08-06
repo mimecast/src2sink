@@ -91,15 +91,6 @@ def test_is_internal_coordinate():
         internal_groups.INTERNAL_GROUP_PATTERNS = []  # reset (empty rejected by configure)
 
 
-def test_parse_pom_dependencies(tmp_path):
-    _w(tmp_path / "pom.xml",
-       "<project xmlns=\"http://maven\"><dependencies><dependency>"
-       "<groupId>g</groupId><artifactId>a</artifactId><version>1</version>"
-       "</dependency></dependencies></project>")
-    deps = ru.parse_pom_dependencies(tmp_path / "pom.xml")
-    assert deps and deps[0]["artifactId"] == "a"
-    assert ru.parse_pom_dependencies(tmp_path / "nope.xml") == []
-
 
 def test_parse_package_json_dependencies(tmp_path):
     _w(tmp_path / "package.json", json.dumps({

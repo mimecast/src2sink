@@ -30,6 +30,21 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   another kind of boundary. `ps`, `pstmt` and `cstmt` joined the receiver
   vocabulary so the tightening does not withdraw real `PreparedStatement` sinks.
 
+- **Namespaced POMs parsed to zero dependencies (`OI-18`).** Reported from the
+  field against 2.0.0. Namespace declarations were stripped with a regex, which
+  left prefix *uses* behind — the standard Maven root element carries
+  `xsi:schemaLocation`, so removing `xmlns:xsi="..."` made `xsi:` an unbound
+  prefix and the document failed to parse. `except ParseError: return []`
+  swallowed it. **Every POM an IDE or archetype emits was affected**, so Maven
+  dependency data was empty for most real repositories and nothing said so.
+  Namespaces are now matched rather than stripped.
+- **Maven dependency versions are resolved offline (`OI-18`).** `${property}`
+  strings and empty inherited versions were recorded as though they were
+  versions. Resolution is now tiered — `literal`, `property`, `parent-in-repo`,
+  `parent-in-fleet`, `unresolved` — with the tier recorded, and works without
+  `mvn`, a registry, or downloading anything: an internal parent POM lives in a
+  repository already cloned. `<dependencyManagement>` no longer emits the BOM as
+  a dependency in its own right.
 - **Go and Python dependencies are parsed, and lockfiles are read (`OI-19`).**
   Dependency parsing covered Java and npm against nine ecosystems recognised for
   identity, so `dependencies_internal: []` on a Go repo meant "not implemented"

@@ -88,6 +88,66 @@ CATALOGUE: tuple[Mutant, ...] = (
         note="Evidence gate removed entirely — restores the 1.1.0 name-only match.",
     ),
     Mutant(
+        id="OI18-M0",
+        file="src2sink/maven.py",
+        old='        return DET.fromstring(text)',
+        new='        import re as _re\n'
+            '        return DET.fromstring(\n'
+            '            _re.sub(r\'xmlns(:\\w+)?="[^"]+"\', "", text, count=10)\n'
+            '        )',
+        selector="tests/test_maven_resolution.py",
+        note=(
+            "Namespaces stripped by regex again, leaving `xsi:schemaLocation` as "
+            "an unbound prefix — so every POM an IDE or archetype emits fails to "
+            "parse and returns no dependencies. Reported from the field against "
+            "2.0.0; invisible to a suite whose fixtures were all bare <project>."
+        ),
+    ),
+    Mutant(
+        id="OI18-M1",
+        file="src2sink/maven.py",
+        old="        if id(dep) in managed_ids:\n            continue\n",
+        new="",
+        selector="tests/test_maven_resolution.py",
+        note=(
+            "dependencyManagement read as dependencies again, so the BOM is "
+            "emitted as an edge to an artefact the code never calls."
+        ),
+    ),
+    Mutant(
+        id="OI18-M2",
+        file="src2sink/maven.py",
+        old="_MAX_PROPERTY_DEPTH = 8",
+        new="_MAX_PROPERTY_DEPTH = 0",
+        selector="tests/test_maven_resolution.py",
+        note=(
+            "Property expansion stops happening at all, so `${a}` never resolves "
+            "— the bound is what makes a cycle terminate, and it must be used."
+        ),
+    ),
+    Mutant(
+        id="OI18-M3",
+        file="src2sink/maven.py",
+        old='    in_fleet = _find_parent_in_fleet(fleet_root, artifact)',
+        new="    in_fleet = None",
+        selector="tests/test_maven_resolution.py",
+        note=(
+            "Cross-repo parent resolution removed, so a POM inheriting from a "
+            "parent in another scanned repo goes back to unresolved."
+        ),
+    ),
+    Mutant(
+        id="OI18-M4",
+        file="src2sink/maven.py",
+        old='            "version_kind": "resolved" if version else "unresolved",',
+        new='            "version_kind": "resolved",',
+        selector="tests/test_maven_resolution.py",
+        note=(
+            "An unresolvable version reported as resolved — the claim OI-18 "
+            "exists to stop, in its purest form."
+        ),
+    ),
+    Mutant(
         id="OI19-M1",
         file="src2sink/dependencies.py",
         old="    locked = _npm_lock_versions(repo_root)",

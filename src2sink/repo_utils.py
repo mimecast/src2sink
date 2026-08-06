@@ -173,26 +173,6 @@ def is_internal_coordinate(group: str | None, name: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def parse_pom_dependencies(pom_path: Path) -> list[dict[str, str]]:
-    """Parse <dependency> entries from a pom.xml."""
-    text = safe_read_text(pom_path)
-    if not text:
-        return []
-    no_ns = re.sub(r'xmlns(:\w+)?="[^"]+"', "", text, count=10)
-    try:
-        root = DET.fromstring(no_ns)
-    except (DET.ParseError, DefusedXmlException):
-        return []
-    deps: list[dict[str, str]] = []
-    for dep in root.iter("dependency"):
-        gid = (dep.findtext("groupId") or "").strip()
-        aid = (dep.findtext("artifactId") or "").strip()
-        ver = (dep.findtext("version") or "").strip()
-        kind = "internal" if is_internal_coordinate(gid, aid) else "external"
-        deps.append({"groupId": gid, "artifactId": aid, "version": ver, "kind": kind})
-    return deps
-
-
 def parse_package_json_dependencies(pkg_path: Path) -> list[dict[str, str]]:
     """Parse dependency coordinates from an npm ``package.json``."""
     text = safe_read_text(pkg_path)
