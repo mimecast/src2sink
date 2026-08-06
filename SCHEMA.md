@@ -367,6 +367,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `sink` | Dangerous operation (SQL execute, file write, outbound HTTP, log with PII) |
 | `store` | Named persistence from config (JDBC/Mongo/Redis/S3 URLs in YAML/properties) |
 | `reference` | A declaration that *names* an endpoint without being a call site (route constant, path enum member). Feeds cross-repo path matching; never a taint source or sink itself |
+| `finding` | **Derived**: a statement about a *relationship* between other nodes rather than about one location. Currently only `tainted-path` (`OI-17`) |
 
 ### Node families (selected)
 
@@ -380,7 +381,8 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `method-decl` | reference | An **observation**: a callable this file declares, with `class`, `method`, `params` and its `start_line`/`end_line` span. The unit a source-to-sink path is made of (`OI-17`). |
 | `entry-marker` | reference | An **observation**: a non-HTTP entry mechanism was seen here. Input to the `entry-point` derivation. |
 | `sql-field-marker` | reference | An **observation**: a SQL-shaped field name appears at this line. Input to the `raw-code-payload` derivation, which is why it is recorded rather than held in memory. |
-| `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised`). Asserts nothing about danger — see below. |
+| `call-site` | reference | An **observation**, not a finding: a call the extractor examined. Asserts nothing about danger. **Two shapes since 3.0.0** — see below. |
+| `tainted-path` | finding | **Derived**: a value from an entry point reaches a sink. Carries the entry, the sink, every hop with its resolution tier, and the `weakest_link` (`OI-17`). |
 | `file` | sink | Filesystem write / archive extract |
 | `queue-pub` / `queue-sub` | sink / source | Messaging |
 | `pii-field` | source | Field-name heuristic |
@@ -392,6 +394,60 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `sql-payload-out` | sink | Outbound request whose body carries a `sql`/`dql`/… field; see below |
 | `api-client-consumer` | propagator | Import of a registered client library (`known_api_clients.py`); carries `target_repo` + declared `paths`, so the hop is graphed even though the consumer's source names no host or URL |
 | `path-constant` | reference | Route-like string constant or enum member (`PATH_QUERY = "/v1/queries"`); recovers call sites that build their URL from a named constant in another file |
+
+#### `call-site` `detail` — two shapes (**breaking change in 3.0.0**)
+
+Until 3.0.0 a `call-site` was emitted only for *sink-shaped* names, and every one
+carried the full SQL-evidence set. `OI-17` widened observation to **every** call,
+because `stockService.process(...)` is the middle of every layered path and was
+recorded nowhere — so the tool could see both ends of a path and never the part
+that joins them.
+
+Recording the full set for every call was measured at 3.4x the nodes and 4.7x the
+record size on a real repository, where call sites are ~75% of all nodes. So an
+ordinary call records only what resolving it needs:
+
+| Field | Ordinary call | Sink-shaped call |
+|---|---|---|
+| `symbol`, `receiver`, `arguments` | ✅ | ✅ |
+| `enclosing_class`, `enclosing_method` | ✅ | ✅ |
+| `raw` | **absent** | ✅ |
+| `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised` | **absent** | ✅ |
+
+**A consumer must use `.get()` rather than `[]` on the second group.** Absent
+reads as "no SQL evidence", which is the truthful default: nothing vouched for
+the call being SQL because nothing looked. A call is sink-shaped when its name is
+in the SQL or script-exec name sets, or its text names a SQL library.
+
+Calls naming nothing declared anywhere in the repository are **pruned** after the
+repo is parsed — `get`, `append`, `len`, `str`, `join` and the rest of the
+standard library, which an *intra-repo* path cannot pass through by definition.
+The prune applies the same test T3 resolution does, so it only removes calls
+every tier would have dropped.
+
+#### `tainted-path` `detail`
+
+| Field | Meaning |
+|---|---|
+| `entry_mechanism`, `entry_channel` | the door: `http` + `/stock`, `queue` + a topic, … |
+| `externally_triggered` | `false` for a scheduled job — reachable, but nobody outside chooses when |
+| `sink_family`, `sink_symbol`, `sink_file`, `sink_line` | where the value arrives |
+| `tainted_at_sink` | the name carrying the value at the sink |
+| `hops` | path length, recorded **beside** confidence rather than folded into it |
+| `weakest_link` | the single hop a reader should check first |
+| `path` | every hop, each citing `file:line`, its resolution tier and the argument that carried the value |
+| `search_truncated` | present and `true` only when the search hit its explored budget |
+
+The node's `confidence` is the **minimum** hop confidence, never a product.
+Multiplying takes eight `medium` hops to 0.058 and buries exactly the deep paths
+that hold most of the value — but hops are not independent coin flips: eight
+individually resolved calls with declared receiver types are not less trustworthy
+than two fuzzy string matches. A reader can act on "8 hops, weakest link is the
+`B→C` binding"; nobody can act on `0.058`.
+
+There is **no confidence floor**. Paths are emitted broadly and ranked honestly,
+because for an indicator a floor converts cheap false positives into expensive,
+invisible false negatives.
 
 #### `sql` sink `detail`
 
@@ -522,6 +578,14 @@ about the classifier, not about the code.
   "edges": [{ "src_id": "...", "dst_id": "...", "kind": "intra-file", ... }]
 }
 ```
+
+#### Edge `kind`
+
+| `kind` | Meaning |
+|---|---|
+| `intra-file` | Two nodes in one file correlated by proximity |
+| `intra-repo` | A **resolved call**: this call site invokes that method declaration. Emitted since 3.0.0 (`OI-17`); the kind was declared from the start and nothing produced one. `evidence` is prefixed with the resolution tier — `[T1]` a declared field type, `[T2]` an interface expanded to its implementations, `[T3]` a name unique in the repo |
+| `cross-repo` | A call from one repository to another, held to a higher evidence bar than the other two |
 
 ### Taint catalogues (v2)
 

@@ -75,9 +75,9 @@ different readers.
 | `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
-| `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
-| `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
-| `OI-28` | The index fast path bypasses the significant-segment filter | 2.2.0 | `75c5422` (PR #37) | Cross-repo edges resolved through a bare `/v1`, `/api` or `/{id}` disappear — the edges `OI-24` was meant to remove but did not reach. |
+| `OI-21` | Entry points are HTTP-annotation-only | 3.0.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
+| `OI-13` | Kotlin call sites are invisible to the AST pass | 3.0.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
+| `OI-28` | The index fast path bypasses the significant-segment filter | 3.0.0 | `75c5422` (PR #37) | Cross-repo edges resolved through a bare `/v1`, `/api` or `/{id}` disappear — the edges `OI-24` was meant to remove but did not reach. |
 
 ---
 
@@ -1792,7 +1792,7 @@ catalogues, the tractable part; anything beyond should report `unresolved`.
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
+**Fixed in:** 3.0.0  
 **Commit:** `b9edd57` (red), `1f6edad` (fix) — PR #33  
 **Tests:** `tests/test_entry_points.py` — nine cases across HTTP, queue, gRPC, GraphQL, scheduled and CLI, plus the externally-triggered distinction, the producer exclusion, and the assertion that entry points are derived rather than extracted. Mutants `OI21-M1`..`OI21-M3`.
 
@@ -1873,7 +1873,7 @@ found" from "none looked for".
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
+**Fixed in:** 3.0.0  
 **Commit:** `8c0aeb1` (red), `9456ead` (fix) — PR #34  
 **Tests:** `tests/test_oi13_kotlin_parity.py` (Java/Kotlin family parity, receiver on the sink, the `OI-26` guard holding in Kotlin, `raw-code-payload` and `script-exec` parity) and `tests/test_ast_walk.py` (name and receiver extraction, single-yield, the class-wide guard, defensive branches). Mutants `OI13-M1`, `OI13-M3`.
 
@@ -1997,7 +1997,7 @@ Kotlin's regex tiers already work, so string-built SQL in Kotlin is detected tod
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
+**Fixed in:** 3.0.0  
 **Commit:** `75c5422` — PR #37  
 **Tests:** `tests/test_oi28_index_fast_path.py` — 25 cases: every segment shape that names nothing, the real routes that must survive, the memo, an end-to-end `collect_service_edges` assertion, and a consistency invariant across sixteen paths. Mutant `OI28-M1`.
 
@@ -2055,8 +2055,8 @@ anyone who saw no change from `OI-24` in 2.1.0 will see it now.
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
-**Commit:** _this PR_  
+**Fixed in:** 3.0.0  
+**Commit:** `aee11a2` — PR #39  
 **Tests:** `tests/test_fleet_index.py` — 20 cases: the indexed trace with fleet-loading made an error, index/live agreement under four path filters, six staleness shapes (edit, addition, removal, vanished record, version mismatch, corruption), fallback behaviour, and the storage invariants.
 
 ### Symptom
@@ -2152,8 +2152,8 @@ A trace that passes that provably held no fleet-wide structure, on any machine.
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
-**Commit:** _this PR_  
+**Fixed in:** 3.0.0  
+**Commit:** `aee11a2` — PR #39  
 **Tests:** `tests/test_fleet_index.py::test_the_index_and_a_fresh_computation_agree` and the four path-filter cases; the change is pinned by `tests/fixtures/characterization-snapshots/run_trace_sql_runner_api.json`.
 
 ### Symptom
@@ -2214,8 +2214,8 @@ pinning a defect until something else disputes it. The index was that something.
 
 ### Resolution
 
-**Fixed in:** 2.2.0 (unreleased)  
-**Commit:** _this PR_  
+**Fixed in:** 3.0.0  
+**Commit:** `383a8ca` — PR #42  
 **Tests:** `tests/test_producer_scan_single_pass.py` — 9 cases: read counts flat across binding counts, no file read twice, the per-binding dedup isolation, and one build per aggregation run. Mutants `OI30-M1`, `OI30-M2`.
 
 ### Symptom
@@ -2283,4 +2283,94 @@ suffix. If 70 minutes becomes 7 and that is still too slow, the next lever is
 skipping files by content-addressed repo version — only rescanning repos whose
 version changed — which is what the versioning design's keys exist to enable and
 is the same unfinished step 4 of `OI-15`.
+
+---
+
+## OI-17 — Nothing connects an entrypoint to a sink inside a service
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commits:** `9456ead` (#34, Kotlin parity) · `1f6edad` (#33, entry points) · step 1 (#35) · step 2 (#36) · `abd9144` (#40, resolution) · `2940e56` (#41, path search)  
+**Tests:** `tests/test_method_structure.py`, `tests/test_type_declarations.py`, `tests/test_call_resolution.py`, `tests/test_tainted_paths.py`, `tests/test_entry_points.py`. Mutants `OI17-M1` … `OI17-M17`.
+
+### Symptom
+
+The capability the tool is named for. `src2sink` found sources and found sinks
+and did not connect them — measured on the canonical layered shape before any of
+this work:
+
+```
+  StockController.java   -> ['http-in/source']      entrypoint found
+  StockService.java      -> (nothing)               middle layer invisible
+  StockDao.java          -> ['sql/sink', ...]       injectable sink found
+  edges produced: 0
+```
+
+### What shipped, in four steps
+
+1. **Method-level structure.** Declarations recorded as `method-decl`
+   observations; every node stamped with its enclosing method.
+2. **Type facts.** `type-decl` observations record field types, supertypes and
+   whether a type is an interface.
+3. **Tiered resolution** (`src2sink/resolve.py`), and observation widened from
+   sink-shaped names to every call — the middle of every layered path was
+   recorded nowhere. T1 declared field type (`high`), T2 interface expanded to
+   implementations (`medium`, ambiguous when several), T3 unique name (`low`),
+   otherwise dropped. The first `intra-repo` edges the schema has ever carried.
+4. **Path search** (`src2sink/paths.py`). Entry-point parameters are tainted, an
+   argument mentioning a tainted name taints the callee's parameter, and a hop
+   carrying nothing is not walked.
+
+### Where the design departed from the issue as filed
+
+Three of step 4's stated requirements were overridden by
+`docs/plans/observe-then-classify.md`, written later and with measurements:
+
+| as filed | as shipped | why |
+|---|---|---|
+| BFS to a limit | unbounded depth | capping at 3 hops finds 25% of what depth 8 finds |
+| confidence degrades along the path | minimum hop, never a product | multiplying takes 8 `medium` hops to 0.058, burying the deep paths that hold the value |
+| "a floor below which nothing is emitted" | no floor | for an indicator a floor turns cheap false positives into expensive invisible false negatives |
+
+T1 was also narrowed to declared **fields** only. `method-decl` records parameter
+names and not their types, so `void f(StockService s) { s.process() }` falls to
+T3. A real gap rather than a decision.
+
+### The volume estimate was wrong, and its own warning caught it
+
+The issue estimated widening at `+20%` from a 12-file synthetic corpus, with a
+note to measure on real code first. Measured:
+
+```
+  synthetic corpus  :  +21 nodes            (+18%)
+  real repository   :  1,667 -> 5,711 nodes (3.4x)
+                       call sites are 75% of all nodes, ~54 per file
+```
+
+At fleet scale that is 34 GB becoming ~130 GB. Two changes brought it to 1.6x
+nodes / 1.7x bytes: dropping `raw` and the SQL-evidence fields from ordinary
+calls, and pruning calls naming nothing declared in the repo — **77% of observed
+calls**, being `get`, `append`, `len`, `str`, `join`, which an intra-repo path
+cannot pass through by definition.
+
+### What building it exposed
+
+**Three Kotlin gaps, each live since 2.1.0, each making Kotlin produce a
+clean-looking result rather than a wrong one:** interfaces not recognised as
+interfaces, an empty parameter list on every method, and an empty argument list
+on every call. All three passed their original parity tests, because those tests
+compared method *names* — the easy half of a record. That pattern is the lesson
+worth carrying: a parity test that checks what is easy to check is not a parity
+test.
+
+### Residual not covered
+
+Reflection, dynamic proxies, lambdas passed as callbacks, and queue or event hops
+are out of reach syntactically. Python and JavaScript lack declared types, so T1
+is largely unavailable and results there are much weaker — the value is
+concentrated in the JVM fleet. Field writes, collections and returned values are
+not modelled: this tracks *arguments into parameters*, and is described as that
+rather than as taint analysis. Argument binding is positional, so named and
+defaulted arguments under-taint rather than over-taint.
 

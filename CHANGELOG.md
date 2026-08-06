@@ -7,7 +7,107 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-06
+
+**`src2sink` can now say which entry points reach which sinks, with evidence.**
+That is the capability the tool is named for, and until this release it did not
+have it: it found sources, it found sinks, and nothing connected them.
+
+### ⚠️ Upgrading
+
+**A full rescan is required.** `DETECTION_VERSION` moves 10 → 11, so records
+built by an earlier version are not reused. `SCHEMA_VERSION` stays at `2` — the
+record *structure* is unchanged and an existing metabase still parses — but two
+things about its contents changed, and one of them will break a consumer that
+does not expect it.
+
+**Breaking: `call-site` observations now come in two shapes.** Observation was
+widened from sink-shaped names to *every* call, because the middle of a layered
+path was recorded nowhere. Recording the full SQL-evidence set for every call
+measured at 3.4x the nodes and 4.7x the record size on a real repository, so an
+ordinary call now records only `symbol`, `receiver`, `arguments` and its
+enclosing scope. **`raw`, `receiver_is_database`, `library_hint`,
+`file_sql_evidence` and `parameterised` are absent on ordinary calls** and
+present only on sink-shaped ones. Read them with `.get()`, not `[]`; absent means
+"nothing vouched for this call being SQL, because nothing looked". See
+[`SCHEMA.md`](SCHEMA.md#call-site-detail--two-shapes-breaking-change-in-300).
+
+**Records grow ~1.6x in nodes and ~1.7x in bytes.** That is the measured cost of
+the widening after two mitigations: dropping `raw` from ordinary calls, and
+pruning calls that name nothing declared in the repository — 77% of observed
+calls, being `get`, `append`, `len` and the rest of the standard library, which
+an intra-repo path cannot pass through by definition.
+
+### Added
+
+- **Source-to-sink paths inside a service (`OI-17`).** The headline. A new
+  `tainted-path` finding states that a value from an entry point reaches a sink,
+  and cites every hop with its `file:line`, its resolution tier, and the argument
+  that carried the value. Reachability alone would report every endpoint as
+  reaching every sink its service can touch; a hop carrying no tainted value is
+  **pruned**, so a decoy calling a static query does not appear at all rather
+  than appearing with a low score.
+
+  Path confidence is the **minimum** hop, never a product, with length recorded
+  separately and the weakest link named — a reader can act on "8 hops, weakest
+  link is the `B→C` binding" and nobody can act on `0.058`. Depth is unbounded:
+  measured on a 2,000-service fleet, capping at three hops finds 25% of what
+  depth eight finds. There is no confidence floor, because for an indicator a
+  floor converts cheap false positives into expensive, invisible false negatives.
+
+- **Tiered call resolution (`OI-17`, step 3).** `stockService.process(...)` now
+  resolves to a specific declaration: **T1** from a declared field type (`high`),
+  **T2** an interface expanded to its implementations (`medium`, and explicitly
+  ambiguous when there is more than one), **T3** a name unique in the repo
+  (`low`); not unique, dropped. The tier is recorded on every edge. T2 is why the
+  answer can never be "unreachable" — a constructor-injected interface field is
+  the standard Spring shape, so stopping at the declared type would report a
+  confident dead end for most of a JVM fleet.
+
+- **The first `intra-repo` edges.** `FlowEdge` has advertised the kind since the
+  schema was written and nothing ever emitted one.
+
+- **Call arguments are recorded**, which is what makes a path evidence rather
+  than reachability.
+
+- **A persisted fleet index (`OI-15`).** `metabase/index.sqlite3`, built during
+  aggregation, holds the four things a trace consults, keyed by target repo. A
+  trace now answers from indexed lookups and **never loads the fleet** — peak
+  memory is a function of what arrives at the target, not of fleet size.
+  Previously a trace read every record in the metabase to answer a question about
+  one repo, which at 34 GB on disk needs roughly 222 GB resident merely to be
+  held. Staleness is checked on every read; a stale, missing or corrupt index
+  falls back to loading rather than serving a wrong answer.
+
 ### Fixed
+
+- **The producer scan read the whole fleet once per binding (`OI-30`).** Reported
+  from the field at **70 minutes** — the slowest part of a scan bar fleet-wide
+  traces. The binding loop was on the outside, so a 34 GB checkout was read from
+  disk once per binding and the only thing that differed between passes was which
+  regex ran over text already in memory. Now the fleet is walked once and matched
+  against every binding while resident: **N× fewer file reads**, plus a further 2×
+  from building the indices once per run instead of twice.
+
+- **Three Kotlin gaps, all silent since 2.1.0.** Each made Kotlin produce a
+  *clean-looking* result rather than a wrong one, which is the failure mode
+  `OI-13` exists to prevent, and each passed its original parity test because
+  those tests compared the easy half of a record:
+  - **interfaces were never recognised as interfaces** — Kotlin has no
+    `interface_declaration` node, so a call on an interface-typed field bound to
+    the bodiless method and the chain stopped;
+  - **every method recorded an empty parameter list** — Kotlin exposes no
+    `parameters` field, so nothing could be tainted and no Kotlin path existed
+    anywhere in a fleet;
+  - **every call recorded an empty argument list** — Kotlin names no argument
+    field, so no Kotlin hop could carry a value.
+
+- **A caller's reported confidence was whichever edge came last (`OI-29`).**
+  `collect_service_edges` emits several edges per caller, one per route it might
+  be addressing, and the merge kept the last rather than the strongest — so a
+  `high` edge was routinely overwritten by a `low` one for the same caller.
+  Callers now report their best-evidenced confidence, which for an indicator
+  matters: understating evidence suppresses the lead it should raise.
 
 - **Kotlin call sites were invisible to the AST pass (`OI-13`).** The dispatch
   named Kotlin and then routed it to the Java walker, which requires a
@@ -15,9 +115,10 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   nothing, so Kotlin SQL sinks were found only when a regex tier happened to
   match — and nothing reported the gap. Kotlin repositories now yield `sql`
   sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier,
-  so counts rise for any Kotlin service.
+  so counts rise for any Kotlin service. A prerequisite for everything above:
+  reachability that silently covers one language is worse than none.
 
-### Added
+### Also added in this release
 
 - **Type facts for call resolution (`OI-17`, step 2).** A new `type-decl`
   observation records each declared type's field types, supertypes and whether it
@@ -552,6 +653,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[3.0.0]: https://github.com/mimecast/src2sink/releases/tag/v3.0.0
 [2.1.0]: https://github.com/mimecast/src2sink/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mimecast/src2sink/releases/tag/v2.0.0
 [1.1.0]: https://github.com/mimecast/src2sink/releases/tag/v1.1.0
