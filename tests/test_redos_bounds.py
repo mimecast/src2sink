@@ -26,6 +26,7 @@ import pytest
 
 from src2sink import (
     dependencies,
+    maven,
     constants,
     graph_common,
     internal_groups as internal_groups_mod,
@@ -114,7 +115,7 @@ _HARVESTED_MODULES = (
     build_metabase_v2,
     # Manifest and lockfile patterns, run against untrusted repo content exactly
     # as the Gradle ones above are. Harvested as a module for the same reason.
-    dependencies,
+    dependencies, maven,
     # Added by the completeness check below, which found nine modules defining
     # module-level regexes that had never been inside this gate at all.
     config_extractor,

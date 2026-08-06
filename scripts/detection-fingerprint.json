@@ -4,9 +4,9 @@
     "src2sink/derive.py": "3f3679648ebeb8947ca5b112eaba334b9fcbd29033c3327d9fa975f4d0203e1a"
   },
   "derivation_version": 1,
-  "detection_version": 5,
+  "detection_version": 6,
   "files": {
-    "src2sink/build_metabase_v2.py": "1b3c43ddf2069ce44d61e485bf49a8b4f9a1be1ebf82eb80523eec5ae38be439",
+    "src2sink/build_metabase_v2.py": "ad8ecc18baa6e598bf3a758748a9da012ad4a342ed11e91e1963bab6fbc0c410",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
     "src2sink/dependencies.py": "5247606c04793940d7eee2e1d275b00962beec0b1e2126ee5aa45032049e0387",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
@@ -31,11 +31,12 @@
     "src2sink/known_api_clients.py": "450107cf45481387dc115f9bbfef76c6a22c4e3e91e44dbfe88e8e2bc35ef1fa",
     "src2sink/library_taint_java.py": "12d05afc412b4b46d3de92ec1951dfa3408cd97ef1b87d906ef7ed6988267f16",
     "src2sink/limits.py": "40190d2400b03bfcfe16f86cd12270d84956d5b03bde5d77110eb44ae4be69ec",
+    "src2sink/maven.py": "ad2d32735bba3944064641f4edfef3ab42e3c530a7be74bd8995f134e55b2dd2",
     "src2sink/prescreen.py": "0892268b0aa2b27428c2c1a9a76cfb59c12fa9c8e876278cd7740025713d460f",
-    "src2sink/repo_utils.py": "77ca212063966db23b97457ef3beb5f196282e3035c7638db416b709e29cd87b",
+    "src2sink/repo_utils.py": "eeec4672236d8898665a56fb1e84016b72c4f4e38684c1af49113a42bffcf75f",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "a37dacf79b07ebc799c6546ee3423e66c3d43016805b8cd6e8c99e3321374058",
+    "src2sink/schema.py": "d30054d872ea322132db424943f0dd63da170f2cd4ea07767860bf3f4e574b98",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }

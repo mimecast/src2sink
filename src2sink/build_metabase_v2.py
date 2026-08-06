@@ -32,6 +32,7 @@ from .aggregators.phase3 import aggregate_phase3_v2
 from .aggregators.pii_flow_v2 import write_pii_flow_v2
 from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
 from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
+from .maven import resolve_pom_dependencies
 from .dependencies import (
     parse_go_mod,
     parse_npm_dependencies,
@@ -58,7 +59,6 @@ from .repo_utils import (
     detect_git_sha,
     is_internal_coordinate,
     is_skipped_path,
-    parse_pom_dependencies,
 )
 from .safe_paths import is_escaping_symlink
 from .sanitize import redact_literals
@@ -268,9 +268,12 @@ def _collect_dependencies(repo_root: Path) -> tuple[list[dict[str, str]], list[s
     """
     deps: list[dict[str, str]] = []
     notes: list[str] = []
+    # The fleet root is two levels up (repos/<group>/<name>), and is what lets a
+    # parent POM in another repository resolve without a registry (OI-18).
+    fleet_root = repo_root.parent.parent if repo_root.parent.parent.is_dir() else None
     for pom in repo_root.rglob("pom.xml"):
         if not is_skipped_path(pom, repo_root):
-            deps.extend(parse_pom_dependencies(pom))
+            deps.extend(resolve_pom_dependencies(pom, repo_root, fleet_root))
     gradle_paths = [
         g
         for g in list(repo_root.rglob("build.gradle")) + list(repo_root.rglob("build.gradle.kts"))
