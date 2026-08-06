@@ -74,7 +74,7 @@ different readers.
 | `OI-25` | Placeholder and operation-verb segments treated as destinations | 2.1.0 | `45c2ca3` (PR #23) | `/{id}` no longer matches `/{name}`; verb-only matches drop from `high` to `low`; `/orders/create` and `/orders/delete` stop matching each other. |
 | `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
-| `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `TBD` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
+| `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 
 ---
 
@@ -1686,7 +1686,7 @@ must say "not parsed" rather than `[]`.
 ### Resolution
 
 **Fixed in:** 2.1.0 (unreleased)  
-**Commit:** `0060158` (red), see the index row (fix) — PR #31  
+**Commit:** `0060158` (red), `a20a0c5` (fix) — PR #31  
 **Tests:** `tests/test_maven_resolution.py` — nine cases across the five tiers, the BOM exclusion, the placeholder rule, and both property-chain terminations. Mutants `OI18-M1`..`OI18-M4`.
 
 **What changed.** `src2sink/maven.py` resolves versions offline in tiers, and
