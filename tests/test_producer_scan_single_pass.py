@@ -29,18 +29,21 @@ from pathlib import Path
 
 import pytest
 
+# One import style per module: `kac` is needed as a module object because the
+# fixture reconfigures its binding registry, and mixing that with a `from`
+# import of the same module leaves a reader guessing which reference a change
+# affects. Flagged by github-code-quality on the OI-15 PR for the same reason.
 import src2sink.aggregators.payload_producers as pp
 import src2sink.known_api_clients as kac
-from src2sink.known_api_clients import ApiClientBinding
 
 _BINDINGS = (
-    ApiClientBinding(
+    kac.ApiClientBinding(
         target_repo="commerce/warehouse-service",
         maven_artifact="warehouse-service-client",
         import_prefix="com.example.commerce.warehouse.client",
         paths=("/stock",),
     ),
-    ApiClientBinding(
+    kac.ApiClientBinding(
         target_repo="pricing/price-index",
         maven_artifact="price-index-client",
         import_prefix="com.example.pricing.client",
@@ -131,7 +134,7 @@ def test_read_count_is_flat_as_bindings_are_added(fleet, monkeypatch):
     counts = []
     for n in (1, 2, 4, 8):
         many = [
-            ApiClientBinding(
+            kac.ApiClientBinding(
                 target_repo=f"acme/svc-{i}", maven_artifact=f"art-{i}",
                 import_prefix=f"com.acme.svc{i}", paths=("/x",),
             )
