@@ -76,6 +76,7 @@ different readers.
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 | `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
+| `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
 
 ---
 
@@ -1866,3 +1867,127 @@ Entry points reached through frameworks that wire handlers dynamically at
 runtime — reflection, service loaders, annotation processors — stay invisible.
 The record must say which mechanisms were searched, so a caller can tell "none
 found" from "none looked for".
+
+## OI-13 — Kotlin call sites are invisible to the AST pass
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** `8c0aeb1` (red), `9456ead` (fix) — PR #34  
+**Tests:** `tests/test_oi13_kotlin_parity.py` (Java/Kotlin family parity, receiver on the sink, the `OI-26` guard holding in Kotlin, `raw-code-payload` and `script-exec` parity) and `tests/test_ast_walk.py` (name and receiver extraction, single-yield, the class-wide guard, defensive branches). Mutants `OI13-M1`, `OI13-M3`.
+
+**What changed.** `call_name_java_kotlin` split into `call_name_java` and a new
+`call_name_kotlin`, plus `call_receiver_kotlin`. Kotlin has no
+`method_invocation`: a call is a `call_expression` whose first child is either a
+bare `identifier` or a `navigation_expression` whose final `identifier` is the
+name. The receiver is that navigation's first child, which is what gives
+`this.dao.find(...)` the receiver `this.dao`.
+
+`CALL_NODE_TYPES["kotlin"]` also narrowed to `call_expression` alone.
+`navigation_expression` is a property access, and listing it made every call
+arrive twice — once as the call and once as the navigation beneath it.
+
+**Deviation.** The issue proposed a Kotlin-specific walker and that is what was
+built, but it did not anticipate the double-yield: the type set and the name
+extractor had to change together, and fixing only the extractor would have
+doubled every Kotlin finding.
+
+A mutant restoring the wider type set proved **unkillable**, because
+`call_name_kotlin` rejects non-call nodes independently. Recorded in the code
+rather than removing the second defence to make the mutant work.
+
+**The corpus had the same blind spot as the code.** There were zero `.kt` files
+in the fixtures, so the snapshots could not have caught this and did not change
+when it was fixed. A Kotlin fixture was added, and it now demonstrates the
+parity: two `sql` sinks with correct postures, an HTTP entry point, and
+`httpClient.execute` correctly excluded.
+
+**Behaviour change.** Kotlin repositories gain `sql` sinks, `script-exec` sinks
+and `raw-code-payload` findings from the AST tier for the first time. Counts rise
+for any Kotlin service. `DETECTION_VERSION` bumps, so the fleet rescans.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** High — a whole supported language silently loses its SQL sinks.
+
+**Found:** while raising `extractors/ast_walk.py` coverage for WI-12; asserted there rather than fixed, because the fix changes detection output.
+
+### Symptom
+
+The same query, in the two languages the JVM half of the fleet is written in:
+
+```java
+// Java
+class StockDao { List<Stock> find(long id) {
+    return jdbcTemplate.query("SELECT ref FROM stock WHERE id = ?", mapper, id); } }
+```
+
+```kotlin
+// Kotlin — identical call, identical receiver, identical SQL
+class StockDao { fun find(id: Long): List<Stock> {
+    return jdbcTemplate.query("SELECT ref FROM stock WHERE id = ?", mapper, id) } }
+```
+
+Measured:
+
+```
+java    -> ['data-class-field/source', 'sql/sink']
+kotlin  -> ['data-class-field/source']
+```
+
+The Java file yields a `sql` execution sink. The Kotlin file yields none — and reports no error, no warning and no note.
+
+### Root cause
+
+`CALL_NODE_TYPES` correctly names Kotlin's call nodes:
+
+```python
+"kotlin": frozenset({"call_expression", "navigation_expression"}),
+```
+
+but `extract_call_name` routes Kotlin to the **Java** walker:
+
+```python
+if language in ("java", "kotlin"):
+    return call_name_java_kotlin(source, node)
+```
+
+and that walker's first line rejects everything Kotlin produces:
+
+```python
+if node.type != "method_invocation":      # a Java grammar type
+    return None
+```
+
+`method_invocation` does not exist in the Kotlin grammar — it uses `call_expression` wrapping a `navigation_expression`. So `iter_calls` finds the nodes, asks for their names, receives `None` for every one, and yields nothing. The two halves of the dispatch disagree and neither says so.
+
+### What is lost
+
+Everything downstream of the AST pass, for Kotlin only:
+
+* **`sql` sinks** — no execution sinks, so no SQL family from the AST tier at all;
+* **`raw-code-payload`** — requires `ctx.sql_execution_sinks`, which is always empty, so a Kotlin endpoint accepting a `sql` field and executing it is never correlated;
+* **`script-exec`** — `eval`/`exec`/`compile` call sites are never seen;
+* **receiver evidence** (`OI-7`) — with no call sites there is nothing to gate, so Kotlin SQL is found only when a *regex* tier happens to match a literal.
+
+Kotlin is a first-class target: `tree-sitter-kotlin` is one of the eight runtime dependencies and `.kt` files are scanned like any other. This is not an unsupported language degrading gracefully; it is a supported one failing silently.
+
+### Proposed fix
+
+A Kotlin-specific walker, `call_name_kotlin`, reading the grammar's own shapes: a `call_expression` whose callee is a `simple_identifier` (a bare call) or a `navigation_expression` (a call on a receiver, where the name is the last `navigation_suffix`). `extract_call_receiver` needs the matching branch — the receiver is the navigation expression's first child rather than an `object` field.
+
+The same dispatch bug is worth checking for elsewhere: any language whose entry in `CALL_NODE_TYPES` names node types the corresponding walker does not accept has this defect. A test that asserts *every* language in `CALL_NODE_TYPES` yields at least one named call for a representative source would catch the whole class, and is cheaper than auditing each walker by hand.
+
+### Suggested tests
+
+* The Kotlin fixture above yields a `sql` sink with `receiver == "jdbcTemplate"`, matching the Java result.
+* A bare Kotlin call (`execute(x)`) yields a name and no receiver.
+* A Kotlin endpoint with a `sql` field plus an execution sink yields `raw-code-payload`, as the Java equivalent does.
+* Every language in `CALL_NODE_TYPES` names at least one call in a representative snippet — the class-wide guard.
+* `tests/test_ast_walk.py::test_kotlin_calls_are_not_named_by_the_java_walker` asserts the *current* behaviour and must be replaced, not deleted: it is what would otherwise let this regress quietly.
+
+### Residual not covered
+
+Kotlin's regex tiers already work, so string-built SQL in Kotlin is detected today; this issue is only about the AST pass. Scala and other JVM languages are not scanned at all and are out of scope.
