@@ -75,7 +75,7 @@ different readers.
 | `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
-| `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `TBD` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
+| `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
 
 ---
 
@@ -1791,7 +1791,7 @@ catalogues, the tractable part; anything beyond should report `unresolved`.
 ### Resolution
 
 **Fixed in:** 2.2.0 (unreleased)  
-**Commit:** `b9edd57` (red), see the index row (fix) — PR #33  
+**Commit:** `b9edd57` (red), `1f6edad` (fix) — PR #33  
 **Tests:** `tests/test_entry_points.py` — nine cases across HTTP, queue, gRPC, GraphQL, scheduled and CLI, plus the externally-triggered distinction, the producer exclusion, and the assertion that entry points are derived rather than extracted. Mutants `OI21-M1`..`OI21-M3`.
 
 **What changed.** Two families. `entry-marker` is an *observation* recording that
