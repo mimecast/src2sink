@@ -1,14 +1,113 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "data-class-field",
     "http-out",
     "method-decl",
     "sql-field-marker",
     "type-decl"
   ],
-  "node_count": 12,
+  "node_count": 17,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [],
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
+        "receiver": "HttpRequest.newBuilder(\n            URI.create(\"https://sql-runner-api.dev/v1/queries\")\n        ).POST(HttpRequest.BodyPublishers.ofString(\"{\\\"sql\\\":\\\"\" + sql + \"\\\"}\"))",
+        "symbol": "build"
+      },
+      "family": "call-site",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "HttpRequest.BodyPublishers.ofString(\"{\\\"sql\\\":\\\"\" + sql + \"\\\"}\")"
+        ],
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
+        "receiver": "HttpRequest.newBuilder(\n            URI.create(\"https://sql-runner-api.dev/v1/queries\")\n        )",
+        "symbol": "POST"
+      },
+      "family": "call-site",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "URI.create(\"https://sql-runner-api.dev/v1/queries\")"
+        ],
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
+        "receiver": "HttpRequest",
+        "symbol": "newBuilder"
+      },
+      "family": "call-site",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"https://sql-runner-api.dev/v1/queries\""
+        ],
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
+        "receiver": "URI",
+        "symbol": "create"
+      },
+      "family": "call-site",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"{\\\"sql\\\":\\\"\" + sql + \"\\\"}\""
+        ],
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
+        "receiver": "HttpRequest.BodyPublishers",
+        "symbol": "ofString"
+      },
+      "family": "call-site",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",

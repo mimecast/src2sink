@@ -254,25 +254,39 @@ accident. Supertypes are one list rather than extends/implements split, because
 Kotlin gives both as `delegation_specifier` and for resolution they answer the
 same question.
 
-**Measured while landing step 1, and it decides step 3.** Call observations are
-emitted only for *sink-shaped* names, because that is what bounded their volume
-when the observation layer was built. On the fixture corpus:
+**Step 3 landed** (widened observation and tiered resolution). Every call is now
+observed, and `resolve.py` binds it to a declaration at T1/T2/T3 with the tier
+recorded on every edge — the first `intra-repo` edges the schema has ever
+carried. Arguments are captured in the same pass: step 4 needs them, recording
+them costs a `DETECTION_VERSION` bump, and widening already forced one.
+
+**The volume estimate was wrong, and the warning above is why it was caught.**
+The `+20%` came from a 12-file synthetic corpus. Measured on a real repository
+before committing:
 
 ```
-  calls present in the AST:      28
-  recorded as call-site today:    7   (25% of calls)
-  recording every call adds:     21   (+20% of all nodes)
+  synthetic corpus  :  +21 nodes            (+18%)  <- the original estimate
+  real repository   :  1,667 -> 5,711 nodes (3.4x)  <- what it actually costs
+                       call sites are 75% of all nodes, ~54 per file
 ```
 
-`stockService.process(...)` is the middle of every layered path and is recorded
-**nowhere**. A call graph needs every call, not only the ones that look like
-sinks — so step 3 has to widen the observation, and the cost above is what that
-costs.
+At fleet scale that is 34 GB becoming roughly 130 GB. Two changes brought it
+down to **1.6x nodes / 1.7x bytes**:
 
-Treat +20% as a floor rather than an estimate: the corpus is 12 synthetic files,
-and real code carries far more calls per file — getters, logging, framework
-plumbing. Measure on the fleet before committing to it, and weigh it against
-`OI-15`'s ceiling.
+* an ordinary call records only what resolving it needs — symbol, receiver,
+  arguments, scope — and drops `raw` along with the SQL-evidence fields. `raw`
+  alone is up to 160 bytes per call and says nothing a plain call's other fields
+  do not;
+* calls naming nothing declared anywhere in the repo are pruned once per repo,
+  after the method table is complete. **77% of observed calls were these** —
+  `get`, `append`, `len`, `str`, `join` — calls into the standard library and
+  third-party packages, which an *intra-repo* path cannot pass through by
+  definition. The prune applies the same test T3 does, so it can only remove
+  calls every tier would have dropped.
+
+The lesson is the one the warning stated: a synthetic corpus understates
+per-file call density by more than an order of magnitude, and "+20%" would have
+been a 4x surprise at fleet scale.
 
 ### Proposed fix
 
@@ -285,11 +299,27 @@ Four pieces, in dependency order:
 2. **A repo symbol table.** Class → field types, method signatures, superclass.
    Built once per repo version, which fits the content-addressed model in the
    versioning design.
-3. **Tiered call resolution**, with the tier recorded on every edge:
-   * **T1** receiver typed from a declared field, parameter or local — `high`;
+3. ~~**Tiered call resolution**~~ — ✅ shipped, in `src2sink/resolve.py`:
+   * **T1** receiver typed from a declared field — `high`;
    * **T2** interface resolved to implementations — `medium`, and explicitly
-     ambiguous when there is more than one;
+     ambiguous (dropped to `low`) when there is more than one;
    * **T3** name unique in the repo — `low`; not unique — dropped.
+
+   *Narrowed from the proposal:* T1 covers declared **fields** only. Parameters
+   and locals are not sources, because `method-decl` records parameter *names*
+   and not their types, so `void f(StockService s) { s.process() }` falls to T3.
+   Recording parameter types costs another `DETECTION_VERSION` bump and it is
+   worth measuring how often the shape occurs first.
+
+   *Found while shipping it:* Kotlin interfaces were never recognised as
+   interfaces. Kotlin has no `interface_declaration` node — `interface Foo { }`
+   is a `class_declaration` whose first child is the `interface` keyword — so
+   `is_interface` was `False` for every Kotlin interface from the moment
+   `type-decl` shipped in 2.1.0. A Kotlin call on an interface-typed field bound
+   to the bodiless interface method and the chain stopped there: a confident dead
+   end for the standard Spring shape across half the JVM fleet, while the Java
+   half passed throughout. Exactly the `OI-13` failure mode of a language being
+   invisible.
 4. **Tainted-path search.** BFS from entrypoint parameters to sinks, pruning any
    hop that carries no tainted argument, with confidence degrading along the path
    and a floor below which nothing is emitted.

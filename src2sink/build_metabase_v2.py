@@ -381,6 +381,45 @@ def _scan_repo_files(
     return lang_counts, all_nodes, all_edges
 
 
+def prune_unresolvable_calls(nodes: list[FlowNode]) -> list[FlowNode]:
+    """Drop plain call observations that no intra-repo hop could ever resolve to.
+
+    `OI-17` step 3 widened call observation from sink-shaped names to every call,
+    because the middle of a path — `stockService.process(...)` — was recorded
+    nowhere. Measured on a real repository, that took records from 1,667 nodes to
+    5,711, a **3.4x** growth against the `+20%` the issue estimated from a
+    synthetic corpus of twelve files. At fleet scale that is 34 GB becoming
+    roughly 130 GB.
+
+    Most of it is noise. Of 4,266 observed calls, **77% named nothing declared
+    anywhere in the repository** — `get`, `append`, `len`, `str`, `join`. Those
+    are calls into the standard library and third-party packages, and an
+    *intra-repo* path cannot pass through them by definition. Keeping them would
+    pay fleet-wide storage for hops that can never exist.
+
+    So this runs once per repo, after every file is parsed and the method table
+    is complete, and keeps a plain call only if some declaration in the repo
+    shares its name. That is deliberately the weakest possible test — the same
+    one T3 resolution applies — so it can only remove calls that every tier would
+    have dropped anyway.
+
+    Sink-shaped observations are never pruned. `jdbcTemplate.query(...)` resolves
+    to nothing in the repo and is precisely the finding the tool exists to make;
+    they are distinguished by carrying the full SQL-evidence shape.
+    """
+    declared = {
+        n.detail.get("method")
+        for n in nodes
+        if n.family == "method-decl"
+    }
+    return [
+        n for n in nodes
+        if n.family != "call-site"
+        or "library_hint" in n.detail            # sink-shaped: always kept
+        or n.detail.get("symbol") in declared
+    ]
+
+
 def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> RepoSummaryV2:
     """Analyse one repo: git SHA, build systems, dependencies, and extracted flow nodes/edges."""
     repo_id = f"{group}/{name}"
@@ -402,6 +441,7 @@ def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> Re
     summary.frameworks = classify_frameworks(deps)
 
     lang_counts, all_nodes, all_edges = _scan_repo_files(repo_root, repo_id, summary)
+    all_nodes = prune_unresolvable_calls(all_nodes)
     summary.language_breakdown = dict(lang_counts)
     if lang_counts:
         summary.primary_language = lang_counts.most_common(1)[0][0]

@@ -196,13 +196,15 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI17-M5",
         file="src2sink/extractors/ast_walk.py",
-        old='            node.type == "interface_declaration",',
+        old='            _is_interface(node, language),',
         new="            False,",
-        selector="tests/test_type_declarations.py",
+        selector="tests/test_type_declarations.py tests/test_call_resolution.py",
         note=(
             "An interface reads as a class, so a call resolving to its bodiless "
             "method looks like a dead end rather than a prompt to expand to the "
-            "implementations."
+            "implementations. Re-derived when `OI-17` step 3 moved the test into "
+            "`_is_interface` to fix the Kotlin half of it; `OI17-M10` covers the "
+            "Kotlin branch specifically."
         ),
     ),
     Mutant(
@@ -325,7 +327,7 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI26-M1",
         file="src2sink/derive.py",
-        old='    if receiver_is_another_boundary(detail["receiver"]):\n        return False\n',
+        old='    if receiver_is_another_boundary(detail.get("receiver")):\n        return False\n',
         new="",
         selector="tests/test_oi26_receiver_scope.py",
         note=(
@@ -337,7 +339,7 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI26-M2",
         file="src2sink/derive.py",
-        old='    return bool(detail["file_sql_evidence"])',
+        old='    return bool(detail.get("file_sql_evidence", False))',
         new="    return False",
         selector="tests/test_oi26_receiver_scope.py tests/test_sql_sink_evidence.py",
         note=(
@@ -928,6 +930,69 @@ CATALOGUE: tuple[Mutant, ...] = (
         selector="tests/test_graph_common.py tests/test_cross_repo_caller_coverage.py"
                  " tests/test_path_match_significance.py",
         note="Significance filtering removed — `/v1` becomes a destination again.",
+    ),
+    Mutant(
+        id="OI17-M7",
+        file="src2sink/resolve.py",
+        old="    if not table.is_interface.get(declared, False):",
+        new="    if True:",
+        selector="tests/test_call_resolution.py",
+        note=(
+            "Resolution stops at the declared type, so a call on an "
+            "interface-typed field binds to the bodiless interface method and the "
+            "chain ends there. The constructor-injected interface is the standard "
+            "Spring shape, so this reports a confident dead end for most of the "
+            "JVM fleet — and a confident dead end reads as a clean result."
+        ),
+    ),
+    Mutant(
+        id="OI17-M8",
+        file="src2sink/resolve.py",
+        old='        return "low" if self.ambiguous else _TIER_CONFIDENCE.get(self.tier, "low")',
+        new='        return _TIER_CONFIDENCE.get(self.tier, "low")',
+        selector="tests/test_call_resolution.py",
+        note=(
+            "An interface with several implementations reports `medium` for each, "
+            "so a resolver that cannot say which one runs presents every guess as "
+            "a moderately confident answer."
+        ),
+    ),
+    Mutant(
+        id="OI17-M9",
+        file="src2sink/resolve.py",
+        old="    if len(candidates) != 1:\n        return []",
+        new="    if not candidates:\n        return []",
+        selector="tests/test_call_resolution.py",
+        note=(
+            "T3 stops requiring the name to be unique, so a method declared on "
+            "two unrelated classes resolves to whichever was indexed first — a "
+            "guess between candidates presented as a resolution."
+        ),
+    ),
+    Mutant(
+        id="OI17-M10",
+        file="src2sink/extractors/ast_walk.py",
+        old='    return any(child.type == "interface" for child in node.children)',
+        new="    return False",
+        selector="tests/test_type_declarations.py tests/test_call_resolution.py",
+        note=(
+            "Kotlin interfaces stop being recognised, which is how this shipped in "
+            "2.1.0: Kotlin has no `interface_declaration` node, so testing the node "
+            "type marked every Kotlin interface as a class. Java kept passing "
+            "throughout — the `OI-13` failure mode of a language being invisible."
+        ),
+    ),
+    Mutant(
+        id="OI17-M11",
+        file="src2sink/build_metabase_v2.py",
+        old='        or "library_hint" in n.detail            # sink-shaped: always kept',
+        new="        or False",
+        selector="tests/test_call_observations.py tests/test_characterization.py",
+        note=(
+            "The prune stops sparing sink-shaped calls, so `jdbcTemplate.query(...)` "
+            "— which resolves to nothing declared in the repo, and is precisely the "
+            "finding the tool exists to make — is dropped as unresolvable."
+        ),
     ),
     Mutant(
         id="OI15-M1",

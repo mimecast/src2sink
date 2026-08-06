@@ -15,6 +15,7 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "search",
         "file_sql_evidence": true,
@@ -37,6 +38,7 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "parameterised",
         "file_sql_evidence": true,
@@ -59,6 +61,7 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "notADatabase",
         "file_sql_evidence": true,

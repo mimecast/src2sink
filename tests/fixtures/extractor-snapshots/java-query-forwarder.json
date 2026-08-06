@@ -1,6 +1,7 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "data-class-field",
     "http-out",
     "method-decl",
@@ -9,8 +10,50 @@
     "sql-payload-out",
     "type-decl"
   ],
-  "node_count": 12,
+  "node_count": 14,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "sqlText"
+        ],
+        "enclosing_class": "StockQueryForwarder",
+        "enclosing_method": "submit",
+        "receiver": "body",
+        "symbol": "setSql"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "SUBMIT_URL",
+          "body",
+          "QueryResult.class"
+        ],
+        "enclosing_class": "StockQueryForwarder",
+        "enclosing_method": "submit",
+        "receiver": "restTemplate",
+        "symbol": "postForObject"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 24,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",

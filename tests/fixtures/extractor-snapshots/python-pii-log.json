@@ -1,12 +1,53 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "method-decl",
     "pii-field",
     "pii-log"
   ],
-  "node_count": 4,
+  "node_count": 6,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "__name__"
+        ],
+        "receiver": "logging",
+        "symbol": "getLogger"
+      },
+      "family": "call-site",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "reference",
+      "language": "python",
+      "line": 3,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"SMS to %s: %s\"",
+          "phoneNumber",
+          "body"
+        ],
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
+        "receiver": "logger",
+        "symbol": "info"
+      },
+      "family": "call-site",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "reference",
+      "language": "python",
+      "line": 7,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,

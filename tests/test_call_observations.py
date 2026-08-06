@@ -96,9 +96,37 @@ def test_calls_that_pass_the_gate_are_observed_too():
     assert symbols == ["execute", "query"]
 
 
-def test_ordinary_calls_are_not_observed():
-    """Volume is bounded by the sink-shaped name sets, not by every call in the file."""
-    assert _observations(_NO_SINK_NAMES) == []
+def test_ordinary_calls_are_observed_leanly():
+    """`OI-17` step 3 reversed this: every call is observed, not only sink-shaped ones.
+
+    The middle of a layered path — `stockService.process(...)` — was recorded
+    nowhere, so the tool could see both ends of a path and never the part that
+    joins them. Volume is no longer bounded by the name sets, so it is bounded by
+    *shape* instead: an ordinary call records what resolving it needs and drops
+    the SQL-evidence fields, which is most of the cost.
+    """
+    observed = _observations(_NO_SINK_NAMES)
+    assert observed, "an ordinary call must now be recorded"
+    for detail in (n.detail for n in observed):
+        assert set(detail) == {"symbol", "receiver", "arguments",
+                               "enclosing_class", "enclosing_method"}
+        assert "raw" not in detail, "raw source text is the bulk of the cost"
+        assert "parameterised" not in detail, "SQL posture is meaningless here"
+
+
+def test_a_lean_observation_can_never_become_a_sql_sink():
+    """The invariant that makes widening safe.
+
+    Widening multiplied `call-site` observations several-fold, and every one of
+    them is fed to the SQL classifier. If a lean observation could satisfy
+    `sql_verdict`, widening would have manufactured findings rather than hops —
+    and those feed `link_raw_code_payloads`, which is how `OI-7` fabricated an
+    injection endpoint.
+    """
+    from src2sink.derive import sql_verdict
+
+    for node in _observations(_NO_SINK_NAMES):
+        assert sql_verdict(node.detail) is None
 
 
 def test_observing_is_independent_of_classifying():

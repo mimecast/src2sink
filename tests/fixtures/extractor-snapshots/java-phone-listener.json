@@ -1,6 +1,7 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "entry-point",
     "method-decl",
     "pii-field",
@@ -8,8 +9,67 @@
     "queue-sub",
     "type-decl"
   ],
-  "node_count": 9,
+  "node_count": 12,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "PhoneListener.class"
+        ],
+        "receiver": "LoggerFactory",
+        "symbol": "getLogger"
+      },
+      "family": "call-site",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\":\""
+        ],
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
+        "receiver": "payload",
+        "symbol": "split"
+      },
+      "family": "call-site",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 12,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"Delivering SMS to phoneNumber={}\"",
+          "phoneNumber"
+        ],
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
+        "receiver": "logger",
+        "symbol": "info"
+      },
+      "family": "call-site",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,

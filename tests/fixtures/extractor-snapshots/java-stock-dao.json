@@ -1,5 +1,5 @@
 {
-  "edge_count": 0,
+  "edge_count": 1,
   "families": [
     "call-site",
     "data-class-field",
@@ -8,12 +8,37 @@
     "sql-field-marker",
     "type-decl"
   ],
-  "node_count": 13,
+  "node_count": 15,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [
+          "\"SELECT * FROM stock WHERE ref = '%s'\"",
+          "ref"
+        ],
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "byReference",
+        "receiver": "String",
+        "symbol": "format"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 19,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "byReference(ref)",
+          "mapper"
+        ],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "run",
         "file_sql_evidence": true,
@@ -23,6 +48,26 @@
         "receiver": "jdbcTemplate",
         "receiver_is_database": true,
         "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 27,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "ref"
+        ],
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "run",
+        "receiver": null,
+        "symbol": "byReference"
       },
       "family": "call-site",
       "file": "src/StockQueryBuilder.java",
