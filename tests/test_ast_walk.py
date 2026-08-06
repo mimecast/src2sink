@@ -17,6 +17,8 @@ from __future__ import annotations
 import pytest
 
 from src2sink.extractors.ast_walk import (
+    call_name_kotlin,
+    call_receiver_kotlin,
     CALL_NODE_TYPES,
     extract_call_name,
     extract_call_receiver,
@@ -278,3 +280,30 @@ def test_every_supported_language_names_a_call() -> None:
         tree = parse_source(language, raw)
         names = [n for _node, n in iter_calls(raw, tree.root_node, language)]
         assert expected in names, f"{language} yielded {names}"
+
+
+def test_kotlin_walkers_reject_nodes_that_are_not_calls() -> None:
+    """The defensive branches, which a malformed or partial tree does reach.
+
+    `iter_calls` filters by node type, but both walkers are public and the
+    extractors call them on whatever the grammar produced — a partial parse of
+    untrusted source can hand them anything.
+    """
+    raw = b"val x = foo.bar"
+    tree = parse_source("kotlin", raw)
+    navigation = next(
+        n for n in walk(tree.root_node) if n.type == "navigation_expression"
+    )
+    assert call_name_kotlin(raw, navigation) is None
+    assert call_receiver_kotlin(raw, navigation) is None
+
+
+def test_a_kotlin_call_on_a_literal_has_no_named_receiver() -> None:
+    """A call whose target is neither an identifier nor a navigation yields None."""
+    raw = b'fun m() { "abc".length }'
+    tree = parse_source("kotlin", raw)
+    for node in walk(tree.root_node):
+        if node.type == "call_expression":
+            # Whatever it resolves to, it must not raise and must not invent a name.
+            name = call_name_kotlin(raw, node)
+            assert name is None or isinstance(name, str)

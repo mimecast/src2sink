@@ -7,6 +7,16 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Kotlin call sites were invisible to the AST pass (`OI-13`).** The dispatch
+  named Kotlin and then routed it to the Java walker, which requires a
+  `method_invocation` node Kotlin never produces. Every Kotlin call site returned
+  nothing, so Kotlin SQL sinks were found only when a regex tier happened to
+  match — and nothing reported the gap. Kotlin repositories now yield `sql`
+  sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier,
+  so counts rise for any Kotlin service.
+
 ### Added
 
 - **Entry points beyond HTTP (`OI-21`).** A way into a service counted only if it

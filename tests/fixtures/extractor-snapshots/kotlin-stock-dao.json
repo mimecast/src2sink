@@ -1,0 +1,186 @@
+{
+  "edge_count": 0,
+  "families": [
+    "call-site",
+    "data-class-field",
+    "entry-point",
+    "http-in",
+    "sql"
+  ],
+  "node_count": 10,
+  "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "file_sql_evidence": true,
+        "library_hint": false,
+        "parameterised": "raw",
+        "raw": "jdbcTemplate.query(\"SELECT ref FROM stock WHERE label = '\" + filter + \"'\", mappe",
+        "receiver": "jdbcTemplate",
+        "receiver_is_database": true,
+        "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "reference",
+      "language": "kotlin",
+      "line": 20,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "file_sql_evidence": true,
+        "library_hint": false,
+        "parameterised": "parameterised",
+        "raw": "jdbcTemplate.query(\"SELECT ref FROM stock WHERE ref = ?\", mapper, ref)",
+        "receiver": "jdbcTemplate",
+        "receiver_is_database": true,
+        "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "reference",
+      "language": "kotlin",
+      "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "file_sql_evidence": true,
+        "library_hint": false,
+        "parameterised": "unknown",
+        "raw": "httpClient.execute(request)",
+        "receiver": "httpClient",
+        "receiver_is_database": false,
+        "symbol": "execute"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "reference",
+      "language": "kotlin",
+      "line": 25,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "source",
+      "language": "kotlin",
+      "line": 20,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": "dangerous-payload",
+      "detail": {
+        "field_name": "query"
+      },
+      "family": "data-class-field",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "source",
+      "language": "kotlin",
+      "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "/stock/search",
+        "externally_triggered": true,
+        "mechanism": "http",
+        "method": "POST"
+      },
+      "family": "entry-point",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "source",
+      "language": "kotlin",
+      "line": 18,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "method": "POST",
+        "path": "/stock/search",
+        "raw": "@PostMapping(\"/stock/search\""
+      },
+      "family": "http-in",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": "spring",
+      "kind": "source",
+      "language": "kotlin",
+      "line": 18,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "execution": true,
+        "parameterised": "raw",
+        "raw": "jdbcTemplate.query(\"SELECT ref FROM stock WHERE label = '\" + filter + \"'\", mappe",
+        "receiver": "jdbcTemplate",
+        "symbol": "query"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "sink",
+      "language": "kotlin",
+      "line": 20,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "execution": true,
+        "parameterised": "parameterised",
+        "raw": "jdbcTemplate.query(\"SELECT ref FROM stock WHERE ref = ?\", mapper, ref)",
+        "receiver": "jdbcTemplate",
+        "symbol": "query"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "sink",
+      "language": "kotlin",
+      "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "pattern": "concatenated",
+        "snippet": "\"SELECT ref FROM stock WHERE label = '\" +",
+        "subkind": "string-concat"
+      },
+      "family": "sql",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "source",
+      "language": "kotlin",
+      "line": 20,
+      "pii_classification": null
+    }
+  ]
+}

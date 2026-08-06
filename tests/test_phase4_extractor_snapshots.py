@@ -32,6 +32,15 @@ def _assert_snapshot(name: str, actual: dict) -> None:
 @pytest.mark.parametrize(
     ("name", "repo_id", "rel_path", "language", "source_path"),
     [
+        # Kotlin, because the corpus had none and so could not have caught OI-13:
+        # the AST pass listed the language and produced nothing for it.
+        (
+            "kotlin-stock-dao",
+            "fulfilment/stock-dao-kt",
+            "src/StockQueryBuilder.kt",
+            "kotlin",
+            SYN / "fulfilment/stock-dao-kt/src/StockQueryBuilder.kt",
+        ),
         (
             "java-sql-runner-api",
             "acme/sql-runner-api",

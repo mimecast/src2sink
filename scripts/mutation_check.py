@@ -182,6 +182,30 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI13-M1",
+        file="src2sink/extractors/ast_walk.py",
+        old='    if language == "kotlin":\n        return call_name_kotlin(source, node)\n',
+        new="",
+        selector="tests/test_ast_walk.py tests/test_oi13_kotlin_parity.py",
+        note=(
+            "Kotlin routed back to the Java walker, which requires a "
+            "method_invocation node Kotlin never produces — so every Kotlin call "
+            "site goes silently invisible again."
+        ),
+    ),
+    Mutant(
+        id="OI13-M3",
+        file="src2sink/extractors/ast_walk.py",
+        old='    if language == "kotlin":\n        # Kotlin has no `object` field: the receiver is the first child of the\n        # `navigation_expression` the call wraps (OI-13).\n        return call_receiver_kotlin(source, node)\n',
+        new="",
+        selector="tests/test_ast_walk.py tests/test_oi13_kotlin_parity.py",
+        note=(
+            "Kotlin calls lose their receiver, so classification falls back to "
+            "file-scoped evidence and httpClient.execute becomes a SQL sink — "
+            "OI-26 reappearing in the language that had no receiver."
+        ),
+    ),
+    Mutant(
         id="OI21-M1",
         file="src2sink/derive.py",
         old='    if obs.family == "queue-sub" and obs.detail.get("direction") == "consume":',
