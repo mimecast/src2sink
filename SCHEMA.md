@@ -373,6 +373,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-in` | source | Inbound route |
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
+| `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`). Asserts nothing about danger — see below. |
 | `file` | sink | Filesystem write / archive extract |
 | `queue-pub` / `queue-sub` | sink / source | Messaging |
 | `pii-field` | source | Field-name heuristic |
@@ -454,6 +455,29 @@ repo and a `raw-code-payload` in another are recorded independently.
 |-------|--------|
 | `pii_classification` | `direct-pii`, `sensitive`, `special-category-gdpr`, `quasi-id` |
 | `data_class` | `tenant-content`, `credential`, `dangerous-payload`, … |
+
+### `call-site` — observations, not findings
+
+Emitted for every call carrying a sink-shaped name, **whether or not any family
+classifies it**. `kind` is always `reference`.
+
+The point is that classification should be revisable without re-extraction. A
+`call-site` records what was seen and what could be told about it, so changing
+what a library *means* becomes a re-aggregation rather than a fleet rescan. See
+[`docs/plans/observe-then-classify.md`](docs/plans/observe-then-classify.md) §3.
+
+| Field | Meaning |
+|---|---|
+| `symbol` | the called name |
+| `receiver` | the receiver expression, or `null` when the call has none |
+| `receiver_is_database` | whether the receiver reads as a database handle |
+| `library_hint` | whether the call text names a known data-access API |
+| `file_sql_evidence` | whether the *file* shows SQL evidence — **file-scoped, and too coarse to decide a call-level question alone** (`OI-26`); recorded so a classifier can weigh it, not act on it |
+| `raw` | the call text, truncated |
+
+A consumer must not read a `call-site` as a finding. The absence of a
+corresponding `sql` node means the classifier declined it, which is information
+about the classifier, not about the code.
 
 ### Per-repo JSON (`nodes` / `edges`)
 

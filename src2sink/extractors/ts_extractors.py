@@ -18,6 +18,56 @@ from .patterns import (
 )
 
 
+# The call names any family currently examines. Observations are emitted for
+# these and nothing else, so volume stays bounded by sink-shaped names rather
+# than by every call in the file.
+SCRIPT_EXEC_NAMES = frozenset({"eval", "exec", "compile"})
+
+
+def _add_call_observation(
+    ctx: FileExtractionContext,
+    name: str,
+    line: int,
+    call_text: str,
+    receiver: str | None,
+    *,
+    file_sql_evidence: bool,
+    library_hint: bool,
+) -> None:
+    """Record that a call was examined, and what could be told about it.
+
+    An *observation*, not a finding: ``kind`` is ``reference`` and it claims
+    nothing about danger. It exists so that classification can happen downstream
+    — a classifier reading these never has to re-read the source, so changing
+    what a library *means* becomes a re-aggregation instead of a fleet rescan
+    (see docs/plans/observe-then-classify.md §3).
+
+    ``file_sql_evidence`` is recorded rather than acted on. It is a file-scoped
+    fact, too coarse to decide a call-level question by itself — which is exactly
+    the defect ``OI-26`` describes — so a classifier gets to weigh it against the
+    receiver instead of being handed a verdict.
+
+    Records untrusted call text; text is only matched, never executed.
+    """
+    ctx.nodes.append(make_node(
+        repo=ctx.repo_id,
+        file=ctx.rel_path,
+        line=line,
+        language=ctx.language,
+        kind="reference",
+        family="call-site",
+        detail={
+            "symbol": name,
+            "receiver": receiver,
+            "receiver_is_database": receiver_is_database(receiver),
+            "library_hint": library_hint,
+            "file_sql_evidence": file_sql_evidence,
+            "raw": call_text[:120],
+        },
+        confidence="high",
+    ))
+
+
 def _maybe_add_sql_sink(
     ctx: FileExtractionContext,
     name: str,
@@ -77,7 +127,7 @@ def _maybe_add_script_exec(ctx: FileExtractionContext, name: str, line: int, cal
 
     Inspects untrusted call text; text is only matched, never executed.
     """
-    if name in ("eval", "exec", "compile"):
+    if name in SCRIPT_EXEC_NAMES:
         ctx.nodes.append(make_node(
             repo=ctx.repo_id,
             file=ctx.rel_path,
@@ -113,14 +163,46 @@ def extract_tree_sitter_calls(ctx: FileExtractionContext) -> None:
     sql_symbols = sql_symbol_table(ctx.source)
 
     for call_node, name in iter_calls(src_bytes, tree.root_node, ctx.language):
-        line = line_number(src_bytes, call_node)
-        call_text = node_text(src_bytes, call_node)
-        receiver = extract_call_receiver(src_bytes, call_node, ctx.language)
-        _maybe_add_sql_sink(
-            ctx, name, line, call_text, receiver,
-            file_sql_evidence=file_sql_evidence, sql_symbols=sql_symbols,
+        _examine_call(
+            ctx, name,
+            line=line_number(src_bytes, call_node),
+            call_text=node_text(src_bytes, call_node),
+            receiver=extract_call_receiver(src_bytes, call_node, ctx.language),
+            file_sql_evidence=file_sql_evidence,
+            sql_symbols=sql_symbols,
         )
-        _maybe_add_script_exec(ctx, name, line, call_text)
+
+
+def _examine_call(
+    ctx: FileExtractionContext,
+    name: str,
+    *,
+    line: int,
+    call_text: str,
+    receiver: str | None,
+    file_sql_evidence: bool,
+    sql_symbols: dict[str, str],
+) -> None:
+    """Observe one call, then let each family classify it.
+
+    Observation comes first and is unconditional for a sink-shaped name: the
+    record keeps what was seen whether or not a family claims it, so a classifier
+    can be corrected later without re-extracting (`OI-26`, and the catalogue work
+    in `OI-20`). The family dispatch below is the *current* classification, still
+    inline; moving it downstream is the next step of
+    docs/plans/observe-then-classify.md §3.
+    """
+    library_hint = any(hint in call_text for hint in SQL_EXECUTION_CALL_HINTS)
+    if name in SQL_SINK_NAMES or library_hint or name in SCRIPT_EXEC_NAMES:
+        _add_call_observation(
+            ctx, name, line, call_text, receiver,
+            file_sql_evidence=file_sql_evidence, library_hint=library_hint,
+        )
+    _maybe_add_sql_sink(
+        ctx, name, line, call_text, receiver,
+        file_sql_evidence=file_sql_evidence, sql_symbols=sql_symbols,
+    )
+    _maybe_add_script_exec(ctx, name, line, call_text)
 
 
 def link_sql_payload_out(ctx: FileExtractionContext) -> None:

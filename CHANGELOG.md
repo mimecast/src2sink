@@ -7,6 +7,19 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- **`call-site` observation nodes.** The extractor now records every call
+  carrying a sink-shaped name, with the inputs a classifier needs, whether or
+  not any family claims it. Previously a call that failed the evidence gate was
+  discarded, which is why changing what a library *means* required re-extracting
+  the fleet. `kind` is `reference`: an observation asserts nothing about danger,
+  and the absence of a corresponding `sql` node says the classifier declined it,
+  not that the code is safe.
+  **`DETECTION_VERSION` bumps to 2**, so the first build after upgrading rescans
+  every repository. Measured at ~7% more nodes on the fixture corpus, roughly
+  one observation per `sql` node.
+
 ### Fixed
 
 - **Identical but meaningless paths matched at `high` confidence (`OI-24`).**
