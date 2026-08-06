@@ -4,10 +4,11 @@
     "src2sink/derive.py": "3f3679648ebeb8947ca5b112eaba334b9fcbd29033c3327d9fa975f4d0203e1a"
   },
   "derivation_version": 1,
-  "detection_version": 4,
+  "detection_version": 5,
   "files": {
-    "src2sink/build_metabase_v2.py": "9f268212851418c043e6e72e5a341c854d297d5f5615d666c1c4981bb2e0d877",
+    "src2sink/build_metabase_v2.py": "1b3c43ddf2069ce44d61e485bf49a8b4f9a1be1ebf82eb80523eec5ae38be439",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
+    "src2sink/dependencies.py": "5247606c04793940d7eee2e1d275b00962beec0b1e2126ee5aa45032049e0387",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
     "src2sink/extractors/ast_walk.py": "c1e757d088a6db1d263bc157e3e4ae82b9de6c8b76679f4b92f27922b418e77b",
     "src2sink/extractors/base.py": "f308246442fb03e9f0da86b522c7ff9c0471f721502bd4dc279f188f7eb36d61",
@@ -34,7 +35,7 @@
     "src2sink/repo_utils.py": "77ca212063966db23b97457ef3beb5f196282e3035c7638db416b709e29cd87b",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "66ecf09954cb3d1798f6596446cdaec68565e2d9924ee434049262303890c648",
+    "src2sink/schema.py": "a37dacf79b07ebc799c6546ee3423e66c3d43016805b8cd6e8c99e3321374058",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }

@@ -88,6 +88,40 @@ CATALOGUE: tuple[Mutant, ...] = (
         note="Evidence gate removed entirely — restores the 1.1.0 name-only match.",
     ),
     Mutant(
+        id="OI19-M1",
+        file="src2sink/dependencies.py",
+        old="    locked = _npm_lock_versions(repo_root)",
+        new="    locked: dict[str, str] = {}",
+        selector="tests/test_polyglot_dependencies.py",
+        note=(
+            "The npm lockfile stops overriding the manifest, so a resolved "
+            "version is recorded as the range it came from — the assumption "
+            "OI-19 exists to correct."
+        ),
+    ),
+    Mutant(
+        id="OI19-M2",
+        file="src2sink/dependencies.py",
+        old='            deps.append(_dep(name, spec, "range" if spec else "unresolved"))',
+        new='            deps.append(_dep(name, spec, "resolved"))',
+        selector="tests/test_polyglot_dependencies.py",
+        note=(
+            "A Python range recorded as though it were a resolved version, "
+            "which is OI-18's defect reappearing in another ecosystem."
+        ),
+    ),
+    Mutant(
+        id="OI19-M3",
+        file="src2sink/dependencies.py",
+        old="    notes: list[str] = []\n    for manifest, ecosystem in sorted(UNPARSED_MANIFESTS.items()):",
+        new="    notes: list[str] = []\n    for manifest, ecosystem in []:",
+        selector="tests/test_polyglot_dependencies.py",
+        note=(
+            "An unparsed ecosystem stops saying so, making "
+            "dependencies_internal: [] mean both 'none' and 'cannot read'."
+        ),
+    ),
+    Mutant(
         id="DRV-M1",
         file="src2sink/derive.py",
         old='    return (node.family, node.kind) in DERIVED_FAMILIES',

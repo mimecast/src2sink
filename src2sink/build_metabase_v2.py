@@ -32,6 +32,12 @@ from .aggregators.phase3 import aggregate_phase3_v2
 from .aggregators.pii_flow_v2 import write_pii_flow_v2
 from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
 from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
+from .dependencies import (
+    parse_go_mod,
+    parse_npm_dependencies,
+    parse_python_dependencies,
+    unparsed_ecosystem_notes,
+)
 from .extractors.config import extract_from_config, is_config_path
 from .extractors.unified import extract_from_file
 from .internal_groups import (
@@ -52,7 +58,6 @@ from .repo_utils import (
     detect_git_sha,
     is_internal_coordinate,
     is_skipped_path,
-    parse_package_json_dependencies,
     parse_pom_dependencies,
 )
 from .safe_paths import is_escaping_symlink
@@ -284,10 +289,22 @@ def _collect_dependencies(repo_root: Path) -> tuple[list[dict[str, str]], list[s
                 "in build.gradle* matched no catalog entry; dependencies may be "
                 "incomplete (looked for *.versions.toml and settings.gradle*)"
             )
+    deps.extend(_collect_non_jvm_dependencies(repo_root))
+    notes.extend(unparsed_ecosystem_notes(repo_root))
+    return deps, notes
+
+
+def _collect_non_jvm_dependencies(repo_root: Path) -> list[dict[str, str]]:
+    """Gather npm, Go and Python dependencies, preferring lockfiles (OI-19)."""
+    deps: list[dict[str, str]] = []
     for pkg in repo_root.rglob("package.json"):
         if not is_skipped_path(pkg, repo_root):
-            deps.extend(parse_package_json_dependencies(pkg))
-    return deps, notes
+            deps.extend(parse_npm_dependencies(repo_root, pkg))
+    for gomod in repo_root.rglob("go.mod"):
+        if not is_skipped_path(gomod, repo_root):
+            deps.extend(parse_go_mod(gomod))
+    deps.extend(parse_python_dependencies(repo_root))
+    return deps
 
 
 def _record_dependencies(summary: RepoSummaryV2, deps: list[dict[str, str]]) -> None:

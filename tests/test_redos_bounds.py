@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from src2sink import (
+    dependencies,
     constants,
     graph_common,
     internal_groups as internal_groups_mod,
@@ -111,6 +112,9 @@ _HARVESTED_MODULES = (
     # name meant the version-catalog patterns added later were silently outside
     # this gate. Whole-module harvesting fails safe as patterns are added.
     build_metabase_v2,
+    # Manifest and lockfile patterns, run against untrusted repo content exactly
+    # as the Gradle ones above are. Harvested as a module for the same reason.
+    dependencies,
     # Added by the completeness check below, which found nine modules defining
     # module-level regexes that had never been inside this gate at all.
     config_extractor,
