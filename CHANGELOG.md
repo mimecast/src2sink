@@ -30,6 +30,16 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   another kind of boundary. `ps`, `pstmt` and `cstmt` joined the receiver
   vocabulary so the tightening does not withdraw real `PreparedStatement` sinks.
 
+- **Go and Python dependencies are parsed, and lockfiles are read (`OI-19`).**
+  Dependency parsing covered Java and npm against nine ecosystems recognised for
+  identity, so `dependencies_internal: []` on a Go repo meant "not implemented"
+  and looked identical to "no internal dependencies". `go.mod` states exact
+  versions outright; `uv.lock`, `poetry.lock` and `package-lock.json` hold the
+  resolved answer a manifest range does not. Dependencies now carry
+  `version_kind` — `resolved`, `range` or `unresolved` — because `^1.4.2` names a
+  set rather than a version. A repo whose ecosystem is recognised but unparsed
+  now says so in its notes instead of reporting an empty list.
+
 ### Changed
 
 - **Findings are now derived from observations, in a separate pass.** Extraction

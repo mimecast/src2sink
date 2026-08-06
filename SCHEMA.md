@@ -19,6 +19,7 @@ File path: `repos/<group>/<repo>.md` (human-readable),
 | `git_sha` | string | HEAD commit SHA of the analysed tree (if a `.git` directory is present) |
 | `analysed_at` | ISO-8601 datetime | When the script last ran on this repo |
 | `derivation_version` | integer | Which rules *interpreted* the observations into findings. Separate from `detection_version` because a rule change costs a **re-derive over existing records** — no source, no parsing — while a detector change costs a full rescan. See [`docs/plans/observe-then-classify.md`](docs/plans/observe-then-classify.md). |
+| `dependencies_internal[].version_kind` | string | How well the version is known: `resolved` (from a lockfile or an exact declaration), `range` (a constraint like `^1.4.2` — **not** a version), or `unresolved`. See `OI-18`/`OI-19`. |
 | `detection_version` | integer | Which detector produced this record. Together with `git_sha` it forms the incremental scan's cache key: a record whose detector is older than the running build is rebuilt rather than reused. A record without this field predates it and is always treated as stale. See `OI-16`. |
 
 ### `language`
