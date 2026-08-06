@@ -82,10 +82,46 @@ CATALOGUE: tuple[Mutant, ...] = (
         # _sql_verdict over observations. Same defect, same guard, new home.
         id="OI7-M1",
         file="src2sink/extractors/ts_extractors.py",
-        old='    if not (hint or detail["receiver_is_database"] or detail["file_sql_evidence"]):\n        return None\n',
+        old="    if not _has_sql_evidence(detail, hint=hint):\n        return None\n",
         new="",
         selector="tests/test_sql_sink_evidence.py tests/test_sql_classifier.py",
         note="Evidence gate removed entirely — restores the 1.1.0 name-only match.",
+    ),
+    Mutant(
+        id="OI26-M1",
+        file="src2sink/extractors/ts_extractors.py",
+        old='    if receiver_is_another_boundary(detail["receiver"]):\n        return False\n',
+        new="",
+        selector="tests/test_oi26_receiver_scope.py",
+        note=(
+            "File-scoped evidence overrules the receiver again, so an HTTP client "
+            "call in a file containing any SQL is a SQL execution sink — and can "
+            "fabricate a raw-code-payload endpoint from it."
+        ),
+    ),
+    Mutant(
+        id="OI26-M2",
+        file="src2sink/extractors/ts_extractors.py",
+        old='    return bool(detail["file_sql_evidence"])',
+        new="    return False",
+        selector="tests/test_oi26_receiver_scope.py tests/test_sql_sink_evidence.py",
+        note=(
+            "The unknown-receiver rescue is removed with the fix, so "
+            "`runner.execute(STATEMENT)` in a SQL-bearing file is lost — "
+            "over-tightening, the other way OI-26 can be got wrong."
+        ),
+    ),
+    Mutant(
+        id="OI26-M3",
+        file="src2sink/extractors/patterns.py",
+        old='    "ps",\n    "pstmt",\n',
+        new="",
+        selector="tests/test_oi26_receiver_scope.py",
+        note=(
+            "PreparedStatement abbreviations dropped from the receiver "
+            "vocabulary, so tightening the file-scope rule silently withdraws "
+            "real ps.execute() sinks."
+        ),
     ),
     Mutant(
         id="OBS-M1",

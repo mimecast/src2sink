@@ -54,11 +54,10 @@ def test_the_classifier_needs_no_source():
     classify_sql_from_observations(ctx)
 
     sql = [n for n in ctx.nodes if n.family == "sql" and n.kind == "sink"]
-    # Both, because the move is behaviour-preserving and `OI-26` is part of the
-    # behaviour: file-scoped SQL evidence admits `httpClient.execute` too. The
-    # point of this step is that the defect now lives in one function over
-    # stored data, so fixing it costs a re-aggregation rather than a rescan.
-    assert sorted(n.detail["symbol"] for n in sql) == ["execute", "query"]
+    # `httpClient.execute` is absent since OI-26 was fixed — and that fix was made
+    # here, in `_sql_verdict`, over observations. This test is the demonstration
+    # that a classification can be corrected without touching the extractor.
+    assert sorted(n.detail["symbol"] for n in sql) == ["query"]
 
 
 def test_an_observation_carries_the_parameterisation_posture():
@@ -76,14 +75,13 @@ def test_an_observation_carries_the_parameterisation_posture():
     assert observed["query"]["parameterised"] == "raw"
 
 
-def test_classification_is_unchanged_by_the_move():
-    """The move must be behaviour-preserving; only the input changes."""
+def test_classification_reads_through_to_the_same_fields():
+    """The sql node is built entirely from the observation it was classified from."""
     sql = [n for n in _nodes(_LAYERED) if n.family == "sql" and n.kind == "sink"]
     assert sorted((n.detail["symbol"], n.detail["receiver"]) for n in sql) == [
-        ("execute", "httpClient"),   # OI-26, preserved by the move
         ("query", "jdbcTemplate"),
     ]
-    node = next(n for n in sql if n.detail["symbol"] == "query")
+    node = sql[0]
     assert node.detail["execution"] is True
     assert node.detail["parameterised"] == "raw"
     assert node.confidence == "high"

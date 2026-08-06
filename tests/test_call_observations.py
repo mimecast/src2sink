@@ -101,10 +101,20 @@ def test_ordinary_calls_are_not_observed():
     assert _observations(_NO_SINK_NAMES) == []
 
 
-def test_observing_does_not_change_what_is_classified():
-    """This step is additive: the sql nodes emitted must be exactly as before."""
-    sql = [n for n in _nodes(_HTTP_PLUS_SQL) if n.family == "sql" and n.kind == "sink"]
-    assert sorted(n.detail["symbol"] for n in sql) == ["execute", "query"]
+def test_observing_is_independent_of_classifying():
+    """Every examined call is observed; only some are classified.
+
+    `httpClient.execute` is observed and *not* classified — the gap between the
+    two lists is the point of the layer. It was classified until `OI-26` was
+    fixed, and fixing that changed only the classifier.
+    """
+    nodes = _nodes(_HTTP_PLUS_SQL)
+    observed = sorted(n.detail["symbol"] for n in nodes if n.family == "call-site")
+    classified = sorted(
+        n.detail["symbol"] for n in nodes if n.family == "sql" and n.kind == "sink"
+    )
+    assert observed == ["execute", "query"]
+    assert classified == ["query"]
 
 
 @pytest.mark.parametrize("source", [_HTTP_ONLY, _HTTP_PLUS_SQL, _NO_SINK_NAMES])

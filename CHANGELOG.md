@@ -20,6 +20,16 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   every repository. Measured at ~7% more nodes on the fixture corpus, roughly
   one observation per `sql` node.
 
+- **File-scoped SQL evidence no longer overrules a receiver (`OI-26`).** The
+  three evidence signals were OR'd together, so the weakest — a fact about other
+  code in the same file — decided once satisfied. `httpClient.execute(r)` became
+  a SQL execution sink because a JDBC query sat in the same class, and since
+  execution sinks feed the raw-code-payload linker, it could fabricate an
+  injection endpoint that never existed. Evidence is now ordered by how local it
+  is: file evidence rescues an *unknown* receiver, never one recognised as
+  another kind of boundary. `ps`, `pstmt` and `cstmt` joined the receiver
+  vocabulary so the tightening does not withdraw real `PreparedStatement` sinks.
+
 ### Changed
 
 - **SQL classification now reads observations, not source.** The rules are
