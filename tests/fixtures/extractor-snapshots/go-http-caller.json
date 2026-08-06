@@ -2,14 +2,17 @@
   "edge_count": 0,
   "families": [
     "data-class-field",
+    "method-decl",
     "sql-field-marker"
   ],
-  "node_count": 2,
+  "node_count": 3,
   "nodes": [
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "callSqlRunnerApi",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -24,6 +27,26 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "class": null,
+        "end_line": 9,
+        "method": "callSqlRunnerApi",
+        "params": [],
+        "start_line": 7
+      },
+      "family": "method-decl",
+      "file": "main.go",
+      "framework": null,
+      "kind": "reference",
+      "language": "go",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "callSqlRunnerApi",
         "raw": "sql"
       },
       "family": "sql-field-marker",

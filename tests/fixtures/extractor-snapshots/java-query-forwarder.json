@@ -3,11 +3,12 @@
   "families": [
     "data-class-field",
     "http-out",
+    "method-decl",
     "path-constant",
     "sql-field-marker",
     "sql-payload-out"
   ],
-  "node_count": 9,
+  "node_count": 11,
   "nodes": [
     {
       "confidence": "medium",
@@ -55,6 +56,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockQueryForwarder",
+        "enclosing_method": "submit",
         "path": "/v1/query",
         "paths": [
           "/v1/query"
@@ -69,6 +72,46 @@
       "kind": "sink",
       "language": "java",
       "line": 24,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryForwarder",
+        "end_line": 19,
+        "method": "StockQueryForwarder",
+        "params": [
+          "restTemplate"
+        ],
+        "start_line": 17
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 17,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryForwarder",
+        "end_line": 25,
+        "method": "submit",
+        "params": [
+          "sqlText"
+        ],
+        "start_line": 21
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 21,
       "pii_classification": null
     },
     {
@@ -134,6 +177,8 @@
       "data_class": "raw-sql-payload",
       "detail": {
         "client": "",
+        "enclosing_class": "StockQueryForwarder",
+        "enclosing_method": "submit",
         "evidence": "payload field vocabulary",
         "field_name": "sql",
         "http_out_line": 24,

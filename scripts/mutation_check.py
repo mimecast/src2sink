@@ -182,6 +182,41 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI17-M1",
+        file="src2sink/extractors/ts_extractors.py",
+        old="            if start <= node.line <= end:",
+        new="            if start <= node.line:",
+        selector="tests/test_method_structure.py",
+        note=(
+            "Scope assignment stops checking the span end, so a class-level "
+            "field is attributed to whichever method happens to follow it — a "
+            "guessed scope, which is worse than an absent one."
+        ),
+    ),
+    Mutant(
+        id="OI17-M2",
+        file="src2sink/extractors/ts_extractors.py",
+        old="        key=lambda s: s[1] - s[0],",
+        new="        key=lambda s: s[0] - s[1],",
+        selector="tests/test_method_structure.py",
+        note=(
+            "Spans ordered widest-first, so a nested function's findings are "
+            "attributed to its parent instead of to itself."
+        ),
+    ),
+    Mutant(
+        id="OI17-M3",
+        file="src2sink/derive.py",
+        old='    for key in ("enclosing_class", "enclosing_method"):',
+        new="    for key in ():",
+        selector="tests/test_method_structure.py",
+        note=(
+            "Derived nodes stop inheriting scope from the observation they came "
+            "from, so a finding loses its method on the re-derive path where "
+            "there is no extraction context to reassign it."
+        ),
+    ),
+    Mutant(
         id="OI13-M1",
         file="src2sink/extractors/ast_walk.py",
         old='    if language == "kotlin":\n        return call_name_kotlin(source, node)\n',

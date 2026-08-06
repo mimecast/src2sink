@@ -5,16 +5,19 @@
     "data-class-field",
     "entry-point",
     "http-in",
+    "method-decl",
     "raw-code-payload",
     "sql",
     "sql-field-marker"
   ],
-  "node_count": 12,
+  "node_count": 15,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "QueryController",
+        "enclosing_method": "execute",
         "file_sql_evidence": true,
         "library_hint": false,
         "parameterised": "unknown",
@@ -49,6 +52,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "QueryController",
+        "enclosing_method": "execute",
         "field_name": "query"
       },
       "family": "data-class-field",
@@ -77,6 +82,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "QueryRequest",
+        "enclosing_method": "getSql",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -122,6 +129,64 @@
     },
     {
       "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "QueryController",
+        "end_line": 13,
+        "method": "QueryController",
+        "params": [
+          "jdbcTemplate"
+        ],
+        "start_line": 11
+      },
+      "family": "method-decl",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 11,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "QueryController",
+        "end_line": 18,
+        "method": "execute",
+        "params": [
+          "request"
+        ],
+        "start_line": 15
+      },
+      "family": "method-decl",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 15,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "QueryRequest",
+        "end_line": 22,
+        "method": "getSql",
+        "params": [],
+        "start_line": 22
+      },
+      "family": "method-decl",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
       "data_class": "raw-sql-payload",
       "detail": {
         "endpoint_path": "/queries",
@@ -158,6 +223,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "QueryController",
+        "enclosing_method": "execute",
         "execution": true,
         "parameterised": "unknown",
         "raw": "jdbcTemplate.query(request.getSql())",
@@ -190,6 +257,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "QueryRequest",
+        "enclosing_method": "getSql",
         "raw": "sql"
       },
       "family": "sql-field-marker",

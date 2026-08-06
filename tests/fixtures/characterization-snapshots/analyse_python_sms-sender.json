@@ -4,6 +4,7 @@
   "dependencies_internal": [],
   "edge_count": 0,
   "families": [
+    "method-decl",
     "pii-field",
     "pii-log"
   ],
@@ -11,12 +12,32 @@
   "language_breakdown": {
     "python": 1
   },
-  "node_count": 3,
+  "node_count": 4,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": null,
+        "end_line": 7,
+        "method": "send_sms",
+        "params": [],
+        "start_line": 6
+      },
+      "family": "method-decl",
+      "file": "src/sender.py",
+      "framework": null,
+      "kind": "reference",
+      "language": "python",
+      "line": 6,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -31,6 +52,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -45,6 +68,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber",
         "raw": "logger.info("
       },

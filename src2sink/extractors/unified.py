@@ -21,6 +21,8 @@ from .regex_extractors import (
     extract_sql_string_sources,
 )
 from .ts_extractors import (
+    assign_enclosing_methods,
+    extract_method_declarations,
     extract_tree_sitter_calls,
     link_sql_payload_out,
 )
@@ -67,7 +69,12 @@ def extract_from_file(
 
     # AST pass. Records observations only — no classification happens here.
     extract_tree_sitter_calls(ctx)
+    extract_method_declarations(ctx)
     link_sql_payload_out(ctx)
+
+    # Scope every node once all passes have produced their nodes, so a node from
+    # any pass is placed by the same rule (OI-17).
+    assign_enclosing_methods(ctx)
 
     # Findings are derived from the observations, not produced alongside them.
     # A scan runs this inline for convenience; the same call re-runs over a

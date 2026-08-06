@@ -376,6 +376,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
 | `entry-point` | source | **Derived**: a way untrusted input enters this service. `mechanism` is `http`, `queue`, `grpc`, `graphql`, `schedule`, `cli` or `file-watch`; `channel` names the specific door; `externally_triggered` is false for a scheduled job, which is reachable but not opened by a caller. See `OI-21`. |
+| `method-decl` | reference | An **observation**: a callable this file declares, with `class`, `method`, `params` and its `start_line`/`end_line` span. The unit a source-to-sink path is made of (`OI-17`). |
 | `entry-marker` | reference | An **observation**: a non-HTTP entry mechanism was seen here. Input to the `entry-point` derivation. |
 | `sql-field-marker` | reference | An **observation**: a SQL-shaped field name appears at this line. Input to the `raw-code-payload` derivation, which is why it is recorded rather than held in memory. |
 | `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised`). Asserts nothing about danger — see below. |
@@ -460,6 +461,14 @@ repo and a `raw-code-payload` in another are recorded independently.
 |-------|--------|
 | `pii_classification` | `direct-pii`, `sensitive`, `special-category-gdpr`, `quasi-id` |
 | `data_class` | `tenant-content`, `credential`, `dangerous-payload`, … |
+
+### `enclosing_class` / `enclosing_method`
+
+Every node that falls inside a declared callable carries the class and method it
+sits in, assigned by span containment, innermost first. A node inside no method —
+a field, a class-level constant — carries **neither**, rather than being
+attributed to whichever method happens to be nearest: a guessed scope is worse
+than an absent one.
 
 ### Observations and findings
 

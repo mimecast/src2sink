@@ -6,18 +6,21 @@
   "families": [
     "data-class-field",
     "http-out",
+    "method-decl",
     "sql-field-marker"
   ],
   "frameworks": [],
   "language_breakdown": {
     "java": 1
   },
-  "node_count": 10,
+  "node_count": 11,
   "nodes": [
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -32,6 +35,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -46,6 +51,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -60,6 +67,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "field_name": "sql"
       },
       "family": "data-class-field",
@@ -74,6 +83,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "host": "sql-runner-api.dev",
         "http_method": "POST",
         "path": "/v1/queries",
@@ -96,6 +107,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "host": "sql-runner-api.dev",
         "http_method": "POST",
         "path": "/v1/queries",
@@ -118,6 +131,28 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "class": "RunnerClient",
+        "end_line": 11,
+        "method": "buildRequest",
+        "params": [
+          "sql"
+        ],
+        "start_line": 7
+      },
+      "family": "method-decl",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "raw": "sql"
       },
       "family": "sql-field-marker",
@@ -132,6 +167,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "raw": "sql"
       },
       "family": "sql-field-marker",
@@ -146,6 +183,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "raw": "sql"
       },
       "family": "sql-field-marker",
@@ -160,6 +199,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "RunnerClient",
+        "enclosing_method": "buildRequest",
         "raw": "sql"
       },
       "family": "sql-field-marker",

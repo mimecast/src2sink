@@ -2,14 +2,17 @@
   "edge_count": 0,
   "families": [
     "http-out",
+    "method-decl",
     "path-constant"
   ],
-  "node_count": 2,
+  "node_count": 4,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockRequestProcessor",
+        "enclosing_method": "submit",
         "http_method": "POST",
         "path": "/v1/stock",
         "paths": [
@@ -25,6 +28,46 @@
       "kind": "sink",
       "language": "java",
       "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockRequestProcessor",
+        "end_line": 19,
+        "method": "StockRequestProcessor",
+        "params": [
+          "client"
+        ],
+        "start_line": 17
+      },
+      "family": "method-decl",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 17,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockRequestProcessor",
+        "end_line": 23,
+        "method": "submit",
+        "params": [
+          "request"
+        ],
+        "start_line": 21
+      },
+      "family": "method-decl",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 21,
       "pii_classification": null
     },
     {

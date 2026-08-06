@@ -19,6 +19,12 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### Added
 
+- **Nodes know which method they are in (`OI-17`, step 1).** A node recorded
+  `file` and `line` and nothing about its enclosing method, so there was no
+  "entrypoint 1 of B" to reason about. Callables are now recorded as `method-decl`
+  observations with class, parameters and span, and every node carries
+  `enclosing_class`/`enclosing_method` — or neither, if it sits inside no method.
+  Foundation for call resolution and reachability; neither is possible without it.
 - **Entry points beyond HTTP (`OI-21`).** A way into a service counted only if it
   was an HTTP annotation, so queue consumers, gRPC services, GraphQL resolvers,
   scheduled jobs and CLI entry points were invisible as front doors. A new
