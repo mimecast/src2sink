@@ -56,12 +56,12 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 
 | id | # | Issue | Effort | Value | Priority |
 |---|---|---|---|---|---|
-| OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
 | OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
 | OI-20 | 20 | Only SQL has a library evidence catalogue | large | deserialization has no family at all; every other sink type is pattern-only | **P1** |
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
+| OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -78,9 +78,15 @@ by different means — `OI-13` while raising test coverage, `OI-15` while
 profiling — rather than while investigating a report. That is the argument for
 the coverage and measurement work paying for itself.
 
-`OI-15` is P1 despite nobody having hit it, because it is a ceiling rather than
+~~`OI-15` is P1 despite nobody having hit it, because it is a ceiling rather than
 a slowdown and the work to lift it is large. Finding out at 34 GB that the
-answer is a redesign is a much worse position than knowing now.
+answer is a redesign is a much worse position than knowing now.~~
+
+**Closed 2026-08**, and the bet paid: the fleet reached 34 GB and traces began
+swapping exactly as projected, but the shape of the fix was already written down
+and turned out to be smaller than the plan feared — the trace path needed no
+redesign, only a persisted index. Having measured it early is why the trigger
+arrived as scheduled work rather than as an outage.
 
 ### Issue ids and lifecycle
 
@@ -119,105 +125,6 @@ Three of these four defects share one shape: **a detection path that fails to em
 - An unparsed dependency format produces `dependencies_internal: []` and no note (§3).
 
 The 1.1.0 work established the right pattern — the manifest binding count, the unconditional `service-call-unmatched.jsonl`, the recorded oversized-file skips. Extending it consistently is the durable fix: **any detection input that resolves to nothing should say so in the run manifest or the repo's notes.** A count of zero is a finding; an absent field is not.
-
----
-
-## 15. The whole fleet is held in memory, so a large metabase cannot be read at all  `OI-15`
-
-**Severity:** High — this is a ceiling, not a slowdown. Past it the tool does not
-run slowly; it does not run.
-
-### Symptom
-
-None yet, on the fleets scanned so far. This issue is a projection from measured
-numbers rather than a report, which is why it is written down before anyone hits
-it: the failure mode when it arrives is an out-of-memory kill with no partial
-result and nothing to bisect.
-
-### Root cause
-
-`load_v2_repo_records` returns a `list` holding every repo record, and the
-aggregators are written against that list. Deserialised JSON is much larger than
-its text: measured over a 300-repo synthetic metabase, 1.9 MB on disk became
-12.5 MB resident, an expansion of **6.5x**. Extrapolating:
-
-| metabase on disk | resident, just to hold it |
-|---|---|
-| 1 GB | ~7 GB |
-| 34 GB | ~222 GB |
-| 500 GB | ~3.2 TB |
-
-The expansion factor will vary with record shape — a fleet of many small nodes
-costs more per byte than one with few large ones — but no plausible factor makes
-34 GB fit on a machine anyone runs this on.
-
-This is independent of `OI-14`. That was about doing fleet-wide work repeatedly;
-this is about the fleet not fitting at all, and it is not helped by caching or by
-removing the quadratic scan, because both require holding the fleet first.
-
-### Why it is not urgent yet, and what would make it so
-
-~~At the scale scanned today the fleet fits comfortably and `OI-14` removed the
-cost that was actually being felt. The trigger to act is a metabase in the tens
-of GB, or a requirement to run on a memory-constrained host.~~
-
-**Triggered, 2026-08.** The fleet is past 34 GB and a trace completes only by
-swapping. Both stated conditions are met; this is now the active work.
-
-### What blocks it: not what the 3.0 plan said
-
-The plan held that `OI-15` was blocked by Finding A — 14 aggregators that fuse
-computation with rendering, leaving no computed result to persist. Reading
-`trace` rather than the aggregator inventory shows that is wrong: **`trace` reads
-none of the rendered artefacts.** It calls `load_v2_repo_records`,
-`collect_service_edges` and `build_producer_indices`, all already pure, and
-`run_trace` already returns a `TraceReport` that is rendered separately.
-
-The fused aggregators block persisting the *catalogue views*. They do not block
-persisting the *trace inputs*, and it is the trace inputs that make `trace` slow.
-So the ~2,400 lines of refactoring across 13 modules is real work but not a
-prerequisite. See §2a of `docs/plans/src2sink-3.0-plan.md`.
-
-### Proposed fix
-
-Stop holding the fleet. Three changes, in dependency order:
-
-1. **Stream records.** `load_v2_repo_records` becomes a generator, and each
-   aggregator either consumes it once or declares what it needs to retain. This
-   is the invasive part: several aggregators iterate `records` more than once,
-   and each such site has to be made single-pass or explicitly re-open the
-   stream.
-2. **Persist the fleet indices as build artefacts.** The build phase already
-   walks every repo, so it is the natural place to emit the inbound-route index,
-   the repo-alias index and the service-call edge list. SQLite is the obvious
-   store: single file, standard library, indexed lookups, no server.
-3. **Make `trace` query rather than load.** For one target a trace needs the
-   edges arriving at it plus that repo's own record — one indexed query and one
-   file read, with no fleet-wide structure in memory at any point.
-
-Step 2 also removes the quadratic scan `OI-14` left in place: a route index built
-once and keyed by significant segments turns each lookup into a hash hit rather
-than a scan over every route in the fleet.
-
-### Suggested tests
-
-* A metabase whose records are larger than a deliberately small memory budget
-  still traces, demonstrating streaming rather than loading. Assert peak RSS via
-  `resource.getrusage`, with a generous bound — the point is the shape of the
-  curve, not a number.
-* Peak memory for a trace is flat as the fleet grows, where today it is linear.
-  Two fleet sizes and a ratio assertion is enough; an absolute threshold would
-  be machine-dependent and flaky.
-* The persisted index and a freshly-computed one produce identical edges, so the
-  artefact cannot drift from the code that reads it.
-* A stale index — one built from a metabase that has since changed — is detected
-  rather than silently trusted.
-
-### Residual not covered
-
-The build phase itself still has to hold whatever the extractors need per repo.
-This issue is about the *aggregate* structures; a single pathological repository
-large enough to exhaust memory on its own is `TA-001`'s territory, not this one.
 
 ---
 

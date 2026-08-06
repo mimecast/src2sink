@@ -35,6 +35,14 @@ _POST_RECORD_PACKAGES = (".aggregators.", ".renderers.", ".models.")
 # a reason, because an entry here is a hole in the gate by consent.
 _EXEMPT: dict[str, str] = {
     "src2sink": "package docstring only; no importable behaviour",
+    "src2sink.index_store": (
+        "read-side cache of already-written records (OI-15). It reads records "
+        "and writes index.sqlite3; nothing it does can change what a record "
+        "says, so a fingerprint bump here would force a fleet rescan for a "
+        "change to a cache. Staleness is handled instead by fleet_signature, "
+        "which folds in SCHEMA_VERSION and DERIVATION_VERSION and invalidates "
+        "the index whenever either moves."
+    ),
 }
 
 

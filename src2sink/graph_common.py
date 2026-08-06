@@ -41,15 +41,32 @@ REDIS_URL_RX = re.compile(
 )
 
 
-def load_v2_repo_records(
+def v2_record_paths(
     metabase_root: Path,
     *,
     json_paths: list[Path] | None = None,
-) -> list[dict[str, Any]]:
-    """Load v2 metabase repo records, skipping unreadable or mismatched-schema files."""
-    paths = json_paths or sorted(metabase_root.glob("repos/*/*.json"))
-    records: list[dict[str, Any]] = []
-    for jp in paths:
+) -> list[Path]:
+    """The record files a metabase is made of, in a stable order.
+
+    Split out because the index's freshness check needs the file list without
+    reading any of them (`OI-15`).
+    """
+    return json_paths or sorted(metabase_root.glob("repos/*/*.json"))
+
+
+def iter_v2_repo_records(
+    metabase_root: Path,
+    *,
+    json_paths: list[Path] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield v2 repo records one at a time, skipping unreadable or mismatched files.
+
+    The streaming form of :func:`load_v2_repo_records`. A caller that consumes
+    each record and keeps only what it needs holds one record at a time instead
+    of the fleet — which at 34 GB on disk is the difference between running and
+    being killed (`OI-15`).
+    """
+    for jp in v2_record_paths(metabase_root, json_paths=json_paths):
         try:
             data = json.loads(jp.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -57,8 +74,36 @@ def load_v2_repo_records(
         if data.get("schema_version") != SCHEMA_VERSION:
             continue
         data["_json_path"] = str(jp)
-        records.append(data)
-    return records
+        yield data
+
+
+def load_v2_repo_records(
+    metabase_root: Path,
+    *,
+    json_paths: list[Path] | None = None,
+) -> list[dict[str, Any]]:
+    """Load v2 metabase repo records, skipping unreadable or mismatched-schema files.
+
+    Holds the whole fleet. Retained because aggregation genuinely needs several
+    passes over it, but a reader that touches one repo should use
+    :func:`iter_v2_repo_records` or the persisted index instead.
+    """
+    return list(iter_v2_repo_records(metabase_root, json_paths=json_paths))
+
+
+def load_one_v2_repo_record(json_path: Path) -> dict[str, Any] | None:
+    """Read a single repo record, or None if it is unreadable or the wrong schema.
+
+    What a trace needs once the index has told it which file to open.
+    """
+    try:
+        data: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("schema_version") != SCHEMA_VERSION:
+        return None
+    data["_json_path"] = str(json_path)
+    return data
 
 
 def repo_id(data: dict[str, Any]) -> str:
@@ -304,6 +349,17 @@ def resolve_repo_for_host(host: str, alias_to_repo: dict[str, str]) -> str | Non
 
 
 _MATCH_CONF_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def confidence_rank(confidence: str) -> int:
+    """Map a confidence label to a sortable rank; unknown labels rank lowest.
+
+    The single definition of "stronger evidence", because the project compares
+    confidences in several places and had three copies of this map. An unknown
+    label ranking 0 is deliberate: a confidence nobody recognises should lose to
+    one that is understood, not silently outrank it.
+    """
+    return _MATCH_CONF_RANK.get(confidence, 0)
 
 
 def _names_a_destination(norm: str) -> bool:

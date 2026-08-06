@@ -160,9 +160,24 @@ assume today's node families are all there will be.
 4. **Incremental index maintenance** — only changed repo versions recompute,
    which is what makes 34 GB tractable.
 
-**Exit:** peak memory for a trace is flat as the fleet grows (ratio assertion
-across two fleet sizes, not an absolute threshold); a persisted index and a
-freshly computed one produce identical edges.
+**Exit:** ✅ **Done** for the read path. `src2sink/index_store.py` persists the
+four things a trace consults, keyed by target repo, and `run_trace` queries them.
+
+The exit criterion was met by a stronger assertion than the one planned. Rather
+than a memory ratio across two fleet sizes — machine-dependent, and unobservable
+through `ru_maxrss`, which is a high-water mark that never falls — the test makes
+loading the fleet *raise* and requires the trace to succeed anyway. A trace that
+passes that provably held no fleet-wide structure. The "identical edges" half is
+tested directly, across four path filters.
+
+Steps 1 and 4 remain: aggregation still loads the fleet (it needs several
+passes), and the index is rebuilt whole rather than incrementally.
+
+**Found while doing it:** `OI-29`. The index ordered rows differently from the
+live computation and the two disagreed, which exposed a merge that kept the
+*last* edge per caller rather than the strongest — so a `high` edge was routinely
+overwritten by a `low` one. Two independently-ordered computations of the same
+answer is a test the codebase did not have.
 
 ### Phase 3 — intra-repo reachability (`OI-17`)
 

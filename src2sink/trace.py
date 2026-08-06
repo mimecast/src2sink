@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,16 +21,20 @@ from typing import Any
 from .aggregators.payload_producers import build_producer_indices
 from .aggregators.service_calls import CallEdge, collect_service_edges
 from .graph_common import (
+    confidence_rank,
     extract_urls_and_paths,
     host_matches_repo,
     iter_nodes,
+    load_one_v2_repo_record,
     load_v2_repo_records,
     normalize_path_template,
     path_filter_matches,
     repo_id,
     repo_name_aliases,
     store_key_from_node,
+    v2_record_paths,
 )
+from .index_store import FleetIndex, OutboundNode, open_index, outbound_nodes_of
 from .internal_groups import (
     add_internal_groups_arguments,
     apply_internal_groups_from_args,
@@ -217,12 +221,15 @@ def _raw_references_target(
     return any(alias in raw.lower() for alias in aliases)
 
 
-def _find_upstream_from_nodes(
-    records: list[dict[str, Any]],
+def _target_match_terms(
     target: str,
     path_filter: str | None,
-) -> list[UpstreamHit]:
-    """Find upstream callers by scanning http-out nodes across all repos for raw literals referencing the target."""
+) -> tuple[set[str], set[str]]:
+    """The path terms and name aliases that identify ``target`` in a raw literal.
+
+    Computed once per trace rather than per node: over a fleet this loop runs
+    for every outbound call site in every repo.
+    """
     _, name = target.split("/", 1)
     aliases = repo_name_aliases(name)
     binding = next((b for b in get_bindings() if b.target_repo == target), None)
@@ -230,44 +237,85 @@ def _find_upstream_from_nodes(
     if path_filter:
         path_terms.add(path_filter)
         path_terms.add(normalize_path_template(path_filter))
+    return path_terms, aliases
 
+
+def _hit_for_outbound_node(
+    node: OutboundNode,
+    target: str,
+    path_filter: str | None,
+    path_terms: set[str],
+    aliases: set[str],
+) -> UpstreamHit | None:
+    """Classify one outbound node as evidence of a call to ``target``, or not."""
+    ref = f"{node.file}:{node.line}"
+    # A binding-resolved node names its target outright: it is the one kind of
+    # caller whose source contains no literal to scan for.
+    if node.target_repo == target:
+        return UpstreamHit(
+            source_repo=node.source_repo,
+            kind="api-client-binding",
+            confidence="high",
+            evidence=str(
+                node.target_repo_evidence
+                or node.import_name
+                or node.client
+                or "api-client binding",
+            )[:140],
+            ref=ref,
+        )
+    if node.raw and _raw_references_target(
+        node.raw, target, path_filter, path_terms, aliases
+    ):
+        return UpstreamHit(
+            source_repo=node.source_repo,
+            kind="http-out-raw",
+            confidence="medium",
+            evidence=node.raw[:140],
+            ref=ref,
+        )
+    return None
+
+
+def _upstream_from_outbound_nodes(
+    nodes: Iterable[OutboundNode],
+    target: str,
+    path_filter: str | None,
+) -> list[UpstreamHit]:
+    """Find upstream callers among outbound nodes referencing the target.
+
+    Takes flattened nodes rather than records so the same implementation serves
+    both sources: a live scan over loaded records, and a streamed query against
+    the persisted index (`OI-15`). One body means the index cannot answer
+    differently from the code that built it — the drift the issue's "identical
+    edges" test exists to rule out.
+    """
+    path_terms, aliases = _target_match_terms(target, path_filter)
     hits: list[UpstreamHit] = []
-    for data in records:
-        src = repo_id(data)
-        if src == target:
+    for node in nodes:
+        if node.source_repo == target:
             continue
-        for node in iter_nodes(data):
-            family = node.get("family")
-            if family not in ("http-out", "api-client-consumer"):
-                continue
-            detail = node.get("detail") or {}
-            ref = f"{node.get('file')}:{node.get('line')}"
-            # A binding-resolved node names its target outright: it is the one
-            # kind of caller whose source contains no literal to scan for.
-            if detail.get("target_repo") == target:
-                hits.append(UpstreamHit(
-                    source_repo=src,
-                    kind="api-client-binding",
-                    confidence="high",
-                    evidence=str(
-                        detail.get("target_repo_evidence")
-                        or detail.get("import")
-                        or detail.get("client")
-                        or "api-client binding",
-                    )[:140],
-                    ref=ref,
-                ))
-                continue
-            raw = detail.get("raw", "")
-            if raw and _raw_references_target(raw, target, path_filter, path_terms, aliases):
-                hits.append(UpstreamHit(
-                    source_repo=src,
-                    kind="http-out-raw",
-                    confidence="medium",
-                    evidence=raw[:140],
-                    ref=ref,
-                ))
+        hit = _hit_for_outbound_node(node, target, path_filter, path_terms, aliases)
+        if hit is not None:
+            hits.append(hit)
     return hits
+
+
+def _find_upstream_from_nodes(
+    records: list[dict[str, Any]],
+    target: str,
+    path_filter: str | None,
+) -> list[UpstreamHit]:
+    """Find upstream callers by scanning http-out nodes across all repos for raw literals referencing the target."""
+    return _upstream_from_outbound_nodes(
+        (
+            node
+            for data in records
+            for node in outbound_nodes_of(data, repo_id(data))
+        ),
+        target,
+        path_filter,
+    )
 
 
 _SCAN_SUFFIXES = frozenset(
@@ -378,31 +426,6 @@ def _scan_repos_for_literals(
     return hits
 
 
-def _merge_producer_indices(
-    upstream: dict[tuple[str, str], UpstreamHit],
-    indices: list[Any],
-    target_repo: str,
-    path_filter: str | None,
-) -> None:
-    """Merge payload-producer-index hits into the upstream map (skip duplicates)."""
-    for index in indices:
-        if index.binding.target_repo != target_repo:
-            continue
-        for phit in index.hits:
-            if path_filter and phit.path not in ("*", "") and path_filter not in phit.path:
-                if not path_filter_matches(phit.path, path_filter):
-                    continue
-            key = (phit.source_repo, f"producer-index:{phit.kind}")
-            if key not in upstream:
-                upstream[key] = UpstreamHit(
-                    source_repo=phit.source_repo,
-                    kind=phit.kind,
-                    confidence=phit.confidence,
-                    evidence=phit.evidence,
-                    ref=phit.ref,
-                )
-
-
 def _resolve_fleet_derivations(
     metabase_root: Path,
     repos_root: Path | None,
@@ -427,6 +450,141 @@ def _resolve_fleet_derivations(
     return service_edges, producer_indices
 
 
+def _assemble_upstream(
+    report: TraceReport,
+    graph_hits: Iterable[UpstreamHit],
+    node_hits: Iterable[UpstreamHit],
+    producer_hits: Iterable[UpstreamHit],
+    *,
+    repos_root: Path | None,
+    scan_repos: bool,
+    path_filter: str | None,
+) -> None:
+    """Merge caller hits from every source into ``report``, first source winning.
+
+    Precedence is the point, and it is why this is one function rather than
+    inlined at each call site: the graph edge is the most specific claim, a raw
+    literal the least, and the indexed and loading paths must resolve a conflict
+    the same way or the two would disagree about the same fleet.
+
+    Within a source, the *strongest* evidence wins rather than the last seen
+    (`OI-29`). `collect_service_edges` emits several edges for one caller — one
+    per route it might be addressing — so "last wins" reported whichever the
+    collector happened to yield last, and a `high` edge was routinely overwritten
+    by a `low` one for the same caller. This matches what `payload_producers`
+    already does when merging its own hits.
+    """
+    upstream: dict[tuple[str, str], UpstreamHit] = {}
+
+    def offer(key: tuple[str, str], hit: UpstreamHit) -> None:
+        """Keep ``hit`` only if nothing stronger is already recorded for ``key``."""
+        prev = upstream.get(key)
+        if prev is None or confidence_rank(hit.confidence) > confidence_rank(prev.confidence):
+            upstream[key] = hit
+
+    for hit in graph_hits:
+        offer((hit.source_repo, hit.kind), hit)
+    for hit in node_hits:
+        offer((hit.source_repo, hit.kind), hit)
+
+    if scan_repos and repos_root:
+        for hit in _scan_repos_for_literals(repos_root, report.target_repo, path_filter):
+            offer((hit.source_repo, hit.kind), hit)
+
+    for hit in producer_hits:
+        offer((hit.source_repo, f"producer-index:{hit.kind}"), hit)
+
+    report.upstream = sorted(
+        upstream.values(),
+        key=lambda h: (h.confidence, h.source_repo),
+    )
+
+
+def _producer_hits_from_indices(
+    indices: list[Any],
+    target_repo: str,
+    path_filter: str | None,
+) -> Iterator[UpstreamHit]:
+    """Yield producer-index hits for one target, in the loading path's shape."""
+    for index in indices:
+        if index.binding.target_repo != target_repo:
+            continue
+        for phit in index.hits:
+            if _producer_path_matches(phit.path, path_filter):
+                yield UpstreamHit(
+                    source_repo=phit.source_repo,
+                    kind=phit.kind,
+                    confidence=phit.confidence,
+                    evidence=phit.evidence,
+                    ref=phit.ref,
+                )
+
+
+def _producer_path_matches(path: str, path_filter: str | None) -> bool:
+    """Whether a producer hit's path survives ``path_filter``."""
+    if not path_filter or path in ("*", ""):
+        return True
+    if path_filter in path:
+        return True
+    return path_filter_matches(path, path_filter)
+
+
+def _trace_from_index(
+    index: FleetIndex,
+    target: str,
+    *,
+    path_filter: str | None,
+    repos_root: Path | None,
+    scan_repos: bool,
+) -> TraceReport:
+    """Answer a trace from the persisted index, holding no fleet-wide structure.
+
+    The whole of `OI-15` in one function: one record read, three keyed queries,
+    and every result streamed. Peak memory is a function of what arrives at the
+    target, not of how large the fleet is.
+    """
+    record_path = index.record_path(target)
+    data = load_one_v2_repo_record(record_path) if record_path else None
+    if data is None:
+        raise SystemExit(f"Target repo not found in v2 metabase: {target}")
+
+    report = _collect_target_facts(data, path_filter)
+    edges = [
+        CallEdge(
+            source_repo=source_repo,
+            target_repo=target,
+            target_path=target_path,
+            confidence=confidence,
+            evidence=evidence,
+            refs=refs,
+        )
+        for source_repo, target_path, confidence, evidence, refs
+        in index.call_edges_into(target)
+    ]
+    _assemble_upstream(
+        report,
+        _find_upstream_from_graph(edges, report.target_repo, path_filter),
+        _upstream_from_outbound_nodes(
+            index.outbound_nodes(exclude_repo=target), report.target_repo, path_filter,
+        ),
+        (
+            UpstreamHit(
+                source_repo=row.source_repo,
+                kind=row.kind,
+                confidence=row.confidence,
+                evidence=row.evidence,
+                ref=row.ref,
+            )
+            for row in index.producer_hits_for(target)
+            if _producer_path_matches(row.path, path_filter)
+        ),
+        repos_root=repos_root,
+        scan_repos=scan_repos,
+        path_filter=path_filter,
+    )
+    return report
+
+
 def run_trace(
     metabase_root: Path,
     target: str,
@@ -437,12 +595,28 @@ def run_trace(
     records: list[dict[str, Any]] | None = None,
     producer_indices: list[Any] | None = None,
     service_edges: list[CallEdge] | None = None,
+    use_index: bool = True,
 ) -> TraceReport:
     """Run a full endpoint-anchored trace: target facts plus upstream callers from all sources.
 
     ``records``, ``producer_indices`` and ``service_edges`` are fleet-wide and
     independent of ``target``; see :func:`_resolve_fleet_derivations`.
+
+    With none of them supplied and a fresh index present, the trace is answered
+    from the index and the fleet is never loaded (`OI-15`). A caller that passes
+    its own fleet data has already paid for it, so it is used as given.
     """
+    if use_index and records is None and producer_indices is None and service_edges is None:
+        index = open_index(metabase_root, v2_record_paths(metabase_root))
+        if index is not None:
+            with index:
+                return _trace_from_index(
+                    index, target,
+                    path_filter=path_filter,
+                    repos_root=repos_root,
+                    scan_repos=scan_repos,
+                )
+
     records = load_v2_repo_records(metabase_root) if records is None else records
     data = _target_record(records, target)
     if data is None:
@@ -453,26 +627,14 @@ def run_trace(
     )
 
     report = _collect_target_facts(data, path_filter)
-    upstream: dict[tuple[str, str], UpstreamHit] = {}
-
-    for hit in _find_upstream_from_graph(service_edges, report.target_repo, path_filter):
-        upstream[(hit.source_repo, hit.kind)] = hit
-    for hit in _find_upstream_from_nodes(records, report.target_repo, path_filter):
-        key = (hit.source_repo, hit.kind)
-        if key not in upstream:
-            upstream[key] = hit
-
-    if scan_repos and repos_root:
-        for hit in _scan_repos_for_literals(repos_root, report.target_repo, path_filter):
-            key = (hit.source_repo, hit.kind)
-            if key not in upstream:
-                upstream[key] = hit
-
-    _merge_producer_indices(upstream, indices, report.target_repo, path_filter)
-
-    report.upstream = sorted(
-        upstream.values(),
-        key=lambda h: (h.confidence, h.source_repo),
+    _assemble_upstream(
+        report,
+        _find_upstream_from_graph(service_edges, report.target_repo, path_filter),
+        _find_upstream_from_nodes(records, report.target_repo, path_filter),
+        _producer_hits_from_indices(indices, report.target_repo, path_filter),
+        repos_root=repos_root,
+        scan_repos=scan_repos,
+        path_filter=path_filter,
     )
     return report
 

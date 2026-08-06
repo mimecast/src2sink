@@ -2048,3 +2048,162 @@ records every run, so nothing is served stale.
 Cross-repo edges resolved through a bare `/v1`, `/api`, `/service` or `/{id}`
 disappear. These are the edges `OI-24` was raised to remove and did not reach, so
 anyone who saw no change from `OI-24` in 2.1.0 will see it now.
+
+---
+
+## OI-15 — The whole fleet is held in memory, so a large metabase cannot be read at all
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** _this PR_  
+**Tests:** `tests/test_fleet_index.py` — 20 cases: the indexed trace with fleet-loading made an error, index/live agreement under four path filters, six staleness shapes (edit, addition, removal, vanished record, version mismatch, corruption), fallback behaviour, and the storage invariants.
+
+### Symptom
+
+Projected from measurement before anyone hit it; **triggered in 2026-08** when
+the fleet passed 34 GB and a trace completed only by swapping.
+
+`run_trace` read every repo record in the metabase to answer a question about one
+repo. Deserialised JSON runs ~6.5x its size on disk, so 34 GB on disk needs
+~222 GB resident merely to be held. Past that the tool does not run slowly; it is
+killed, with no partial result and nothing to bisect.
+
+### Root cause
+
+`load_v2_repo_records` returns a `list` of every record, and `run_trace` was
+written against that list — for the target lookup, for `collect_service_edges`,
+and for the outbound-node scan.
+
+### What the fix is not
+
+The 3.0 plan held that this was blocked by **Finding A**: 14 aggregators fuse
+computation with rendering, so there was said to be no computed value to persist.
+That was wrong, and reading `trace` rather than the aggregator inventory showed
+it: **`trace` reads none of the rendered artefacts.** All three of its fleet-wide
+calls were already pure, and `run_trace` already returned a `TraceReport` that
+was rendered separately.
+
+The fused aggregators block persisting the *catalogue views*. They do not block
+persisting the *trace inputs*, and it is the trace inputs that make `trace` slow.
+So ~2,400 lines of refactoring across 13 modules was removed from the critical
+path. See §2a of `docs/plans/src2sink-3.0-plan.md`.
+
+### The fix
+
+`src2sink/index_store.py` persists to `metabase/index.sqlite3`, during
+aggregation, exactly the four things a trace consults — each keyed by target
+repo:
+
+| what | why it is enough |
+|---|---|
+| `repo` — repo id → JSON path | a trace reads exactly one record, so the records stay in their files |
+| `call_edge` — indexed on `target_repo` | replaces `collect_service_edges` over the fleet |
+| `outbound_node` — the `http-out` / `api-client-consumer` subset | replaces scanning every node of every record |
+| `producer_hit` — indexed on `target_repo` | replaces `build_producer_indices` |
+
+`FleetIndex` streams rows rather than fetching them into lists, which is the
+property that matters: peak memory is a function of what arrives at the target,
+not of fleet size.
+
+**Drift is prevented structurally, not by discipline.** `_find_upstream_from_nodes`
+was refactored so the live scan and the indexed query feed *the same*
+`_upstream_from_outbound_nodes`. The index is a cache of this code's output
+rather than a second implementation of it, so the two cannot answer differently.
+
+**Staleness is checked on every read.** `fleet_signature` hashes each record's
+size and mtime together with `SCHEMA_VERSION` and `DERIVATION_VERSION`; a
+mismatch returns `None` and the caller falls back to loading. Content hashing was
+rejected — hashing 34 GB to decide whether a cache is fresh costs more than the
+cache saves — and the versions cover every change originating in the tool.
+A missing, corrupt or foreign index is a cache miss, never an error.
+
+### How it is tested
+
+The issue suggested asserting peak RSS. The tests deliberately do not: an RSS
+bound is machine-dependent, flaky on a shared runner, and since `ru_maxrss` is a
+high-water mark that never falls it cannot observe the thing it claims to.
+
+The structural assertion is exact instead — **make loading the fleet raise, and
+require the trace to succeed anyway**:
+
+```python
+monkeypatch.setattr(trace_mod, "load_v2_repo_records", explode)
+report = run_trace(tmp_path, _TARGET_ID)     # passes only if the fleet is never loaded
+```
+
+A trace that passes that provably held no fleet-wide structure, on any machine.
+
+### Residual not covered
+
+* The `outbound_node` table is *scanned*, not looked up, because a caller is
+  usually identified by a literal inside `raw` that no key can answer. Memory
+  stays flat, which is what this issue is about; the remaining time cost is
+  bounded by a table far smaller than the fleet.
+* Aggregation still loads the fleet — it genuinely needs several passes. This
+  issue is about the *read* path; making the build streaming is separate work.
+* The index is rebuilt whole rather than incrementally. Step 4 of the proposed
+  fix (only changed repo versions recompute) is not done, and is what the
+  versioning design's keys exist to enable.
+
+---
+
+## OI-29 — A caller's reported confidence was whichever edge came last
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** _this PR_  
+**Tests:** `tests/test_fleet_index.py::test_the_index_and_a_fresh_computation_agree` and the four path-filter cases; the change is pinned by `tests/fixtures/characterization-snapshots/run_trace_sql_runner_api.json`.
+
+### Symptom
+
+Found while building the `OI-15` index, and only because the index ordered rows
+differently from the live computation. The two paths disagreed about the same
+fleet:
+
+```
+indexed :  fulfilment/fulfilment-commons  http-out-graph  high
+computed:  fulfilment/fulfilment-commons  http-out-graph  low
+```
+
+The real fixture understated a finding the same way — `acme/api-consumer` was
+reported at `low` when a `medium` edge for that caller existed.
+
+### Root cause
+
+`collect_service_edges` emits **several edges per caller**, one per route it
+might be addressing, at different confidences. The merge in `run_trace` was:
+
+```python
+for hit in _find_upstream_from_graph(...):
+    upstream[(hit.source_repo, hit.kind)] = hit     # last wins
+```
+
+Plain assignment, so the surviving hit was whichever edge the collector happened
+to yield last — an arbitrary order, not a meaningful one. A `high` edge was
+routinely overwritten by a `low` one for the same caller.
+
+This mattered more than a cosmetic label. The output is an *indicator* meant to
+tell a reader where to dig; reporting `low` where `high` evidence exists
+suppresses the lead it was supposed to raise.
+
+### The fix
+
+Keep the strongest evidence per key rather than the last seen. This is what
+`payload_producers` already did when merging its own hits, so the fix makes the
+trace consistent with the project's existing rule rather than inventing one.
+
+The three separate copies of the confidence rank map were replaced by a single
+`graph_common.confidence_rank`, since having three was how the two merge sites
+came to disagree in the first place.
+
+Only within-source merging changes: the four evidence `kind`s are distinct per
+source, so no source's precedence over another moved.
+
+### Why it had not been caught
+
+Nothing compared two independently-ordered computations of the same answer. The
+characterization snapshot recorded the buggy value as correct, which is what a
+characterization snapshot is for — it pins behaviour, and pinning includes
+pinning a defect until something else disputes it. The index was that something.

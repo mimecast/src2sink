@@ -195,17 +195,9 @@
       "cyclomatic": 14,
       "cognitive": 13
     },
-    "src2sink/trace.py:_find_upstream_from_nodes": {
-      "cyclomatic": 16,
-      "cognitive": 19
-    },
     "src2sink/trace.py:_iter_consumer_files": {
       "cyclomatic": 10,
       "cognitive": 20
-    },
-    "src2sink/trace.py:_merge_producer_indices": {
-      "cyclomatic": 9,
-      "cognitive": 16
     },
     "src2sink/trace.py:render_trace_markdown": {
       "cyclomatic": 14,
