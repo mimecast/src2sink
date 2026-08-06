@@ -1083,7 +1083,7 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
-        id="OI33-M1",
+        id="OI35-M1",
         file="src2sink/aggregators/api_client_discovery.py",
         old="    repos_by_class = _repos_by_class(records)\n",
         new="",
@@ -1095,7 +1095,7 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
-        id="OI33-M2",
+        id="OI35-M2",
         file="src2sink/aggregators/api_client_discovery.py",
         old="            cls = _enclosing_class(str(node.get(\"file\", \"\")))\n"
             "            if cls:\n"

@@ -1,4 +1,4 @@
-"""OI-33: api-client discovery rescanned the whole fleet per class.
+"""OI-35: api-client discovery rescanned the whole fleet per class.
 
 Reported from the field: *"discovery is a quadratic scan."* It was, and in the
 worst shape rather worse than quadratic.

@@ -64,7 +64,9 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
-| OI-33 | 33 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
+| OI-33 | 33 | Discovery's two passes never agree, so `discovery_method: "both"` is unreachable | small | 23 candidates that two independent evidence paths corroborate are split into weaker halves; 79 would promote to broken edges | **P1** |
+| OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Needs a product decision first** | **P1** |
+| OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -470,7 +472,7 @@ Two further consequences of the same malformed value:
 
 ### Proposed fix
 
-**Do not truncate to two segments.** `group/subgroup/repo` is a legitimate GitLab path and this estate contains such repos (see §11), so a segment-count rule would corrupt them. Resolve against the set of ids the metabase actually knows, longest match first:
+**Do not truncate to two segments.** `group/subgroup/repo` is a legitimate GitLab path and this estate contains such repos (see `OI-34`), so a segment-count rule would corrupt them. Resolve against the set of ids the metabase actually knows, longest match first:
 
 ```python
 def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
@@ -493,12 +495,51 @@ def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
 
 Apply it where `_collect_candidates` sets `target_repo`, so both passes speak one identity from the start. Verified against the fleet: **117 of 117** supply-side targets resolve to a known repo id, none unresolvable.
 
-Keep the raw resolved path — it is strictly more information than the repo id, and §11 may want it:
+Keep the raw resolved path — it is strictly more information than the repo id, and `OI-34` may want it:
 
 ```python
 cand["target_repo"] = _canonical_repo_id(resolved, known) or ""
 cand["target_module"] = resolved      # e.g. "group/repo/some-client"
 ```
+
+### Review — confirmed, and the blast radius is larger than stated
+
+Root cause verified in the source. `_collect_candidates` sets
+`target_repo = resolve(coord) or ""` (the declaring *directory*), while the
+demand-side target comes from the inbound index, built from `repo_id(data)` —
+`f"{group}/{name}"`. The exact-string lookup in `_apply_demand_side` cannot
+bridge them. The proposed longest-known-match fix is the right shape: it needs no
+depth rule and no `.git`, both of which this estate defeats.
+
+Three further consequences of the same malformed value, none of them in the
+report:
+
+* **It suppresses `paths` too.** `paths_by_repo.get(target, ())` is keyed by repo
+  id, so a 3-segment target yields *no* paths — and a binding with no paths
+  cannot match a route. The 79 candidates are not merely unmerged, they are
+  substantively weaker.
+* **It suppresses confidence, as a direct consequence.** `_confidence` returns
+  `"high" if has_paths else "medium"`, so those candidates are capped at `medium`
+  *because* of the bad key. Fixing the identity will move a number of them to
+  `high` — expect the confidence distribution to shift, and do not read that as a
+  regression.
+* **`service_aliases` is corrupted.** It is `[target.split("/")[-1]]`, which for
+  `group/repo/some-client` yields `some-client` — the build module, not the
+  service. Alias matching is how a hand-rolled caller is recognised, so this
+  misdirects the very pass the alias exists for.
+
+**The defect was rationalised into the design.** `_confidence` already carries
+the comment `# resolved to a path not present as a scanned repo` for exactly this
+case — the code knew the state occurred and treated it as legitimate rather than
+as a symptom. Worth changing that comment when the fix lands, or the next reader
+will re-derive the same wrong conclusion.
+
+**On the tests:** `test_both_is_reachable` is the important one and should assert
+against a fixture where a supply-side and a demand-side candidate genuinely
+describe one service, not a hand-built pair — `both` has never occurred in a real
+run, so nothing has ever exercised that merge branch and a mock would only prove
+the mock. A guard that no emitted candidate carries an empty `target_repo` is
+worth adding alongside, since the 8 empties are the resolver failing silently.
 
 ### Suggested tests
 
@@ -552,13 +593,13 @@ Across the fleet, **15 records have three or more build-bearing subdirectories a
 
 - Every edge to or from any subsumed project is attributed to the aggregate, so the graph cannot say *which* service is involved.
 - A call *between* two subsumed projects becomes a self-edge, and `_append_path_edge` drops self-edges outright — so genuine cross-project calls disappear entirely.
-- It explains §10's identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
+- It explains `OI-33`'s identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
 
 ### Why this is a question, not a fix
 
 Two defensible positions, and the right answer depends on intent:
 
-1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. §10's fix is the whole answer).
+1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. `OI-33`'s fix is the whole answer).
 2. **The project is the unit of analysis.** Nested-subgroup projects deserve their own nodes, and the two-level walk is under-counting the fleet.
 
 These conflict, and the same directory layout supports both readings — an aggregate of 41 sub-projects and a monorepo with 41 modules look identical on disk.
@@ -571,6 +612,32 @@ These conflict, and the same directory layout supports both readings — an aggr
 
 The most reliable signal available is **external**: the staging manifest already enumerates true project paths (`path_with_namespace` per project). Feeding that list in — as an optional `--repo-manifest` — would let the scanner split on real project boundaries without inferring them from the filesystem at all.
 
+### Review — agreed, and it is a question rather than a defect
+
+The two-level walk is confirmed in `_discover_repos`, and framing this as needing
+a product decision is right: the same directory layout genuinely supports both
+readings, and no filesystem signal separates them. The report is also right that
+`.git` is unusable here — and that matters beyond this issue, because `OI-22` is
+filed on the same absence.
+
+Two additions:
+
+* **The self-edge consequence is the most serious part and is understated.** A
+  call between two subsumed projects becomes a self-edge and is *dropped*, so
+  this is not a loss of resolution but a loss of the finding entirely. An
+  aggregate of 41 sub-projects is exactly where intra-estate calls concentrate,
+  so the edges most likely to be lost are the ones most worth having.
+* **The `--repo-manifest` proposal is the strongest option and is also the
+  cheapest.** It sidesteps inference completely, and it composes with `OI-27`
+  (configuration that must be written by hand): both want an authoritative
+  external list of what the estate contains, and one input could serve both.
+
+**Recommendation: take the minimum change now regardless of the decision.**
+Recording the aggregation in `summary.notes` is small, unblocks nothing, and
+stops a 41-project aggregate reading as a single service in the interim. The
+product decision can then be made on evidence — the note makes the scale of the
+aggregation visible per repo, which is exactly the input needed to choose.
+
 ### Minimum change regardless of the decision
 
 Record what was aggregated, so the coarseness is visible rather than assumed:
@@ -582,5 +649,6 @@ summary.notes.append(
 )
 ```
 
-Today a 41-project aggregate and a single-service repo are indistinguishable in the output. That is §13 again.
+Today a 41-project aggregate and a single-service repo are indistinguishable in the output — the recurring
+principle that an absence must never be indistinguishable from a finding.
 

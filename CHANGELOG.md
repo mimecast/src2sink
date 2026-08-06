@@ -89,7 +89,7 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
-- **Api-client discovery rescanned the whole fleet once per class (`OI-33`).**
+- **Api-client discovery rescanned the whole fleet once per class (`OI-35`).**
   The demand-side pass asked "which repos contain a file called `StockClient`"
   by walking every node of every record, once per target *and* per class — so
   node visits grew about 15x for every doubling of the repository count. The

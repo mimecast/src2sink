@@ -2472,13 +2472,13 @@ trading this fix for the one `OI-15` exists to prevent.
 
 ---
 
-## OI-33 — Api-client discovery rescans the whole fleet once per class
+## OI-35 — Api-client discovery rescans the whole fleet once per class
 
 ### Resolution
 
 **Fixed in:** 3.0.0  
 **Commit:** _this PR_  
-**Tests:** `tests/test_discovery_scan_cost.py` — 11 cases: equivalence against the replaced implementation kept as an oracle, one-pass node-visit counts, the growth curve across two fleet sizes, and the over-generic warning the scan exists to produce. Mutants `OI33-M1`, `OI33-M2`.
+**Tests:** `tests/test_discovery_scan_cost.py` — 11 cases: equivalence against the replaced implementation kept as an oracle, one-pass node-visit counts, the growth curve across two fleet sizes, and the over-generic warning the scan exists to produce. Mutants `OI35-M1`, `OI35-M2`.
 
 ### Symptom
 
@@ -2536,14 +2536,14 @@ decides a *safety* warning: a class pattern appearing in too many repositories i
 too generic to accept as a binding, and a reviewer is told so. So the replaced
 implementation is kept in the test file as an **oracle** and the two are asserted
 identical across every shape, including the empty class name and a class present
-nowhere. `OI33-M2` — keying the index on the full path instead of the class name
+nowhere. `OI35-M2` — keying the index on the full path instead of the class name
 — is the mutant for the failure that would otherwise be silent: every lookup
 misses, and the warning simply stops appearing.
 
 ### The pattern this is the third instance of
 
 `OI-30` (producer scan, once per binding), `OI-31` (checkout walk, once per
-filename), and now `OI-33` (fleet scan, once per class). Each is the same shape:
+filename), and now `OI-35` (fleet scan, once per class). Each is the same shape:
 **a loop over what to look for placed outside the loop over where to look.**
 `OI-14` was the first, in the service-call graph. It is worth treating as a
 recognised smell rather than four coincidences — any `for x in things: scan(fleet)`
