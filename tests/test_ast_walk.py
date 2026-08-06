@@ -96,30 +96,25 @@ def test_a_chained_receiver_is_returned_whole() -> None:
 # --------------------------------------------------------------------------
 
 @pytest.mark.skipif("kotlin" not in supported_languages(), reason="kotlin grammar absent")
-def test_kotlin_calls_are_not_named_by_the_java_walker() -> None:
-    """Kotlin yields no AST call sites, and that is a real gap, not a design choice.
+def test_kotlin_calls_are_named_by_the_kotlin_walker() -> None:
+    """Kotlin call sites reach the AST pass (OI-13).
 
-    `extract_call_name` routes Kotlin to `call_name_java_kotlin`, which requires a
-    `method_invocation` node — a Java grammar type that Kotlin's grammar never
-    produces (it uses `call_expression` with `navigation_expression`). So every
-    Kotlin call site is silently invisible to the AST pass, and Kotlin SQL sinks
-    are found only when a regex tier happens to match.
+    Replaces, rather than deletes, the test that asserted the opposite. That test
+    documented a real gap: `extract_call_name` routed Kotlin to
+    `call_name_java_kotlin`, which requires a `method_invocation` node — a Java
+    grammar type Kotlin never produces, since it uses `call_expression` wrapping a
+    `navigation_expression`. So every Kotlin call site was invisible and Kotlin
+    SQL sinks were found only when a regex tier happened to match.
 
-    Asserted rather than fixed here: the fix is a Kotlin-specific walker, which
-    changes detection output and belongs in its own change with its own fixtures.
-    This test documents the boundary so it is a decision rather than a surprise.
+    Kept as a test rather than removed so the gap cannot reopen quietly, which is
+    how it stayed open in the first place.
     """
     raw = b"fun m() { jdbcTemplate.query(SQL) }"
     tree = parse_source("kotlin", raw)
-    assert list(iter_calls(raw, tree.root_node, "kotlin")) == [], (
-        "Kotlin call sites are now being named — if that is intended, this gap is "
-        "closed and the test should assert the new behaviour instead"
-    )
+    names = [name for _node, name in iter_calls(raw, tree.root_node, "kotlin")]
+    assert names == ["query"]
 
 
-# --------------------------------------------------------------------------
-# Defensive branches
-# --------------------------------------------------------------------------
 
 def test_an_unsupported_language_yields_no_calls() -> None:
     """A language with no entry in CALL_NODE_TYPES walks to nothing, not an error."""
@@ -219,3 +214,67 @@ def test_http_language_bucket(language: str, bucket: str | None) -> None:
     from src2sink.extractors.regex_extractors import _http_language_bucket
 
     assert _http_language_bucket(language) == bucket
+
+
+# ---------------------------------------------------------------------------
+# OI-13: Kotlin parity with Java in the AST pass
+# ---------------------------------------------------------------------------
+
+_KOTLIN_DAO = b'''class StockDao(private val jdbcTemplate: JdbcTemplate) {
+    fun find(id: Long): List<Stock> {
+        return jdbcTemplate.query("SELECT ref FROM stock WHERE id = ?", mapper, id)
+    }
+    fun bare() { execute("SELECT 1") }
+    fun chained() { this.dao.findMatching(filter) }
+}'''
+
+
+def test_kotlin_call_receivers_match_the_java_shape() -> None:
+    """The receiver is what tells `jdbcTemplate.execute` from `httpClient.execute`.
+
+    Without it every Kotlin SQL classification falls back to file-level evidence,
+    which `OI-26` showed is too coarse to decide a call on its own.
+    """
+    tree = parse_source("kotlin", _KOTLIN_DAO)
+    found = {
+        name: extract_call_receiver(_KOTLIN_DAO, node, "kotlin")
+        for node, name in iter_calls(_KOTLIN_DAO, tree.root_node, "kotlin")
+    }
+    assert found["query"] == "jdbcTemplate"
+    assert found["bare"] is None if "bare" in found else True
+    assert found["execute"] is None
+    assert found["findMatching"] == "this.dao"
+
+
+def test_a_kotlin_call_is_yielded_once() -> None:
+    """`navigation_expression` is a property access, not a call.
+
+    Listing it as a call node type made `jdbcTemplate.query(...)` arrive twice —
+    once as the call and once as the navigation beneath it — which would double
+    every Kotlin finding.
+    """
+    tree = parse_source("kotlin", _KOTLIN_DAO)
+    names = [name for _n, name in iter_calls(_KOTLIN_DAO, tree.root_node, "kotlin")]
+    assert names.count("query") == 1
+    assert sorted(names) == ["execute", "findMatching", "query"]
+
+
+def test_every_supported_language_names_a_call() -> None:
+    """The class-wide guard: a language in CALL_NODE_TYPES must yield a call name.
+
+    `kotlin` was in the table and produced nothing, because the table and the
+    name extractor disagreed and neither said so.
+    """
+    samples = {
+        "java": (b"class A { void m() { dao.query(SQL); } }", "query"),
+        "kotlin": (b"fun m() { dao.query(SQL) }", "query"),
+        "python": (b"def m():\n    dao.query(SQL)\n", "query"),
+        "javascript": (b"function m() { dao.query(SQL); }", "query"),
+        "go": (b"package p\nfunc m() { dao.Query(SQL) }\n", "Query"),
+    }
+    for language, (raw, expected) in samples.items():
+        if language not in supported_languages():
+            continue
+        tree = parse_source(language, raw)
+        names = [n for _node, n in iter_calls(raw, tree.root_node, language)]
+        assert expected in names, f"{language} yielded {names}"
