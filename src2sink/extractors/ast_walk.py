@@ -199,11 +199,7 @@ def extract_call_arguments(source: bytes, node: Node, language: str) -> list[str
     — and step 3's widening already forces one. Two rescans for work that fits
     in one is the expensive way round.
     """
-    args = None
-    for field in _ARGUMENT_FIELDS:
-        args = node.child_by_field_name(field)
-        if args is not None:
-            break
+    args = _argument_list(node)
     if args is None:
         return []
 
@@ -218,6 +214,19 @@ def extract_call_arguments(source: bytes, node: Node, language: str) -> list[str
             continue
         out.append(node_text(source, child))
     return [a for a in (t.strip() for t in out) if a]
+
+
+def _argument_list(node: Node) -> Node | None:
+    """The node holding a call's arguments, however its grammar spells it."""
+    for field in _ARGUMENT_FIELDS:
+        args = node.child_by_field_name(field)
+        if args is not None:
+            return args
+    # Kotlin names no field: a `call_expression` holds a `value_arguments` child.
+    # Without this every Kotlin call recorded an empty argument list, so no
+    # Kotlin hop could carry taint and step 4 found no Kotlin paths at all — a
+    # clean-looking result for half the JVM fleet.
+    return next((c for c in node.children if c.type == "value_arguments"), None)
 
 
 # The declaration nodes each grammar uses for a class and for a callable. A path
@@ -307,20 +316,46 @@ def _parameter_names(source: bytes, node: Node, language: str) -> list[str]:
     reaching this method carries a tainted value, and the parameter name is what
     the body refers to it by.
     """
-    params = node.child_by_field_name("parameters")
+    params = _parameter_list(node)
     if params is None:
         return []
     out: list[str] = []
     for child in params.children:
         if child.type not in PARAM_NODE_TYPES:
             continue
-        name = child.child_by_field_name("name")
-        if name is not None:
-            out.append(node_text(source, name))
-        elif child.type == "identifier":
-            out.append(node_text(source, child))
+        name = _parameter_name(source, child)
+        if name:
+            out.append(name)
     # `self`/`this` is the receiver, not an input.
     return [p for p in out if p not in ("self", "this")]
+
+
+def _parameter_list(node: Node) -> Node | None:
+    """The node holding a callable's parameters, however its grammar spells it."""
+    params = node.child_by_field_name("parameters")
+    if params is not None:
+        return params
+    # Kotlin exposes no `parameters` field: a `fun` declaration holds a
+    # `function_value_parameters` child instead. So every Kotlin method recorded
+    # an *empty* parameter list from the moment `method-decl` shipped in 2.1.0 —
+    # invisible until `OI-17` step 4 tried to taint one, because the step 1
+    # parity test compared method names and not their parameters.
+    return next(
+        (c for c in node.children if c.type == "function_value_parameters"), None,
+    )
+
+
+def _parameter_name(source: bytes, child: Node) -> str | None:
+    """The name one parameter declaration binds."""
+    name = child.child_by_field_name("name")
+    if name is not None:
+        return node_text(source, name)
+    if child.type == "identifier":
+        return node_text(source, child)
+    # Kotlin's `parameter` names the identifier positionally rather than by
+    # field: `filter: String` is (identifier, ':', user_type).
+    ident = next((c for c in child.children if c.type == "identifier"), None)
+    return node_text(source, ident) if ident is not None else None
 
 
 def iter_method_declarations(

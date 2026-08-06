@@ -322,3 +322,20 @@ def test_the_symbol_table_records_interfaces_separately_from_classes():
     assert table.is_interface["StockService"] is True
     assert table.is_interface["StockServiceImpl"] is False
     assert table.implementations["StockService"] == ["StockServiceImpl"]
+
+
+def test_kotlin_arguments_are_recorded_too():
+    """The step 3 argument test covered Java only, and Kotlin recorded nothing.
+
+    Kotlin names no argument field — a `call_expression` holds a
+    `value_arguments` child — so every Kotlin call carried an empty argument
+    list. No Kotlin hop could carry taint, and step 4 found no Kotlin paths at
+    all: a clean-looking result across half the JVM fleet.
+    """
+    calls = {
+        n.detail["symbol"]: n.detail
+        for n in _observations(_KOTLIN_LAYERED, language="kotlin", rel_path="src/Stock.kt")
+        if n.family == "call-site"
+    }
+    assert calls["process"]["arguments"] == ["req.filter"]
+    assert calls["findMatching"]["arguments"] == ["filter"]

@@ -7,15 +7,19 @@
     "http-in",
     "method-decl",
     "sql",
+    "tainted-path",
     "type-decl"
   ],
-  "node_count": 14,
+  "node_count": 15,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
-        "arguments": [],
+        "arguments": [
+          "\"SELECT ref FROM stock WHERE label = '\" + filter + \"'\"",
+          "mapper"
+        ],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "search",
         "file_sql_evidence": true,
@@ -38,7 +42,11 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
-        "arguments": [],
+        "arguments": [
+          "\"SELECT ref FROM stock WHERE ref = ?\"",
+          "mapper",
+          "ref"
+        ],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "parameterised",
         "file_sql_evidence": true,
@@ -61,7 +69,9 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
-        "arguments": [],
+        "arguments": [
+          "request"
+        ],
         "enclosing_class": "StockQueryBuilder",
         "enclosing_method": "notADatabase",
         "file_sql_evidence": true,
@@ -156,7 +166,9 @@
         "class": "StockQueryBuilder",
         "end_line": 20,
         "method": "search",
-        "params": [],
+        "params": [
+          "filter"
+        ],
         "start_line": 18
       },
       "family": "method-decl",
@@ -174,7 +186,9 @@
         "class": "StockQueryBuilder",
         "end_line": 23,
         "method": "parameterised",
-        "params": [],
+        "params": [
+          "ref"
+        ],
         "start_line": 22
       },
       "family": "method-decl",
@@ -192,7 +206,9 @@
         "class": "StockQueryBuilder",
         "end_line": 25,
         "method": "notADatabase",
-        "params": [],
+        "params": [
+          "request"
+        ],
         "start_line": 25
       },
       "family": "method-decl",
@@ -257,6 +273,34 @@
       "file": "src/StockQueryBuilder.kt",
       "framework": null,
       "kind": "source",
+      "language": "kotlin",
+      "line": 20,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "entry_channel": "/stock/search",
+        "entry_class": "StockQueryBuilder",
+        "entry_mechanism": "http",
+        "entry_method": "search",
+        "externally_triggered": true,
+        "hops": 0,
+        "path": [],
+        "sink_family": "sql",
+        "sink_file": "src/StockQueryBuilder.kt",
+        "sink_line": 20,
+        "sink_symbol": "query",
+        "tainted_at_sink": [
+          "filter"
+        ],
+        "weakest_link": null
+      },
+      "family": "tainted-path",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "finding",
       "language": "kotlin",
       "line": 20,
       "pii_classification": null

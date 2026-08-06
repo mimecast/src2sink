@@ -995,6 +995,88 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI17-M12",
+        file="src2sink/paths.py",
+        old="    hit = _identifiers(text) & tainted\n    return sorted(hit)[0] if hit else None",
+        new="    hit = _identifiers(text)\n    return sorted(hit)[0] if hit else None",
+        selector="tests/test_tainted_paths.py",
+        note=(
+            "The taint set stops being consulted, so any argument mentioning any "
+            "identifier counts as carrying a value — reachability without "
+            "evidence, which reports every sink the service can touch rather than "
+            "the ones a value reaches. Re-derived: the first form removed the "
+            "`if not argument` prune, which SURVIVED, because propagating an empty "
+            "taint set already matches nothing downstream. That prune bounds the "
+            "work; this is the guard that decides the answer."
+        ),
+    ),
+    Mutant(
+        id="OI17-M13",
+        file="src2sink/paths.py",
+        old='        return min(self.hops, key=lambda h: confidence_rank(h.confidence)).confidence',
+        new='        return max(self.hops, key=lambda h: confidence_rank(h.confidence)).confidence',
+        selector="tests/test_tainted_paths.py",
+        note=(
+            "Path confidence becomes the *strongest* hop, so one high-confidence "
+            "link makes a chain of guesses read as trustworthy. The minimum is the "
+            "whole point: a chain is only as good as its weakest resolution."
+        ),
+    ),
+    Mutant(
+        id="OI17-M14",
+        file="src2sink/paths.py",
+        old="            if target in on_path:\n"
+            "                # A cycle. The call graph is allowed to contain one; a path\n"
+            "                # through it twice is the same path, so stop rather than loop.\n"
+            "                continue\n",
+        new="",
+        selector="tests/test_tainted_paths.py",
+        note=(
+            "Cycle detection removed, so `a` calling `b` calling `a` recurses "
+            "until the explored budget stops it — the search stops answering and "
+            "starts burning, and reports truncation for a graph it could have "
+            "walked."
+        ),
+    ),
+    Mutant(
+        id="OI17-M15",
+        file="src2sink/paths.py",
+        old="    return set(_IDENTIFIER_RX.findall(text or \"\"))",
+        new="    return {text or \"\"}",
+        selector="tests/test_tainted_paths.py",
+        note=(
+            "Identifier matching degrades to whole-text equality, so no argument "
+            "ever matches a tainted name and every path disappears — the silent "
+            "false-negative that an exclusion claim must never make."
+        ),
+    ),
+    Mutant(
+        id="OI17-M16",
+        file="src2sink/extractors/ast_walk.py",
+        old='    return next(\n        (c for c in node.children if c.type == "function_value_parameters"), None,\n    )',
+        new="    return None",
+        selector="tests/test_method_structure.py tests/test_tainted_paths.py",
+        note=(
+            "Kotlin parameters stop being read, which is how this shipped in "
+            "2.1.0: Kotlin exposes no `parameters` field, so every Kotlin method "
+            "recorded an empty parameter list. Nothing could be tainted, so no "
+            "Kotlin path existed anywhere in the fleet — and the step 1 parity "
+            "test compared method names, not their parameters."
+        ),
+    ),
+    Mutant(
+        id="OI17-M17",
+        file="src2sink/extractors/ast_walk.py",
+        old='    return next((c for c in node.children if c.type == "value_arguments"), None)',
+        new="    return None",
+        selector="tests/test_call_resolution.py tests/test_tainted_paths.py",
+        note=(
+            "Kotlin call arguments stop being read, so no Kotlin hop can carry "
+            "taint. The same defect as OI17-M16 from the other end, and the same "
+            "consequence: a clean-looking result across half the JVM fleet."
+        ),
+    ),
+    Mutant(
         id="OI15-M1",
         file="src2sink/index_store.py",
         old='    if stored.get("fleet_signature") != fleet_signature(record_paths):\n'

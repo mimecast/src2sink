@@ -320,9 +320,30 @@ Four pieces, in dependency order:
    end for the standard Spring shape across half the JVM fleet, while the Java
    half passed throughout. Exactly the `OI-13` failure mode of a language being
    invisible.
-4. **Tainted-path search.** BFS from entrypoint parameters to sinks, pruning any
-   hop that carries no tainted argument, with confidence degrading along the path
-   and a floor below which nothing is emitted.
+4. ~~**Tainted-path search.**~~ — ✅ shipped, in `src2sink/paths.py`. Search
+   from entrypoint parameters to sinks, pruning any hop that carries no tainted
+   argument.
+
+   *Three parts of this wording were overridden* by
+   `docs/plans/observe-then-classify.md`, which was written later and with
+   measurements:
+   * **depth is unbounded**, not a BFS to a limit — capping at three hops finds
+     25% of what depth eight finds (§5);
+   * **confidence is the minimum hop, never a product** — multiplying takes
+     eight `medium` hops to 0.058 and buries exactly the deep paths that hold
+     the value. Length is recorded beside it and the weakest link is named (§6);
+   * **there is no confidence floor** — §7 retracts it outright. For an
+     indicator a floor converts cheap false positives into expensive, invisible
+     false negatives. Taint pruning stays: that drops hops with no *evidence*,
+     which is a different thing from suppressing on confidence.
+
+   *Found while shipping it:* Kotlin recorded an **empty parameter list for
+   every method**, from the moment `method-decl` shipped in 2.1.0 — Kotlin
+   exposes no `parameters` field, holding a `function_value_parameters` child
+   instead. Nothing could be tainted, so no Kotlin path existed anywhere. The
+   step 1 parity test compared method *names* and not their parameters. The
+   same shape appeared in step 3's argument capture (`value_arguments`), which
+   was tested for Java only.
 
 The path itself is the proof: each hop cites `file:line`, the resolution tier,
 and the argument that carried the value.

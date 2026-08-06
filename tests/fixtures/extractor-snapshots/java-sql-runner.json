@@ -9,9 +9,10 @@
     "raw-code-payload",
     "sql",
     "sql-field-marker",
+    "tainted-path",
     "type-decl"
   ],
-  "node_count": 12,
+  "node_count": 13,
   "nodes": [
     {
       "confidence": "high",
@@ -194,6 +195,34 @@
       "kind": "reference",
       "language": "java",
       "line": 3,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "entry_channel": "/execute",
+        "entry_class": "SqlRunner",
+        "entry_mechanism": "http",
+        "entry_method": "run",
+        "externally_triggered": true,
+        "hops": 0,
+        "path": [],
+        "sink_family": "sql",
+        "sink_file": "src/SqlRunner.java",
+        "sink_line": 6,
+        "sink_symbol": "query",
+        "tainted_at_sink": [
+          "req"
+        ],
+        "weakest_link": null
+      },
+      "family": "tainted-path",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "finding",
+      "language": "java",
+      "line": 6,
       "pii_classification": null
     },
     {

@@ -74,6 +74,10 @@ DERIVATION_INPUT_FILES = (
     # is worth, and those get revised. Watched at the cheaper granularity, so
     # changing a tier rule costs a re-derive over records, not a fleet rescan.
     "src2sink/resolve.py",
+    # `OI-17` step 4. The path search decides what counts as a value
+    # travelling, which is a judgement over recorded observations — revising
+    # it must cost a re-derive, not a fleet rescan.
+    "src2sink/paths.py",
 )
 
 DETECTION_INPUT_DIRS = ("src2sink/extractors",)

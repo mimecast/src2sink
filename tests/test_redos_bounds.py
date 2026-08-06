@@ -31,6 +31,7 @@ from src2sink import (
     graph_common,
     internal_groups as internal_groups_mod,
     library_taint_java,
+    paths,
     repo_utils,
     sanitize,
     trace_batch,
@@ -129,6 +130,10 @@ _HARVESTED_MODULES = (
     sanitize,
     trace_batch,
     traces_index,
+    # `OI-17` step 4. Its identifier pattern runs over argument and sink text
+    # read straight out of scanned source, so it is untrusted input like every
+    # other pattern here.
+    paths,
 )
 ALL_REGEXES = _iter_regexes(*_HARVESTED_MODULES)
 

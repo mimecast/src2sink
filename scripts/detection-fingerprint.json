@@ -1,17 +1,18 @@
 {
   "_comment": "Content fingerprint of the detection inputs, frozen against DETECTION_VERSION. Regenerate with scripts/detection_version_check.py --update.",
   "derivation_files": {
-    "src2sink/derive.py": "3665b11dcdca8a0f505e9210f54f3622548c0c85126825c4ca1e90b20e45d713",
+    "src2sink/derive.py": "368ea70a5d442d7f9a0b08733f28b4d705e4244c2d0b468dbf767a47addcd5b2",
+    "src2sink/paths.py": "994ca5c3998f720c4429ec0a76ed04d753673d7d4039a638b87cf4ebe6f9f445",
     "src2sink/resolve.py": "bff3a10729e644120998584f747a797e6894d6cba4df242b745bd8aec7102b38"
   },
-  "derivation_version": 4,
+  "derivation_version": 5,
   "detection_version": 11,
   "files": {
     "src2sink/build_metabase_v2.py": "6275ee0f784e216309acefcfe4e5006fbba1e5c0d21b7887a7ff48f55304b5b9",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
     "src2sink/dependencies.py": "5247606c04793940d7eee2e1d275b00962beec0b1e2126ee5aa45032049e0387",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
-    "src2sink/extractors/ast_walk.py": "c1c109a85c83b698d84ce53c86c8fe0513566d363e57e05011f937dd459d4cd9",
+    "src2sink/extractors/ast_walk.py": "077677ca0bb693a992a8db857fdae40df413fff1e1c3262e9ec494587bb21aaa",
     "src2sink/extractors/base.py": "f308246442fb03e9f0da86b522c7ff9c0471f721502bd4dc279f188f7eb36d61",
     "src2sink/extractors/config.py": "8cad67e5c7729b68942874619d733ae72a757a50cc7851413f190b9847f50c14",
     "src2sink/extractors/file_context.py": "401a368dc1a885246d5c3bc674bd49f62b0f2b530a529cd75d3343b0f68eb90e",
