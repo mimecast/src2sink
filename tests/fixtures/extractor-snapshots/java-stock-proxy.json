@@ -5,14 +5,17 @@
     "data-class-field",
     "entry-point",
     "http-in",
+    "method-decl",
     "sql-field-marker"
   ],
-  "node_count": 11,
+  "node_count": 13,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockForwarder",
+        "enclosing_method": "forward",
         "file_sql_evidence": false,
         "library_hint": false,
         "parameterised": "unknown",
@@ -33,6 +36,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockForwarder",
+        "enclosing_method": "forward",
         "file_sql_evidence": false,
         "library_hint": false,
         "parameterised": "unknown",
@@ -96,6 +101,8 @@
       "data_class": null,
       "detail": {
         "channel": "/v1/forward",
+        "enclosing_class": "StockForwarder",
+        "enclosing_method": "forward",
         "externally_triggered": true,
         "mechanism": "http",
         "method": "POST"
@@ -112,6 +119,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockForwarder",
+        "enclosing_method": "forward",
         "method": "POST",
         "path": "/v1/forward",
         "raw": "@PostMapping(\"/v1/forward\""
@@ -120,6 +129,47 @@
       "file": "src/StockForwarder.java",
       "framework": "spring",
       "kind": "source",
+      "language": "java",
+      "line": 29,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockForwarder",
+        "end_line": 27,
+        "method": "StockForwarder",
+        "params": [
+          "httpClient",
+          "messageDigest"
+        ],
+        "start_line": 24
+      },
+      "family": "method-decl",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 24,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockForwarder",
+        "end_line": 33,
+        "method": "forward",
+        "params": [
+          "request"
+        ],
+        "start_line": 29
+      },
+      "family": "method-decl",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
       "language": "java",
       "line": 29,
       "pii_classification": null

@@ -2,15 +2,18 @@
   "edge_count": 0,
   "families": [
     "entry-point",
-    "http-in"
+    "http-in",
+    "method-decl"
   ],
-  "node_count": 2,
+  "node_count": 3,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
         "channel": "/items",
+        "enclosing_class": "ItemsController",
+        "enclosing_method": "list",
         "externally_triggered": true,
         "mechanism": "http",
         "method": "GET"
@@ -27,6 +30,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "ItemsController",
+        "enclosing_method": "list",
         "method": "GET",
         "path": "/items",
         "raw": "@GetMapping(\"/items\""
@@ -35,6 +40,24 @@
       "file": "src/ItemsController.java",
       "framework": "spring",
       "kind": "source",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "ItemsController",
+        "end_line": 11,
+        "method": "list",
+        "params": [],
+        "start_line": 8
+      },
+      "family": "method-decl",
+      "file": "src/ItemsController.java",
+      "framework": null,
+      "kind": "reference",
       "language": "java",
       "line": 8,
       "pii_classification": null

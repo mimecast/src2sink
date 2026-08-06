@@ -3,15 +3,18 @@
   "families": [
     "call-site",
     "data-class-field",
+    "method-decl",
     "sql",
     "sql-field-marker"
   ],
-  "node_count": 8,
+  "node_count": 12,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "run",
         "file_sql_evidence": true,
         "library_hint": false,
         "parameterised": "unknown",
@@ -46,6 +49,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "run",
         "field_name": "query"
       },
       "family": "data-class-field",
@@ -60,6 +65,88 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "class": "StockQueryBuilder",
+        "end_line": 16,
+        "method": "StockQueryBuilder",
+        "params": [
+          "jdbcTemplate"
+        ],
+        "start_line": 14
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 14,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryBuilder",
+        "end_line": 20,
+        "method": "byReference",
+        "params": [
+          "ref"
+        ],
+        "start_line": 18
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 18,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryBuilder",
+        "end_line": 24,
+        "method": "byLocation",
+        "params": [
+          "location"
+        ],
+        "start_line": 22
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryBuilder",
+        "end_line": 28,
+        "method": "run",
+        "params": [
+          "ref"
+        ],
+        "start_line": 26
+      },
+      "family": "method-decl",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 26,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "run",
         "execution": true,
         "parameterised": "unknown",
         "raw": "jdbcTemplate.query(byReference(ref), mapper)",
@@ -78,6 +165,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "byReference",
         "pattern": "format-call",
         "snippet": "String.format(\"SELECT * FROM stock WHERE ref = '%s'",
         "subkind": "string-concat"
@@ -94,6 +183,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "StockQueryBuilder",
+        "enclosing_method": "byLocation",
         "pattern": "concatenated",
         "snippet": "\"SELECT * FROM stock WHERE location = '\" +",
         "subkind": "string-concat"

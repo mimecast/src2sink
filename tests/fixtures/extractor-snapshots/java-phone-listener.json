@@ -2,17 +2,20 @@
   "edge_count": 0,
   "families": [
     "entry-point",
+    "method-decl",
     "pii-field",
     "pii-log",
     "queue-sub"
   ],
-  "node_count": 7,
+  "node_count": 8,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
         "channel": "customer-phone-updates",
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "externally_triggered": true,
         "mechanism": "queue",
         "system": "kafka"
@@ -26,9 +29,31 @@
       "pii_classification": null
     },
     {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "PhoneListener",
+        "end_line": 14,
+        "method": "onPhoneUpdate",
+        "params": [
+          "payload"
+        ],
+        "start_line": 10
+      },
+      "family": "method-decl",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
+    {
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phone"
       },
       "family": "pii-field",
@@ -43,6 +68,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -57,6 +84,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -71,6 +100,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -85,6 +116,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phone",
         "raw": "logger.info("
       },
@@ -101,6 +134,8 @@
       "data_class": null,
       "detail": {
         "direction": "consume",
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "system": "kafka",
         "topic": "customer-phone-updates"
       },

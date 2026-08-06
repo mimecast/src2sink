@@ -5,6 +5,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phone",
         "raw": "logger.info("
       },
@@ -22,6 +24,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber",
         "raw": "logger.info("
       },
@@ -41,6 +45,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phone"
       },
       "family": "pii-field",
@@ -57,22 +63,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
-        "field_name": "phone"
-      },
-      "family": "pii-field",
-      "file": "src/PhoneListener.java",
-      "framework": null,
-      "id": "notifications/sms-consumer:src/PhoneListener.java:10:pii-field:source:6d794cb97c40",
-      "kind": "source",
-      "language": "java",
-      "line": 10,
-      "pii_classification": "direct-pii",
-      "repo": "notifications/sms-consumer"
-    },
-    {
-      "confidence": "medium",
-      "data_class": null,
-      "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -89,6 +81,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -105,6 +99,26 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
+        "field_name": "phone"
+      },
+      "family": "pii-field",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "id": "notifications/sms-consumer:src/PhoneListener.java:10:pii-field:source:6d794cb97c40",
+      "kind": "source",
+      "language": "java",
+      "line": 10,
+      "pii_classification": "direct-pii",
+      "repo": "notifications/sms-consumer"
+    },
+    {
+      "confidence": "medium",
+      "data_class": null,
+      "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -121,6 +135,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -137,6 +153,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "PhoneListener",
+        "enclosing_method": "onPhoneUpdate",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -153,6 +171,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -169,6 +189,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": null,
+        "enclosing_method": "send_sms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",

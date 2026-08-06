@@ -91,10 +91,12 @@ def test_every_node_knows_its_enclosing_method():
     placed = {
         n.family: (n.detail.get("enclosing_class"), n.detail.get("enclosing_method"))
         for n in nodes
-        if n.family in ("http-in", "call-site")
+        if n.family in ("http-in", "entry-point")
     }
     assert placed["http-in"] == ("StockController", "submit")
-    assert placed["call-site"] == ("StockController", "submit")
+    # Derived nodes inherit the scope of the observation they came from, because
+    # derivation also runs over a stored record with no extraction context.
+    assert placed["entry-point"] == ("StockController", "submit")
 
 
 def test_a_node_outside_any_method_is_not_falsely_placed():
@@ -103,16 +105,20 @@ def test_a_node_outside_any_method_is_not_falsely_placed():
     Guessing the nearest method would attach a class-level finding to whichever
     method happened to follow it.
     """
+    # The field is declared *after* the method deliberately. With it before, a
+    # containment check that forgot the span end would still leave it unplaced,
+    # and the test would pass while the rule was broken.
     source = """
-    public class Config {
-        private static final String AUDIT_SQL = "SELECT ref FROM stock";
+    public class Payload {
         void run() { }
+        private String sql;
+        private String customerEmail;
     }
     """
-    nodes = _nodes(source, "java", "src/Config.java")
-    sql_sources = [n for n in nodes if n.family == "sql" and n.kind == "source"]
-    assert sql_sources, "fixture must produce a class-level finding"
-    assert sql_sources[0].detail.get("enclosing_method") is None
+    nodes = _nodes(source, "java", "src/Payload.java")
+    fields = [n for n in nodes if n.family in ("data-class-field", "pii-field")]
+    assert fields, "fixture must produce a class-level finding"
+    assert all(f.detail.get("enclosing_method") is None for f in fields)
 
 
 def test_the_innermost_method_wins():

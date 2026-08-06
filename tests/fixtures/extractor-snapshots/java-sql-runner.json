@@ -5,16 +5,19 @@
     "data-class-field",
     "entry-point",
     "http-in",
+    "method-decl",
     "raw-code-payload",
     "sql",
     "sql-field-marker"
   ],
-  "node_count": 8,
+  "node_count": 9,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "file_sql_evidence": false,
         "library_hint": false,
         "parameterised": "unknown",
@@ -49,6 +52,8 @@
       "confidence": "medium",
       "data_class": "dangerous-payload",
       "detail": {
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "field_name": "query"
       },
       "family": "data-class-field",
@@ -64,6 +69,8 @@
       "data_class": null,
       "detail": {
         "channel": "/execute",
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "externally_triggered": true,
         "mechanism": "http",
         "method": "POST"
@@ -80,6 +87,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "method": "POST",
         "path": "/execute",
         "raw": "@PostMapping(\"/execute\""
@@ -94,8 +103,30 @@
     },
     {
       "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "SqlRunner",
+        "end_line": 7,
+        "method": "run",
+        "params": [
+          "req"
+        ],
+        "start_line": 4
+      },
+      "family": "method-decl",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 4,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
       "data_class": "raw-sql-payload",
       "detail": {
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "endpoint_path": "/execute",
         "field_line": 3,
         "sink_line": 6,
@@ -113,6 +144,8 @@
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
         "execution": true,
         "parameterised": "unknown",
         "raw": "jdbcTemplate.query(req.getSql())",

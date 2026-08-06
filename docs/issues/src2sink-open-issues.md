@@ -313,6 +313,35 @@ A decoy `safe(String x)` calling `countAll()` — a static query — was **prune
 because no tainted argument reaches it. That pruning is the difference between a
 finding and a list of everything.
 
+### Progress
+
+**Step 1 landed** (method-level structure, PR #35). Method declarations are
+recorded as `method-decl` observations with class, parameters and span, and every
+node carries the `enclosing_class`/`enclosing_method` it sits in — assigned
+innermost-first, and left unset rather than guessed for a node inside no method.
+Derived nodes inherit scope from the observation they came from, because
+derivation also runs over a stored record with no extraction context.
+
+**Measured while landing it, and it decides step 3.** Call observations are
+emitted only for *sink-shaped* names, because that is what bounded their volume
+when the observation layer was built. On the fixture corpus:
+
+```
+  calls present in the AST:      28
+  recorded as call-site today:    7   (25% of calls)
+  recording every call adds:     21   (+20% of all nodes)
+```
+
+`stockService.process(...)` is the middle of every layered path and is recorded
+**nowhere**. A call graph needs every call, not only the ones that look like
+sinks — so step 3 has to widen the observation, and the cost above is what that
+costs.
+
+Treat +20% as a floor rather than an estimate: the corpus is 12 synthetic files,
+and real code carries far more calls per file — getters, logging, framework
+plumbing. Measure on the fleet before committing to it, and weigh it against
+`OI-15`'s ceiling.
+
 ### Proposed fix
 
 Four pieces, in dependency order:

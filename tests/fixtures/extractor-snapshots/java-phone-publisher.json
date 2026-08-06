@@ -1,15 +1,59 @@
 {
   "edge_count": 0,
   "families": [
+    "method-decl",
     "pii-field",
     "queue-pub"
   ],
-  "node_count": 4,
+  "node_count": 6,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "EventPublisher",
+        "end_line": 10,
+        "method": "EventPublisher",
+        "params": [
+          "kafkaTemplate"
+        ],
+        "start_line": 8
+      },
+      "family": "method-decl",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "EventPublisher",
+        "end_line": 14,
+        "method": "publishSms",
+        "params": [
+          "phoneNumber",
+          "body"
+        ],
+        "start_line": 12
+      },
+      "family": "method-decl",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 12,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -24,6 +68,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phone"
       },
       "family": "pii-field",
@@ -38,6 +84,8 @@
       "confidence": "medium",
       "data_class": null,
       "detail": {
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "field_name": "phoneNumber"
       },
       "family": "pii-field",
@@ -53,6 +101,8 @@
       "data_class": null,
       "detail": {
         "direction": "produce",
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
         "system": "kafka",
         "topic": "customer-phone-updates"
       },

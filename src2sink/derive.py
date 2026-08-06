@@ -48,7 +48,7 @@ from .schema import FlowEdge, FlowNode
 # It lives here rather than in schema.py deliberately. schema.py is a *detection*
 # input, so a bump there would change the detection fingerprint and force the
 # fleet rescan this separation exists to avoid.
-DERIVATION_VERSION = 2
+DERIVATION_VERSION = 3
 
 DERIVED_FAMILIES = frozenset({
     ("sql", "sink"),
@@ -138,13 +138,13 @@ def classify_sql(observations: list[FlowNode]) -> list[FlowNode]:
             language=obs.language,
             kind="sink",
             family="sql",
-            detail={
+            detail=_with_scope({
                 "symbol": d["symbol"],
                 "receiver": d["receiver"] or "",
                 "execution": is_execution,
                 "parameterised": d["parameterised"],
                 "raw": d["raw"],
-            },
+            }, obs),
             confidence="high" if is_execution else "medium",
         ))
     return out
@@ -159,12 +159,12 @@ def _payload_node(ep: FlowNode, sink: FlowNode, marker: FlowNode) -> FlowNode:
         language=ep.language,
         kind="source",
         family="raw-code-payload",
-        detail={
+        detail=_with_scope({
             "field_line": marker.line,
             "endpoint_path": ep.detail.get("path"),
             "sink_symbol": sink.detail.get("symbol"),
             "sink_line": sink.line,
-        },
+        }, ep),
         data_class="raw-sql-payload",
         confidence="high",
     )
@@ -280,10 +280,23 @@ def classify_entry_points(observations: list[FlowNode]) -> list[FlowNode]:
             language=obs.language,
             kind="source",
             family="entry-point",
-            detail=detail,
+            detail=_with_scope(detail, obs),
             confidence=obs.confidence,
         ))
     return out
+
+
+def _with_scope(detail: dict[str, Any], obs: FlowNode) -> dict[str, Any]:
+    """Carry the observation's enclosing method onto the node derived from it.
+
+    Derivation also runs standalone over a stored record, where there is no
+    extraction context to consult — so scope has to travel with the observation
+    rather than being reassigned afterwards (`OI-17`).
+    """
+    for key in ("enclosing_class", "enclosing_method"):
+        if obs.detail.get(key) is not None:
+            detail[key] = obs.detail[key]
+    return detail
 
 
 def _entry_detail(obs: FlowNode) -> dict[str, Any] | None:

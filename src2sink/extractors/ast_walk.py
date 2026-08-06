@@ -172,6 +172,37 @@ def extract_call_receiver(source: bytes, node: Node, language: str) -> str | Non
     return None
 
 
+# The declaration nodes each grammar uses for a class and for a callable. A path
+# through a service is a chain of these, so they are what `OI-17` needs before
+# anything can be resolved or traversed.
+CLASS_NODE_TYPES: dict[str, frozenset[str]] = {
+    "java": frozenset({"class_declaration", "interface_declaration", "enum_declaration"}),
+    "kotlin": frozenset({"class_declaration", "object_declaration"}),
+    "python": frozenset({"class_definition"}),
+    "javascript": frozenset({"class_declaration"}),
+    "typescript": frozenset({"class_declaration"}),
+    "tsx": frozenset({"class_declaration"}),
+    "go": frozenset({"type_declaration"}),
+}
+
+METHOD_NODE_TYPES: dict[str, frozenset[str]] = {
+    "java": frozenset({"method_declaration", "constructor_declaration"}),
+    "kotlin": frozenset({"function_declaration"}),
+    "python": frozenset({"function_definition"}),
+    "javascript": frozenset({"function_declaration", "method_definition"}),
+    "typescript": frozenset({"function_declaration", "method_definition"}),
+    "tsx": frozenset({"function_declaration", "method_definition"}),
+    "go": frozenset({"function_declaration", "method_declaration"}),
+}
+
+PARAM_NODE_TYPES = frozenset({
+    "formal_parameter", "spread_parameter",      # java
+    "parameter",                                  # kotlin, python, ts
+    "identifier",                                 # python bare params
+    "required_parameter", "optional_parameter",   # typescript
+    "parameter_declaration",                      # go
+})
+
 CALL_NODE_TYPES: dict[str, frozenset[str]] = {
     "java": frozenset({"method_invocation"}),
     # `navigation_expression` is a property access, not a call. Listing it made
@@ -213,3 +244,65 @@ def iter_calls(
         name = extract_call_name(source, node, language)
         if name:
             yield node, name
+
+
+def _declaration_name(source: bytes, node: Node) -> str | None:
+    """Return a declaration's name, or None if the grammar gives it none."""
+    name = node.child_by_field_name("name")
+    return node_text(source, name) if name is not None else None
+
+
+def _parameter_names(source: bytes, node: Node, language: str) -> list[str]:
+    """Return the parameter names a callable declares.
+
+    Names rather than types: what matters for `OI-17` is whether an argument
+    reaching this method carries a tainted value, and the parameter name is what
+    the body refers to it by.
+    """
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    out: list[str] = []
+    for child in params.children:
+        if child.type not in PARAM_NODE_TYPES:
+            continue
+        name = child.child_by_field_name("name")
+        if name is not None:
+            out.append(node_text(source, name))
+        elif child.type == "identifier":
+            out.append(node_text(source, child))
+    # `self`/`this` is the receiver, not an input.
+    return [p for p in out if p not in ("self", "this")]
+
+
+def iter_method_declarations(
+    source: bytes, root: Node, language: str
+) -> Iterator[tuple[str | None, str, list[str], int, int]]:
+    """Yield (class, method, params, start line, end line) for each callable.
+
+    The enclosing class is resolved by containment rather than by walking parents,
+    because the grammars disagree about how a method hangs off its class and
+    containment is the same question in all of them.
+    """
+    classes = [
+        (n, _declaration_name(source, n))
+        for n in walk(root)
+        if n.type in CLASS_NODE_TYPES.get(language, frozenset())
+    ]
+    for node in walk(root):
+        if node.type not in METHOD_NODE_TYPES.get(language, frozenset()):
+            continue
+        name = _declaration_name(source, node)
+        if name is None:
+            continue
+        owner = None
+        for cls_node, cls_name in classes:
+            if cls_node.start_byte <= node.start_byte and node.end_byte <= cls_node.end_byte:
+                owner = cls_name
+        yield (
+            owner,
+            name,
+            _parameter_names(source, node, language),
+            node.start_point[0] + 1,
+            node.end_point[0] + 1,
+        )

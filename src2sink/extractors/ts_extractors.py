@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from .ast_walk import extract_call_receiver, iter_calls, line_number, node_text
+from .ast_walk import (
+    extract_call_receiver,
+    iter_calls,
+    iter_method_declarations,
+    line_number,
+    node_text,
+)
 from .base import parse_source, supported_languages
 from .file_context import FileExtractionContext
 from .node_factory import make_node
@@ -202,3 +208,72 @@ def link_sql_payload_out(ctx: FileExtractionContext) -> None:
             confidence="high" if by_binding else "medium",
         ))
 
+
+
+def extract_method_declarations(ctx: FileExtractionContext) -> None:
+    """Record each callable this file declares, with its class, params and span.
+
+    The unit a source-to-sink path is made of. Nothing was extracted for them,
+    which is why a node could say `file:line` and nothing about which door it sat
+    behind (`OI-17`).
+
+    An observation: it records what the file contains, never that anything is
+    wrong.
+    """
+    ts_lang = ctx.language if ctx.language in supported_languages() else None
+    if not ts_lang:
+        return
+    src_bytes = ctx.source.encode("utf-8")
+    try:
+        tree = parse_source(ts_lang, src_bytes)
+    except (KeyError, OSError, ValueError):
+        return
+
+    for owner, name, params, start, end in iter_method_declarations(
+        src_bytes, tree.root_node, ctx.language
+    ):
+        ctx.nodes.append(make_node(
+            repo=ctx.repo_id,
+            file=ctx.rel_path,
+            line=start,
+            language=ctx.language,
+            kind="reference",
+            family="method-decl",
+            detail={
+                "class": owner,
+                "method": name,
+                "params": params,
+                "start_line": start,
+                "end_line": end,
+            },
+            confidence="high",
+        ))
+
+
+def assign_enclosing_methods(ctx: FileExtractionContext) -> None:
+    """Stamp every node with the method and class it sits inside.
+
+    Assigned by span containment, innermost first, so a nested function keeps its
+    own findings rather than handing them to its parent. A node inside no method
+    — a field, a class-level constant — is left unstamped rather than attached to
+    whichever method happens to follow it, because a guessed scope is worse than
+    an absent one.
+    """
+    spans = sorted(
+        (
+            (n.detail["start_line"], n.detail["end_line"], n.detail["class"], n.detail["method"])
+            for n in ctx.nodes
+            if n.family == "method-decl"
+        ),
+        key=lambda s: s[1] - s[0],
+    )
+    if not spans:
+        return
+    for node in ctx.nodes:
+        if node.family == "method-decl":
+            continue
+        for start, end, owner, method in spans:
+            if start <= node.line <= end:
+                node.detail["enclosing_class"] = owner
+                node.detail["enclosing_method"] = method
+                break
