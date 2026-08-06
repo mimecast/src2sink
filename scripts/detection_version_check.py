@@ -90,6 +90,7 @@ DETECTION_INPUT_FILES = (
     # Produce or shape record content directly.
     "src2sink/build_metabase_v2.py",  # dependency parsing, analyse_repo_v2, summary_to_dict
     "src2sink/repo_utils.py",         # pom/package.json parsing, frameworks, build systems
+    "src2sink/checkout_scan.py",      # decides which manifests repo_utils finds at all
     "src2sink/internal_groups.py",    # the internal/external decision on every dependency
     "src2sink/graph_common.py",       # url/path extraction feeding node detail
     "src2sink/sanitize.py",           # redaction applied to detail on the way in

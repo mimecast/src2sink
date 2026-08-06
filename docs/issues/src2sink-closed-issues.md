@@ -2374,3 +2374,91 @@ not modelled: this tracks *arguments into parameters*, and is described as that
 rather than as taint analysis. Argument binding is positional, so named and
 defaulted arguments under-taint rather than over-taint.
 
+---
+
+## OI-31 — The checkout is walked once per filename, and no phase shares a walk
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_checkout_scan.py` — 17 cases: walk counts, cache reuse and widening, `prewalk`, the `SKIP_DIRS` prefix rule, glob vs exact attribution, sort stability, and both CLI paths. Mutants `OI31-M1`…`OI31-M3`.
+
+### Symptom
+
+Found by the same reporter as `OI-30`, immediately after it: *"looks like the
+same problem that impacted the payload_producers also impacts the discovery."*
+Correct, and in two places rather than one.
+
+### Root cause
+
+`Path.rglob(name)` traverses the whole tree and filters by name, so asking for
+four filenames costs four full traversals. Measured on one run:
+
+```
+aggregation            :  10 full walks    8x discover_openapi_specs (4 globs x 2 call sites)
+                                           2x discover_helm_hosts
+--discover-api-clients :  15 more         15x _iter_manifests
+TOTAL                  :  25
+```
+
+Twenty-five traversals of a 34 GB checkout to find a handful of manifests. Same
+shape as `OI-30`: the loop over *what to look for* sat outside the loop over
+*where to look*. And nothing was shared between phases — `--discover-api-clients`
+re-walked everything aggregation had just walked.
+
+### The fix
+
+`src2sink/checkout_scan.py`: one traversal, cached per root, keeping every file
+matching any requested pattern. A caller asking for patterns already covered is
+served from the cache; one asking for something new **widens** the walk rather
+than starting a private one, so phases converge on a single traversal without
+either having to know the other exists. `prewalk` lets the CLI name every
+pattern up front and guarantee it from the first call.
+
+```
+                         before   after   with prewalk
+aggregation                  10       2              1
+--discover-api-clients       15       1              0
+TOTAL                        25       3              1
+```
+
+### The other bug this exposed
+
+**`--discover-api-clients` was silently ignored outside a full scan.** Discovery
+ran only in the full-scan path, so combining it with `--graphs-only` or
+`--aggregate-only` printed `Done.` and wrote nothing — the flag accepted, doing
+nothing, giving no clue why no candidates appeared:
+
+```
+$ src2sink-build ... --graphs-only --discover-api-clients
+Aggregate-only: 1 v2 JSONs
+Done.
+$ ls metabase/api-clients.discovered.json
+ls: No such file or directory
+```
+
+Discovery reads records and the checkout, both of which those modes have, so
+there was never a reason it could not run. Now reachable from both paths.
+
+### What nearly went wrong
+
+The first version of the shared walk matched `SKIP_DIRS` against the **absolute**
+path, so a checkout under `/tmp/build/repos` excluded its own entire tree —
+everything resolving to "not found" with no error.
+`test_skip_dirs_apply_below_the_root_only` caught it, which is exactly the
+regression that test was written for: its docstring records that CI found the
+same defect once before, because CI's tmpdir is under `/tmp`. The rule is now
+asserted in `checkout_scan`'s own tests as well, since the logic is duplicated
+there to avoid an import cycle.
+
+### Residual not covered
+
+The walk holds only matching paths, so memory is bounded by how many manifests a
+fleet has rather than by how many files. Two roots are cached independently and
+nothing evicts, which is right for a batch run and wrong for a long-lived
+process — `clear_cache` exists for the latter. The producer scan (`OI-30`) still
+walks separately, because it reads files by *suffix* across the whole tree rather
+than by name; folding it in would mean holding every source path in memory,
+trading this fix for the one `OI-15` exists to prevent.
+

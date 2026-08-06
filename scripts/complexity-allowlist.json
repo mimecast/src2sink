@@ -28,12 +28,12 @@
       "cognitive": 21
     },
     "src2sink/aggregators/openapi_discovery.py:discover_helm_hosts": {
-      "cyclomatic": 12,
-      "cognitive": 28
+      "cyclomatic": 11,
+      "cognitive": 19
     },
     "src2sink/aggregators/openapi_discovery.py:discover_openapi_specs": {
-      "cyclomatic": 14,
-      "cognitive": 20
+      "cyclomatic": 13,
+      "cognitive": 13
     },
     "src2sink/aggregators/openapi_match.py:match_http_out_to_openapi": {
       "cyclomatic": 12,
@@ -108,8 +108,8 @@
       "cognitive": 17
     },
     "src2sink/build_metabase_v2.py:main": {
-      "cyclomatic": 13,
-      "cognitive": 13
+      "cyclomatic": 12,
+      "cognitive": 11
     },
     "src2sink/derive.py:_link_one_file": {
       "cyclomatic": 13,

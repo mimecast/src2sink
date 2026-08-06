@@ -55,7 +55,13 @@ _MUTANT_TIMEOUT_S = 120
 # cost 15-35s each. That is inherent to testing a bulkhead, not something to tune
 # away — but it has to be visible rather than creeping, so slow mutants are named
 # on every run.
-_MAX_CATALOGUE_SIZE = 120
+#
+# Raised 120 -> 130 for the OI-31 entries. Measured at that point: 122 mutants
+# in 1m37s, of which **48s is two entries** (LIM-M3, LIM-M4) that can only be
+# killed by waiting for a timeout. The marginal cost of an ordinary mutant is
+# ~1s, so the budget is about the slow tail, not the count — which is what the
+# paragraph above says and what this raise respects.
+_MAX_CATALOGUE_SIZE = 130
 _SLOW_MUTANT_S = 5.0
 
 
@@ -1074,6 +1080,43 @@ CATALOGUE: tuple[Mutant, ...] = (
             "Kotlin call arguments stop being read, so no Kotlin hop can carry "
             "taint. The same defect as OI17-M16 from the other end, and the same "
             "consequence: a clean-looking result across half the JVM fleet."
+        ),
+    ),
+    Mutant(
+        id="OI31-M1",
+        file="src2sink/checkout_scan.py",
+        old="    return any(part in SKIP_DIRS for part in rel.parts)",
+        new="    return any(part in SKIP_DIRS for part in path.parts)",
+        selector="tests/test_checkout_scan.py tests/test_repo_utils_helpers.py",
+        note=(
+            "SKIP_DIRS matched against the absolute path again, so a checkout "
+            "under /tmp/build or ~/build is excluded entirely and every manifest "
+            "resolves to 'not found' with no error. This walk made exactly this "
+            "mistake on its first attempt; repo_utils documents the same trap."
+        ),
+    ),
+    Mutant(
+        id="OI31-M2",
+        file="src2sink/checkout_scan.py",
+        old="    if cached is not None and patterns <= cached.patterns:\n        return cached",
+        new="    if cached is not None:\n        return cached",
+        selector="tests/test_checkout_scan.py",
+        note=(
+            "A cached walk is reused even when it never looked for the patterns "
+            "now being asked about, so the second caller silently gets nothing. "
+            "Faster and wrong: the failure is an empty result, not an error."
+        ),
+    ),
+    Mutant(
+        id="OI31-M3",
+        file="src2sink/checkout_scan.py",
+        old="    widened = patterns if cached is None else (patterns | cached.patterns)",
+        new="    widened = patterns",
+        selector="tests/test_checkout_scan.py",
+        note=(
+            "The walk stops widening, so each phase forks a private traversal "
+            "and the earlier phase's patterns are dropped from the cache — the "
+            "walk-per-phase cost this exists to remove."
         ),
     ),
     Mutant(

@@ -17,13 +17,14 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from . import prescreen, repo_utils
+from . import checkout_scan, prescreen, repo_utils
 from .aggregators.api_client_discovery import (
     DISCOVERED_FILE,
     discover_api_clients,
     promote_api_clients,
 )
 from .aggregators.graphs import aggregate_graphs_v2
+from .aggregators.openapi_discovery import HELM_VALUES_NAMES, OPENAPI_GLOBS
 from .aggregators.library_source_map import (
     fix_flagged_mappings,
     generate_library_source_map,
@@ -647,6 +648,44 @@ def _tool_version() -> str:
         return "unknown"
 
 
+def _maybe_discover_api_clients(
+    metabase_root: Path, jsons: list[Path], repos_root: Path,
+    args: argparse.Namespace,
+) -> None:
+    """Draft candidate api-client bindings, if asked.
+
+    Reachable from **both** the full scan and the aggregate-only paths. It used
+    to run only after a full scan, so `--discover-api-clients` combined with
+    `--graphs-only` or `--aggregate-only` printed "Done." and wrote nothing —
+    the flag was accepted, silently ignored, and gave no clue why no candidates
+    appeared. Discovery reads records and the checkout, both of which those modes
+    have, so there was never a reason it could not run.
+    """
+    if not args.discover_api_clients:
+        return
+    n = discover_api_clients(metabase_root, jsons, repos_root)
+    print(f"Discovered {n} candidate api-client binding(s) → metabase/{DISCOVERED_FILE}")
+
+
+def _prewalk_checkout(repos_root: Path) -> None:
+    """Walk the checkout once for everything the phases below will look for.
+
+    Aggregation and `--discover-api-clients` each search the tree for a different
+    set of filenames, and neither knows the other exists — so each phase walked
+    separately even when one run does both. Naming every pattern up front
+    collapses them to a single traversal.
+
+    Purely an optimisation: `checkout_scan` widens its walk on demand, so a phase
+    asking for something not listed here still works, it just costs another pass.
+    """
+    checkout_scan.prewalk(
+        repos_root,
+        frozenset(OPENAPI_GLOBS),
+        frozenset(HELM_VALUES_NAMES),
+        repo_utils.all_manifest_patterns(),
+    )
+
+
 def _write_run_manifest(
     metabase_root: Path,
     args: argparse.Namespace,
@@ -901,12 +940,15 @@ def _run_aggregate_only(
         write_pii_flow_v2(metabase_root, jsons)
         aggregate_phase3_v2(metabase_root, jsons)
     else:
+        # Before any phase searches the tree, so they all share one traversal.
+        _prewalk_checkout(repos_root)
         if not args.graphs_only:
             aggregate_taint_catalogs_v2(metabase_root, jsons)
         aggregate_graphs_v2(
             metabase_root, jsons, repos_root=repos_root, phase3=not args.no_phase3
         )
         _generate_source_map(metabase_root, jsons, repos_root, prefix="  ")
+        _maybe_discover_api_clients(metabase_root, jsons, repos_root, args)
     print("Done.")
     return 0
 
@@ -1064,12 +1106,12 @@ def main() -> int:
 
     jsons = _load_v2_jsons(metabase_root)
     if jsons:
+        # Before any phase searches the tree, so they all share one traversal.
+        _prewalk_checkout(repos_root)
         aggregate_taint_catalogs_v2(metabase_root, jsons)
         aggregate_graphs_v2(metabase_root, jsons, repos_root=repos_root)
         _generate_source_map(metabase_root, jsons, repos_root, prefix="")
-        if args.discover_api_clients:
-            n = discover_api_clients(metabase_root, jsons, repos_root)
-            print(f"Discovered {n} candidate api-client binding(s) → metabase/{DISCOVERED_FILE}")
+        _maybe_discover_api_clients(metabase_root, jsons, repos_root, args)
     _write_run_manifest(
         metabase_root,
         args,
