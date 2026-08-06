@@ -1,5 +1,12 @@
 # src2sink 3.0 — unified plan
 
+> **Amended.** [`observe-then-classify.md`](observe-then-classify.md) revises
+> Phase 1 (observation is separated from classification, not just computation
+> from rendering), rescopes Phase 2 (`OI-17` is bipartite reachability at
+> unbounded depth, with interface expansion), and settles the boundary-catalogue
+> question. Read it alongside this plan.
+
+
 **Supersedes** [`open-issues-fix-plan.md`](open-issues-fix-plan.md), which
 covered the 2.0.0 detection-correctness cycle and is complete. It **absorbs**
 [`metabase-versioning-design.md`](metabase-versioning-design.md) as its design
