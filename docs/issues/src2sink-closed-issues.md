@@ -77,7 +77,7 @@ different readers.
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 | `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
 | `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
-| `OI-28` | The index fast path bypasses the significant-segment filter | 2.2.0 | `TBD` (PR #37) | Cross-repo edges resolved through a bare `/v1`, `/api` or `/{id}` disappear — the edges `OI-24` was meant to remove but did not reach. |
+| `OI-28` | The index fast path bypasses the significant-segment filter | 2.2.0 | `75c5422` (PR #37) | Cross-repo edges resolved through a bare `/v1`, `/api` or `/{id}` disappear — the edges `OI-24` was meant to remove but did not reach. |
 
 ---
 
@@ -1998,7 +1998,7 @@ Kotlin's regex tiers already work, so string-built SQL in Kotlin is detected tod
 ### Resolution
 
 **Fixed in:** 2.2.0 (unreleased)  
-**Commit:** see the index row — PR #37  
+**Commit:** `75c5422` — PR #37  
 **Tests:** `tests/test_oi28_index_fast_path.py` — 25 cases: every segment shape that names nothing, the real routes that must survive, the memo, an end-to-end `collect_service_edges` assertion, and a consistency invariant across sixteen paths. Mutant `OI28-M1`.
 
 ### Symptom
