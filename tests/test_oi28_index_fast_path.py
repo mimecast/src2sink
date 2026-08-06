@@ -93,3 +93,34 @@ def test_the_edge_collector_produces_no_edge_for_a_bare_version_path():
     }
     edges, _unmatched = collect_service_edges([consumer, provider])
     assert [e for e in edges if e.target_repo == "pricing/price-index"] == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1", "/v2", "/api", "/rest", "/internal", "/public", "/service",
+        "/services", "/{id}", "/{}", "/stock", "/stock/dispatch", "/v1/stock",
+        "/orders/{id}/lines", "/search", "/orders/create",
+    ],
+)
+def test_the_index_never_disagrees_with_the_predicate(path):
+    """The invariant that would have caught this without a second report.
+
+    `OI-24` fixed `path_templates_match`; `OI-28` is the same defect reached
+    through `match_path_in_inbound_index`'s dict fast path. The two are separate
+    code paths answering the same question, and nothing required them to agree.
+
+    So: if the predicate says a path matches nothing — not even itself — the
+    index must not return rows for it. Asserted across every shape either has
+    ever been wrong about, rather than only the one that was reported.
+    """
+    from src2sink.graph_common import normalize_path_template
+
+    norm = normalize_path_template(path)
+    index = {norm: [("some/repo", path)]} if norm else {}
+    rows, _conf = match_path_in_inbound_index(path, index)
+
+    if path_templates_match(path, path) is None:
+        assert rows == [], f"index matched {path!r} that the predicate rejects"
+    else:
+        assert rows, f"index lost {path!r} that the predicate accepts"

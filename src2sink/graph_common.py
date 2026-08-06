@@ -306,6 +306,17 @@ def resolve_repo_for_host(host: str, alias_to_repo: dict[str, str]) -> str | Non
 _MATCH_CONF_RANK = {"high": 3, "medium": 2, "low": 1}
 
 
+def _names_a_destination(norm: str) -> bool:
+    """True if a normalised path names something a caller could be addressing.
+
+    `/v1`, `/api` and `/{}` do not: they are a version, a layer and a shape.
+    Applied at the index lookup as well as in `path_templates_match`, because the
+    dict lookup there is a fast path that never consults the predicate — `OI-24`
+    fixed the callee and the edges came from the caller (`OI-28`).
+    """
+    return bool(norm) and bool(_significant_segments(norm))
+
+
 def match_path_in_inbound_index(
     path: str,
     inbound: dict[str, list[tuple[Any, ...]]],
@@ -332,7 +343,12 @@ def match_path_in_inbound_index(
     there are many nodes to resolve.
     """
     norm = normalize_path_template(path)
-    if not norm:
+    # A path that reduces to no significant segments names a version, a layer or
+    # a placeholder — not a route. Checked here rather than only in
+    # `path_templates_match`, because the dict lookup below is a fast path that
+    # never consults the predicate: `OI-24` fixed the callee and the edges came
+    # from the caller (OI-28). The fuzzy pass would reject the same path anyway.
+    if not _names_a_destination(norm):
         return [], "high"
     if memo is not None and norm in memo:
         return memo[norm]
