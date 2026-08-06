@@ -89,6 +89,18 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **The checkout was walked 25 times per run to find a handful of files
+  (`OI-31`).** `Path.rglob(name)` traverses the whole tree and filters by name,
+  so four filenames cost four traversals — and no phase shared a walk with any
+  other. Now one traversal serves everything: **25 → 3**, and **→ 1** when the
+  CLI names every pattern up front.
+
+- **`--discover-api-clients` was silently ignored outside a full scan
+  (`OI-31`).** Combined with `--graphs-only` or `--aggregate-only` it printed
+  `Done.` and wrote no candidates file — the flag accepted, doing nothing, with
+  no clue why. Discovery reads records and the checkout, both of which those
+  modes have.
+
 - **Three Kotlin gaps, all silent since 2.1.0.** Each made Kotlin produce a
   *clean-looking* result rather than a wrong one, which is the failure mode
   `OI-13` exists to prevent, and each passed its original parity test because

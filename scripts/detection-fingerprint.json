@@ -8,7 +8,8 @@
   "derivation_version": 5,
   "detection_version": 11,
   "files": {
-    "src2sink/build_metabase_v2.py": "6275ee0f784e216309acefcfe4e5006fbba1e5c0d21b7887a7ff48f55304b5b9",
+    "src2sink/build_metabase_v2.py": "1c2525602bb978489c283bd395f4e5673d08e5916211dcd17a139d623f7ca2b0",
+    "src2sink/checkout_scan.py": "8f2375e7b5a3ac8250892bd9b65f12515c44958f100bbed4e286077fa108f563",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
     "src2sink/dependencies.py": "5247606c04793940d7eee2e1d275b00962beec0b1e2126ee5aa45032049e0387",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
@@ -35,7 +36,7 @@
     "src2sink/limits.py": "40190d2400b03bfcfe16f86cd12270d84956d5b03bde5d77110eb44ae4be69ec",
     "src2sink/maven.py": "ad2d32735bba3944064641f4edfef3ab42e3c530a7be74bd8995f134e55b2dd2",
     "src2sink/prescreen.py": "0892268b0aa2b27428c2c1a9a76cfb59c12fa9c8e876278cd7740025713d460f",
-    "src2sink/repo_utils.py": "eeec4672236d8898665a56fb1e84016b72c4f4e38684c1af49113a42bffcf75f",
+    "src2sink/repo_utils.py": "182f08579260ff44551759390461695993603dec554eb6198ce4778b039e36d6",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
     "src2sink/schema.py": "97f64b4dcd1f557c2594467faa763b911a8140157be9fd44c1cb3ae87ecd92f9",

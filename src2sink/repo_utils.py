@@ -18,6 +18,7 @@ from . import internal_groups as _internal_groups
 # Re-exported explicitly: build_metabase_v2 rebinds ``repo_utils.MAX_FILE_BYTES``
 # at startup so a --max-file-bytes override applies to the manifest read paths.
 from .constants import MAX_FILE_BYTES as MAX_FILE_BYTES
+from .checkout_scan import paths_by_name
 from .constants import SKIP_DIRS
 from .safe_paths import resolve_within
 
@@ -689,15 +690,38 @@ def is_skipped_path(path: Path, root: Path) -> bool:
     return any(part in SKIP_DIRS for part in rel.parts)
 
 
+def all_manifest_patterns() -> frozenset[str]:
+    """Every manifest pattern any indexer asks for.
+
+    Passed as one set so the whole tree is walked once rather than once per
+    pattern. Built from the readers themselves, so adding an ecosystem cannot
+    leave its pattern out of the shared walk and silently fall back to finding
+    nothing.
+    """
+    return frozenset({
+        "pom.xml",
+        "settings.gradle", "settings.gradle.kts",
+        "build.gradle", "build.gradle.kts",
+        "package.json",
+        *_SIMPLE_IDENTITY_READERS,
+        *(pattern for pattern, _reader in _GLOB_IDENTITY_READERS),
+    })
+
+
 def _iter_manifests(repos_root: Path, pattern: str) -> Iterator[Path]:
     """Yield manifest paths matching ``pattern`` under ``repos_root``.
 
     Applies the same depth window (2..6) and ``SKIP_DIRS`` filtering used by
     :func:`_build_repo_artifact_index`.
+
+    Backed by a single shared walk. `Path.rglob(pattern)` traverses the whole
+    tree and filters by name, so calling this once per pattern cost **fifteen**
+    full traversals of a 34 GB checkout per run — the same defect `OI-30` fixed
+    in the producer scan, in a second place.
     """
     repos_root_resolved = repos_root.resolve()
     max_extra_depth = 6
-    for path in repos_root.rglob(pattern):
+    for path in paths_by_name(repos_root, all_manifest_patterns())[pattern]:
         try:
             depth = len(path.parent.resolve().relative_to(repos_root_resolved).parts)
         except ValueError:
