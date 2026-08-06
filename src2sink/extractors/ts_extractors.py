@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .ast_walk import extract_call_receiver, iter_calls, line_number, node_text
 from .base import parse_source, supported_languages
 from .file_context import FileExtractionContext
@@ -33,6 +35,7 @@ def _add_call_observation(
     *,
     file_sql_evidence: bool,
     library_hint: bool,
+    parameterised: str,
 ) -> None:
     """Record that a call was examined, and what could be told about it.
 
@@ -62,64 +65,82 @@ def _add_call_observation(
             "receiver_is_database": receiver_is_database(receiver),
             "library_hint": library_hint,
             "file_sql_evidence": file_sql_evidence,
-            "raw": call_text[:120],
+            # Observed, not classified: `sql_parameterisation` falls back to
+            # scanning the whole file when the call text carries no literal of
+            # its own, so the posture can only be computed here, where the source
+            # is in hand. It says what the statement *looks like*, not whether it
+            # is dangerous — which keeps it an observation.
+            "parameterised": parameterised,
+            "raw": call_text[:160],
         },
         confidence="high",
     ))
 
 
-def _maybe_add_sql_sink(
-    ctx: FileExtractionContext,
-    name: str,
-    line: int,
-    call_text: str,
-    receiver: str | None,
-    *,
-    file_sql_evidence: bool,
-    sql_symbols: dict[str, str],
-) -> None:
-    """Append a sql sink node if the call is evidenced as database work.
+def _sql_verdict(detail: dict[str, Any]) -> bool | None:
+    """Decide whether one observation is a SQL sink, and whether it executes.
 
-    ``execute``, ``query`` and ``update`` are ordinary method names, so a name-only
-    test catalogued ``httpClient.execute(request)`` and ``messageDigest.update(data)``
-    as SQL execution sinks — and, because an execution sink feeds
-    :func:`link_raw_code_payload_endpoints`, let an HTTP proxy with a field named
-    ``sql`` fabricate a ``raw-code-payload`` finding (OI-7).
+    Returns ``None`` when the call is not SQL at all, otherwise whether it is an
+    *execution* sink rather than an ORM-style one.
 
-    A name match therefore needs one positive signal: a database receiver, an
-    explicit library hint in the call text, or file-level SQL evidence.
-    ``file_sql_evidence`` is computed once per file by the caller.
-
-    Inspects untrusted call text; text is only matched, never executed.
+    The single place a SQL classification is made. Fixing `OI-26` — file-scoped
+    evidence overriding a receiver known not to be a database — is a change to
+    this function, applied to observations already on disk.
     """
-    has_hint = any(hint in call_text for hint in SQL_EXECUTION_CALL_HINTS)
-    if not (name in SQL_SINK_NAMES or has_hint):
-        return
+    name, hint = detail["symbol"], detail["library_hint"]
+    if not (name in SQL_SINK_NAMES or hint):
+        return None
     # A library hint names the SQL API outright, so it is self-evidencing; a bare
     # verb needs the receiver or the file to vouch for it.
-    if not (has_hint or receiver_is_database(receiver) or file_sql_evidence):
-        return
+    if not (hint or detail["receiver_is_database"] or detail["file_sql_evidence"]):
+        return None
+    return name in SQL_EXECUTION_SINK_NAMES or hint
 
-    is_execution = name in SQL_EXECUTION_SINK_NAMES or has_hint
-    node = make_node(
-        repo=ctx.repo_id,
-        file=ctx.rel_path,
-        line=line,
-        language=ctx.language,
-        kind="sink",
-        family="sql",
-        detail={
-            "symbol": name,
-            "receiver": receiver or "",
-            "execution": is_execution,
-            "parameterised": sql_parameterisation(call_text, ctx.source, sql_symbols),
-            "raw": call_text[:160],
-        },
-        confidence="high" if is_execution else "medium",
-    )
-    ctx.nodes.append(node)
-    if is_execution:
-        ctx.sql_execution_sinks.append(node)
+
+def classify_sql_from_observations(ctx: FileExtractionContext) -> None:
+    """Emit `sql` sink nodes by classifying the call observations already recorded.
+
+    Reads ``call-site`` observations and nothing else — not the source, not the
+    AST. That is the point: a classification that depends only on stored data can
+    be corrected and re-run without re-extracting the fleet, which is what makes
+    `OI-26` and the catalogue work in `OI-20` cheap rather than a rescan.
+
+    The rules are unchanged from when this ran inline. ``execute``, ``query`` and
+    ``update`` are ordinary method names, so a name-only test catalogued
+    ``httpClient.execute(request)`` as SQL — and, because an execution sink feeds
+    :func:`link_raw_code_payload_endpoints`, let an HTTP proxy with a field named
+    ``sql`` fabricate a ``raw-code-payload`` finding (`OI-7`). A name match
+    therefore needs one positive signal: a database receiver, a library hint in
+    the call text, or file-level SQL evidence.
+
+    That last term is file-scoped and too coarse to settle a call-level question
+    on its own; `OI-26` records the consequence. Fixing it is now a change to
+    this function over existing observations.
+    """
+    for obs in [n for n in ctx.nodes if n.family == "call-site"]:
+        d = obs.detail
+        is_execution = _sql_verdict(d)
+        if is_execution is None:
+            continue
+        node = make_node(
+            repo=obs.repo,
+            file=obs.file,
+            line=obs.line,
+            language=obs.language,
+            kind="sink",
+            family="sql",
+            detail={
+                "symbol": d["symbol"],
+                "receiver": d["receiver"] or "",
+                "execution": is_execution,
+                "parameterised": d["parameterised"],
+                "raw": d["raw"],
+            },
+            confidence="high" if is_execution else "medium",
+        )
+        ctx.nodes.append(node)
+        if is_execution:
+            ctx.sql_execution_sinks.append(node)
 
 
 def _maybe_add_script_exec(ctx: FileExtractionContext, name: str, line: int, call_text: str) -> None:
@@ -172,6 +193,10 @@ def extract_tree_sitter_calls(ctx: FileExtractionContext) -> None:
             sql_symbols=sql_symbols,
         )
 
+    # Classify only once every call in the file has been observed, so the
+    # classifier sees the complete record rather than a prefix of it.
+    classify_sql_from_observations(ctx)
+
 
 def _examine_call(
     ctx: FileExtractionContext,
@@ -196,12 +221,10 @@ def _examine_call(
     if name in SQL_SINK_NAMES or library_hint or name in SCRIPT_EXEC_NAMES:
         _add_call_observation(
             ctx, name, line, call_text, receiver,
-            file_sql_evidence=file_sql_evidence, library_hint=library_hint,
+            file_sql_evidence=file_sql_evidence,
+            library_hint=library_hint,
+            parameterised=sql_parameterisation(call_text, ctx.source, sql_symbols),
         )
-    _maybe_add_sql_sink(
-        ctx, name, line, call_text, receiver,
-        file_sql_evidence=file_sql_evidence, sql_symbols=sql_symbols,
-    )
     _maybe_add_script_exec(ctx, name, line, call_text)
 
 

@@ -21,7 +21,7 @@ SCHEMA_VERSION = 2
 # either, which would fire on a comment. `scripts/detection_version_check.py`
 # holds the honesty line — it fails the build when a detection input changes
 # without a bump here.
-DETECTION_VERSION = 2
+DETECTION_VERSION = 3
 
 
 @dataclasses.dataclass

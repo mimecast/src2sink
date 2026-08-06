@@ -78,12 +78,36 @@ class Mutant:
 CATALOGUE: tuple[Mutant, ...] = (
     # --- OI-7: the sql family must not match on method name alone -----------
     Mutant(
+        # Re-derived when classification moved out of _maybe_add_sql_sink and into
+        # _sql_verdict over observations. Same defect, same guard, new home.
         id="OI7-M1",
         file="src2sink/extractors/ts_extractors.py",
-        old="    if not (has_hint or receiver_is_database(receiver) or file_sql_evidence):\n        return\n",
+        old='    if not (hint or detail["receiver_is_database"] or detail["file_sql_evidence"]):\n        return None\n',
         new="",
-        selector="tests/test_sql_sink_evidence.py",
+        selector="tests/test_sql_sink_evidence.py tests/test_sql_classifier.py",
         note="Evidence gate removed entirely — restores the 1.1.0 name-only match.",
+    ),
+    Mutant(
+        id="OBS-M1",
+        file="src2sink/extractors/ts_extractors.py",
+        old="    classify_sql_from_observations(ctx)",
+        new="    pass",
+        selector="tests/test_sql_classifier.py tests/test_sql_sink_evidence.py",
+        note=(
+            "Classification never runs, so observations are recorded and no sql "
+            "node is ever produced — the failure mode of splitting a pipeline."
+        ),
+    ),
+    Mutant(
+        id="OBS-M2",
+        file="src2sink/extractors/ts_extractors.py",
+        old='    for obs in [n for n in ctx.nodes if n.family == "call-site"]:',
+        new="    for obs in ctx.nodes:",
+        selector="tests/test_sql_classifier.py",
+        note=(
+            "The classifier stops filtering to observations and reads every node, "
+            "so any node carrying a `symbol` detail is re-classified as SQL."
+        ),
     ),
     Mutant(
         id="OI7-M2",
@@ -212,8 +236,10 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI11-M3",
         file="src2sink/extractors/ts_extractors.py",
-        old='            "parameterised": sql_parameterisation(call_text, ctx.source, sql_symbols),',
-        new='            "parameterised": sql_parameterisation(call_text, ctx.source),',
+        # Re-derived when posture moved onto the observation: it is now computed
+        # once at observation time rather than inside the sink construction.
+        old="            parameterised=sql_parameterisation(call_text, ctx.source, sql_symbols),",
+        new="            parameterised=sql_parameterisation(call_text, ctx.source),",
         selector="tests/test_sql_sink_evidence.py",
         note=(
             "Resolution wired to the source pass but not the posture — the "

@@ -143,10 +143,6 @@
       "cyclomatic": 9,
       "cognitive": 17
     },
-    "src2sink/extractors/ts_extractors.py:_maybe_add_sql_sink": {
-      "cyclomatic": 11,
-      "cognitive": 8
-    },
     "src2sink/graph_common.py:match_path_in_inbound_index": {
       "cyclomatic": 16,
       "cognitive": 18

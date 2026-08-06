@@ -13,6 +13,7 @@
       "detail": {
         "file_sql_evidence": false,
         "library_hint": false,
+        "parameterised": "unknown",
         "raw": "messageDigest.update(request.checksumBytes())",
         "receiver": "messageDigest",
         "receiver_is_database": false,
@@ -32,6 +33,7 @@
       "detail": {
         "file_sql_evidence": false,
         "library_hint": false,
+        "parameterised": "unknown",
         "raw": "httpClient.execute(request.toHttpRequest())",
         "receiver": "httpClient",
         "receiver_is_database": false,
