@@ -65,7 +65,6 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-21 | 21 | Entry points are HTTP-annotation-only | large | queue consumers, gRPC, GraphQL, file watchers, CLI and env are invisible | **P0** |
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
-| OI-26 | 26 | File-scoped SQL evidence admits every sink-named call in the file | small | `httpClient.execute` catalogued as a SQL sink; can still manufacture a fabricated injection endpoint | **P1** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -752,67 +751,3 @@ unresolved (`${revision}`), record it as unresolved — the `OI-18` rule.
 * An unresolvable own-version is recorded as unresolved, not as the placeholder.
 * A consumer pinning an older version of a scanned provider is reportable
   without any historical scan.
-
----
-
-## 26. File-scoped SQL evidence admits every sink-named call in the file  `OI-26`
-
-**Severity:** High — `OI-7`'s residual, and it can still manufacture the
-fabricated injection endpoint `OI-7` was raised to stop.
-
-### Symptom
-
-Measured:
-
-| File | `file_has_sql_evidence` | `sql` sinks emitted |
-|---|---|---|
-| an HTTP client call alone | `False` | none — the gate works |
-| **the same call, plus one real SQL query elsewhere in the file** | `True` | **`httpClient.execute`** *and* `jdbcTemplate.query` |
-
-`receiver_is_database('httpClient')` is `False` — the receiver is known not to be
-a database — but file evidence overrides it.
-
-### Root cause
-
-The evidence terms are OR'd and one of them is file-scoped, so the weakest term
-decides once satisfied:
-
-```python
-if not (has_hint or receiver_is_database(receiver) or file_sql_evidence):
-    return
-```
-
-One real SQL statement anywhere in a file admits every sink-named call in that
-file. `OI-7` replaced "name alone" with "name OR three evidence terms", and file
-scope is too coarse for a call-level decision — the same scope error as using a
-repo-level manifest to justify a file-level finding.
-
-Because an execution sink feeds `link_raw_code_payload_endpoints`, this still
-produces `raw-code-payload` findings for endpoints that were never vulnerable.
-
-### Proposed fix
-
-Two sides, and both are needed or recall drops:
-
-1. File evidence must not override a receiver known **not** to be a database. It
-   should rescue only calls with no receiver, or with a library hint in the call
-   text.
-2. The receiver vocabulary needs widening to compensate: `ps` and `pstmt` are
-   absent while `stmt`, `conn` and `session` are present, so tightening alone
-   would drop real `PreparedStatement` calls.
-
-### Sequencing note
-
-Under the current architecture this is a detection change and forces a fleet
-rescan. Under the observation layer
-([`observe-then-classify.md`](../plans/observe-then-classify.md) §3) it is a
-classifier change costing a re-aggregation. That is an argument for sequencing
-the observation layer first — **not** for leaving this unfixed.
-
-### Suggested tests
-
-* An HTTP client call in a file containing real SQL produces no `sql` sink.
-* `ps.execute()` and `pstmt.execute()` still produce sinks.
-* A bare `execute(sql)` with no receiver is still rescued by file evidence.
-* No `raw-code-payload` node is produced for an endpoint whose only "sink" was an
-  HTTP call in a SQL-bearing file.

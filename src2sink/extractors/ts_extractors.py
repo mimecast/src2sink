@@ -15,6 +15,7 @@ from .patterns import (
     file_has_sql_evidence,
     iter_bound_payload_fields,
     sql_symbol_table,
+    receiver_is_another_boundary,
     receiver_is_database,
     sql_parameterisation,
 )
@@ -90,11 +91,43 @@ def _sql_verdict(detail: dict[str, Any]) -> bool | None:
     name, hint = detail["symbol"], detail["library_hint"]
     if not (name in SQL_SINK_NAMES or hint):
         return None
-    # A library hint names the SQL API outright, so it is self-evidencing; a bare
-    # verb needs the receiver or the file to vouch for it.
-    if not (hint or detail["receiver_is_database"] or detail["file_sql_evidence"]):
+    if not _has_sql_evidence(detail, hint=hint):
         return None
     return name in SQL_EXECUTION_SINK_NAMES or hint
+
+
+def _has_sql_evidence(detail: dict[str, Any], *, hint: bool) -> bool:
+    """Whether anything vouches for a sink-named call actually being SQL.
+
+    The three signals are not interchangeable, which is the whole of `OI-26`.
+    They were OR'd together, so the weakest decided once satisfied — and the
+    weakest is file-scoped, meaning one real query anywhere in a file admitted
+    every sink-named call in it. ``httpClient.execute(r)`` became a SQL execution
+    sink because a JDBC query sat in the same class, and execution sinks feed
+    :func:`link_raw_code_payload_endpoints`, so it could fabricate the injection
+    endpoint `OI-7` exists to prevent.
+
+    Ordered by how *local* the evidence is:
+
+    * a **library hint** names the SQL API in the call text itself, so it is
+      self-evidencing and settles the question outright;
+    * a **database receiver** is evidence about this call;
+    * **file evidence** is a fact about other code in the same file, so it is
+      the weakest. It rescues a call whose receiver is *unknown* —
+      ``runner.execute(STATEMENT)`` — where there is nothing local to judge. It
+      does **not** rescue a receiver we recognise as some other boundary, because
+      that is negative local evidence and a fact about the neighbours cannot
+      overturn it.
+
+    The distinction that matters is between *unknown* and *known to be something
+    else*. Collapsing the two either reinstates `OI-26` or withdraws the
+    unknown-receiver recall that file evidence exists for.
+    """
+    if hint or detail["receiver_is_database"]:
+        return True
+    if receiver_is_another_boundary(detail["receiver"]):
+        return False
+    return bool(detail["file_sql_evidence"])
 
 
 def classify_sql_from_observations(ctx: FileExtractionContext) -> None:

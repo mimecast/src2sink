@@ -103,14 +103,17 @@ def test_no_fabricated_injection_endpoint():
     real query, produced a `raw-code-payload` finding — an injection endpoint
     that never existed, sending a reviewer to audit safe code.
     """
+    # File-level SQL evidence with no real execution sink: an audit statement
+    # held as a constant. Before the fix that literal admitted `httpClient.execute`
+    # as an execution sink, and the endpoint plus the `sql`-named body parameter
+    # then fabricated a raw-code-payload finding from it.
     source = """
     @RestController
     public class Proxy {
+        private static final String AUDIT_SQL = "SELECT ref FROM stock";
         private final HttpClient httpClient;
-        private final JdbcTemplate jdbcTemplate;
         @PostMapping("/forward")
         public String forward(@RequestBody String sql) { return httpClient.execute(sql); }
-        void unrelated() { jdbcTemplate.query("SELECT ref FROM stock", mapper); }
     }
     """
     nodes = extract_from_file(

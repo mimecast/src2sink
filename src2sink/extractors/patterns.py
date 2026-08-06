@@ -25,6 +25,35 @@ SQL_ORM_SINK_NAMES = frozenset({
 
 SQL_SINK_NAMES = SQL_EXECUTION_SINK_NAMES | SQL_ORM_SINK_NAMES
 
+
+# Receivers we recognise as belonging to *another* boundary — an HTTP client, a
+# digest, a task executor. This is positive knowledge, not a guess at everything
+# that is not a database: naming what a receiver *is* lets file-level evidence be
+# overruled without touching the unknown-receiver case that evidence exists for
+# (OI-26). `OI-20` generalises this into the boundary catalogue.
+#
+# Deliberately absent: `mapper`. A MyBatis mapper genuinely is a database
+# receiver, so listing it would withdraw real findings to remove false ones.
+NON_DATABASE_RECEIVER_NAMES = frozenset({
+    "httpclient", "resttemplate", "webclient", "restclient", "okhttpclient",
+    "messagedigest", "digest", "cipher", "mac", "signature",
+    "executor", "executorservice", "threadpool", "pool", "scheduler",
+    "cache", "logger",
+})
+
+
+def receiver_is_another_boundary(receiver: str | None) -> bool:
+    """True when a receiver reads as some *other* kind of boundary than a database.
+
+    Used to stop file-scoped SQL evidence overruling local evidence about the
+    call itself. An unknown receiver stays unknown — this answers "is it
+    something else", never "is it not a database".
+    """
+    if not receiver:
+        return False
+    trailing = receiver.rsplit(".", 1)[-1]
+    return trailing.lower() in NON_DATABASE_RECEIVER_NAMES
+
 SQL_EXECUTION_CALL_HINTS = (
     "JdbcTemplate",
     "NamedParameterJdbcTemplate",
@@ -46,7 +75,14 @@ SQL_EXECUTION_CALL_HINTS = (
 SQL_RECEIVER_NAMES = frozenset({
     "jdbctemplate", "namedparameterjdbctemplate", "entitymanager", "em",
     "session", "sqlsession", "cursor", "conn", "connection", "stmt",
-    "statement", "preparedstatement", "callablestatement", "db", "dao",
+    "statement", "preparedstatement",
+    # Ordinary abbreviations for a PreparedStatement/CallableStatement. Absent
+    # while `stmt` and `conn` were present, which is why tightening the file-scope
+    # rule needed these first — otherwise the OI-26 guard would start rejecting
+    # the very calls it exists to catch.
+    "ps",
+    "pstmt",
+    "cstmt", "callablestatement", "db", "dao",
     "repository", "tx", "datasource", "querydsl",
 })
 

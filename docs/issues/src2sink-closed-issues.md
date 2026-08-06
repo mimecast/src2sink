@@ -72,6 +72,7 @@ different readers.
 | `OI-16` | A detection fix never reaches a repo that has not changed | 2.0.0 | `6779191` (PR #19) | Records gain `detection_version`; the first run after upgrading rescans the whole fleet, and findings from superseded detectors disappear. |
 | `OI-24` | The equality shortcut bypasses the significant-segment filter | 2.1.0 | `45c2ca3` (PR #23) | Edges resolved through two identical meaningless paths (`/v1` to `/v1`) disappear. |
 | `OI-25` | Placeholder and operation-verb segments treated as destinations | 2.1.0 | `45c2ca3` (PR #23) | `/{id}` no longer matches `/{name}`; verb-only matches drop from `high` to `low`; `/orders/create` and `/orders/delete` stop matching each other. |
+| `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `TBD` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 
 ---
 
@@ -1480,3 +1481,114 @@ The operation-verb list is a fixed vocabulary and will not cover every project's
 naming. A verb that is genuinely a resource name in some service (`/search` as a
 search *service*) is capped to `low` rather than lost, which is the deliberate
 trade: recall is preserved, confidence is not overstated.
+
+## OI-26 — File-scoped SQL evidence admits every sink-named call in the file
+
+### Resolution
+
+**Fixed in:** 2.1.0 (unreleased)  
+**Commit:** see the index row — PR #28  
+**Tests:** `tests/test_oi26_receiver_scope.py` (13 cases: four non-database receivers, the `ps`/`pstmt` vocabulary, the receiver-less rescue, the library-hint override, and the fabricated endpoint). Mutants `OI26-M1`..`OI26-M3`.
+
+**What changed.** The three evidence signals are no longer interchangeable.
+`_has_sql_evidence` orders them by how *local* they are: a library hint settles
+it outright, a database receiver is evidence about this call, and file evidence —
+a fact about other code in the same file — rescues only a call whose receiver is
+**unknown**. A receiver recognised as another kind of boundary is negative local
+evidence, and a fact about the neighbours cannot overturn it.
+
+**Deviation, and it matters.** The issue proposed that file evidence "should
+rescue only calls with no receiver". Implementing that failed two existing tests
+by name — `test_sql_literal_in_file_admits_an_unknown_receiver` and
+`test_database_import_in_file_admits_an_unknown_receiver`. `runner.execute(STATEMENT)`
+has an unknown receiver and *should* be rescued; that recall was deliberate.
+
+The distinction the fix actually needs is between **unknown** and **known to be
+something else**, which required naming the other boundaries rather than
+enumerating everything that is not a database. `NON_DATABASE_RECEIVER_NAMES` is
+that vocabulary — positive knowledge of the same kind as `SQL_RECEIVER_NAMES`,
+and the thing `OI-20` generalises. `mapper` is deliberately absent: a MyBatis
+mapper genuinely is a database receiver.
+
+The second half was as specified: `ps`, `pstmt` and `cstmt` joined the receiver
+vocabulary, without which tightening would have withdrawn real
+`PreparedStatement` sinks.
+
+**On the observation layer.** This was the first classification fix made after
+it, and the fix is confined to `_sql_verdict`/`_has_sql_evidence`, provably
+needing no source — `tests/test_sql_classifier.py::test_the_classifier_needs_no_source`
+now demonstrates the corrected behaviour from observations alone. **It is not yet
+a re-aggregation**, because the classifier still runs during extraction, so the
+version still bumps and the fleet still rescans. Making it an actual
+re-aggregation needs the classifier moved to the aggregation phase, which is
+blocked on `link_raw_code_payload_endpoints` moving with it.
+
+**Behaviour change.** `sql` sinks disappear where the receiver reads as an HTTP
+client, digest, executor, cache or logger — and any `raw-code-payload` endpoint
+built on one goes with it. The existing fixture corpus contains none of these,
+so the regenerated fixtures are unchanged; the new tests carry the evidence
+instead.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** High — `OI-7`'s residual, and it can still manufacture the
+fabricated injection endpoint `OI-7` was raised to stop.
+
+### Symptom
+
+Measured:
+
+| File | `file_has_sql_evidence` | `sql` sinks emitted |
+|---|---|---|
+| an HTTP client call alone | `False` | none — the gate works |
+| **the same call, plus one real SQL query elsewhere in the file** | `True` | **`httpClient.execute`** *and* `jdbcTemplate.query` |
+
+`receiver_is_database('httpClient')` is `False` — the receiver is known not to be
+a database — but file evidence overrides it.
+
+### Root cause
+
+The evidence terms are OR'd and one of them is file-scoped, so the weakest term
+decides once satisfied:
+
+```python
+if not (has_hint or receiver_is_database(receiver) or file_sql_evidence):
+    return
+```
+
+One real SQL statement anywhere in a file admits every sink-named call in that
+file. `OI-7` replaced "name alone" with "name OR three evidence terms", and file
+scope is too coarse for a call-level decision — the same scope error as using a
+repo-level manifest to justify a file-level finding.
+
+Because an execution sink feeds `link_raw_code_payload_endpoints`, this still
+produces `raw-code-payload` findings for endpoints that were never vulnerable.
+
+### Proposed fix
+
+Two sides, and both are needed or recall drops:
+
+1. File evidence must not override a receiver known **not** to be a database. It
+   should rescue only calls with no receiver, or with a library hint in the call
+   text.
+2. The receiver vocabulary needs widening to compensate: `ps` and `pstmt` are
+   absent while `stmt`, `conn` and `session` are present, so tightening alone
+   would drop real `PreparedStatement` calls.
+
+### Sequencing note
+
+Under the current architecture this is a detection change and forces a fleet
+rescan. Under the observation layer
+([`observe-then-classify.md`](../plans/observe-then-classify.md) §3) it is a
+classifier change costing a re-aggregation. That is an argument for sequencing
+the observation layer first — **not** for leaving this unfixed.
+
+### Suggested tests
+
+* An HTTP client call in a file containing real SQL produces no `sql` sink.
+* `ps.execute()` and `pstmt.execute()` still produce sinks.
+* A bare `execute(sql)` with no receiver is still rescued by file evidence.
+* No `raw-code-payload` node is produced for an endpoint whose only "sink" was an
+  HTTP call in a SQL-bearing file.
