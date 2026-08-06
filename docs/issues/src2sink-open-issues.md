@@ -60,6 +60,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
+| OI-32 | 32 | The checkout scan is single-threaded and I/O-bound | medium | 14-minute fleet scan is now dominated by file I/O; gains are filesystem-dependent and must be measured first | **P2** |
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
@@ -334,3 +335,87 @@ rather than produce a metabase in which nothing is internal.
 Discovery cannot see a repository the fleet does not contain, so an internal
 library consumed but never scanned still looks external. That is the same
 boundary `OI-18`'s `parent-in-fleet` tier has, and for the same reason.
+
+---
+
+## 32. The checkout scan is single-threaded and I/O-bound  `OI-32`
+
+**Severity:** Medium — a speed ceiling on a step that now dominates the run, not
+a correctness problem.
+
+**Found:** by asking, after `OI-30` and `OI-31` removed the redundant traversals,
+whether the *remaining* one should be parallel. The fleet scans in 14 minutes;
+what is left is mostly waiting for the filesystem.
+
+### The question
+
+`checkout_scan` walks the tree in one thread, and the producer scan reads every
+source file in one thread. Both are I/O-bound, and CPython releases the GIL
+around blocking I/O syscalls — so threads genuinely do help here, unlike
+CPU-bound Python.
+
+### Why this is not simply "add a ThreadPoolExecutor"
+
+**Extraction already uses processes, and deliberately.** `limits.py` runs each
+repo in its own process because a crafted file can hang a tree-sitter C parse or
+peg a CPU with catastrophic backtracking, and *neither a Python signal nor a
+`concurrent.futures` cancellation can stop C-level work*. Killing the process is
+the only reliable reclaim. That is `SEC-2` / `TA-001`, and a thread pool cannot
+provide it: **a thread stuck in a C parse cannot be killed.**
+
+So threading is only admissible for work that does not parse untrusted content in
+the calling process — the directory traversal and the file *reads*, not anything
+downstream of them. Applying it more widely would silently dismantle the bulkhead
+while looking like a performance change.
+
+### Where the benefit actually is, and where it is not
+
+| Work | Parallelises? | Why |
+|---|---|---|
+| **File reads** (producer scan) | **Best candidate** | many independent reads; latency-bound; bounded buffers via `MAX_FILE_BYTES` |
+| **Directory traversal** | Partly | sibling directories are independent, but a directory cannot be scanned before its parent is read |
+| Parsing / extraction | **No** | must stay in processes for `TA-001` |
+
+**And it is filesystem-dependent.** On a network or cloud-backed mount the win is
+large, because the cost is per-request latency and concurrency hides it. On local
+NVMe it is much smaller, because the cost is bandwidth and one thread can
+saturate it.
+
+**The risk that matters here specifically:** the fleet has been observed
+*swapping*. Concurrency raises peak resident memory, so on a memory-constrained
+host more threads can make the run slower, not faster — the opposite of the
+intended effect, and the failure mode `OI-15` was filed about.
+
+### Proposed approach
+
+1. **Measure before building.** Is the remaining 14 minutes traversal, reads, or
+   parsing? Is the checkout on local or network storage? A run with `strace -c`
+   or a simple phase timer answers both, and decides whether this is worth doing
+   at all. Cheap, and it is the step that stops this being a guess.
+2. **Thread the reads first**, bounded and configurable, reusing the existing
+   `--workers` semantics rather than adding a second unrelated knob.
+3. **Keep output deterministic.** Results are sorted today and must stay sorted;
+   the producer scan's `seen` dedup is order-sensitive, so parallel reads must
+   collect first and order after.
+4. **Make `checkout_scan`'s cache thread-safe** — it is a plain dict, and a
+   widening walk is a read-modify-write.
+5. **Do not thread anything that parses.** `TA-001` is not negotiable, and a test
+   should assert the boundary rather than a comment describing it.
+
+### Why it is not urgent
+
+`OI-30` and `OI-31` took the fleet from a 70-minute producer scan to a
+14-minute run, and the next structural lever is larger than threading: skipping
+repos whose content-addressed version has not changed, which is `OI-15`'s
+unfinished step 4 and turns a full rescan into an incremental one. Threading
+speeds up work that versioning would let us **not do at all**.
+
+### Suggested tests
+
+* A thread pool never wraps a call that parses repository content — asserted
+  structurally, so the `TA-001` boundary cannot erode by accident.
+* Output is byte-identical to the single-threaded run over the same fixture,
+  including ordering.
+* The cache survives concurrent widening from two threads.
+* Peak memory does not scale with worker count beyond a stated bound.
+

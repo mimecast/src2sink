@@ -2276,13 +2276,21 @@ after which the first binding to match a repo silently suppresses every other
 binding's hit in it. A repo importing two different clients is the fixture that
 catches it, and `OI30-M1` is the mutant that proves the fixture works.
 
+### Confirmed in the field
+
+Reported back after the fix: **the full fleet scans in 14 minutes** without
+`--discover-api-clients`. `payload-endpoint-producers` alone was 70 minutes
+before, so the step that dominated the run no longer does.
+
 ### Residual not covered
 
 The walk is still single-threaded and still reads every file with a scannable
-suffix. If 70 minutes becomes 7 and that is still too slow, the next lever is
-skipping files by content-addressed repo version — only rescanning repos whose
-version changed — which is what the versioning design's keys exist to enable and
-is the same unfinished step 4 of `OI-15`.
+suffix. The next lever is skipping repos whose content-addressed version has not
+changed — the versioning design's keys exist to enable exactly that, and it is
+the same unfinished step 4 of `OI-15`.
+
+`--discover-api-clients` was still adding fifteen more traversals on top of this;
+that is `OI-31`.
 
 ---
 
@@ -2381,7 +2389,7 @@ defaulted arguments under-taint rather than over-taint.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `ccdb358` — PR #43  
 **Tests:** `tests/test_checkout_scan.py` — 17 cases: walk counts, cache reuse and widening, `prewalk`, the `SKIP_DIRS` prefix rule, glob vs exact attribution, sort stability, and both CLI paths. Mutants `OI31-M1`…`OI31-M3`.
 
 ### Symptom
