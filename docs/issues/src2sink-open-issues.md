@@ -157,9 +157,26 @@ removing the quadratic scan, because both require holding the fleet first.
 
 ### Why it is not urgent yet, and what would make it so
 
-At the scale scanned today the fleet fits comfortably and `OI-14` removed the
+~~At the scale scanned today the fleet fits comfortably and `OI-14` removed the
 cost that was actually being felt. The trigger to act is a metabase in the tens
-of GB, or a requirement to run on a memory-constrained host.
+of GB, or a requirement to run on a memory-constrained host.~~
+
+**Triggered, 2026-08.** The fleet is past 34 GB and a trace completes only by
+swapping. Both stated conditions are met; this is now the active work.
+
+### What blocks it: not what the 3.0 plan said
+
+The plan held that `OI-15` was blocked by Finding A — 14 aggregators that fuse
+computation with rendering, leaving no computed result to persist. Reading
+`trace` rather than the aggregator inventory shows that is wrong: **`trace` reads
+none of the rendered artefacts.** It calls `load_v2_repo_records`,
+`collect_service_edges` and `build_producer_indices`, all already pure, and
+`run_trace` already returns a `TraceReport` that is rendered separately.
+
+The fused aggregators block persisting the *catalogue views*. They do not block
+persisting the *trace inputs*, and it is the trace inputs that make `trace` slow.
+So the ~2,400 lines of refactoring across 13 modules is real work but not a
+prerequisite. See §2a of `docs/plans/src2sink-3.0-plan.md`.
 
 ### Proposed fix
 

@@ -4,7 +4,12 @@ neutralised so it cannot break Markdown structure or the ```mermaid fence
 
 from __future__ import annotations
 
-from src2sink.aggregators.queues import _orphan_line, _queue_mermaid
+from src2sink.aggregators.queues import (
+    QueueGraph,
+    QueueTopic,
+    _orphan_line,
+    _queue_mermaid,
+)
 from src2sink.sanitize import for_mermaid_label
 
 # A hostile extracted literal: closes a Mermaid label, opens a new heading, and
@@ -20,8 +25,15 @@ def test_for_mermaid_label_strips_structural_chars():
 
 
 def test_queue_mermaid_topic_cannot_break_out():
-    topics = {MALICIOUS: {"produce": {"a/b"}, "consume": {"c/d"}, "systems": {"kafka"}}}
-    body = "".join(_queue_mermaid(topics))
+    graph = QueueGraph(topics=(
+        QueueTopic(
+            topic=MALICIOUS,
+            systems=("kafka",),
+            producers=("a/b",),
+            consumers=("c/d",),
+        ),
+    ))
+    body = "".join(_queue_mermaid(graph))
     assert body.count("```") == 2          # the single fence is balanced, not broken
     assert "\n## SYSTEM" not in body       # injected heading cannot start a line
     assert "```evil```" not in body        # injected fence neutralised
