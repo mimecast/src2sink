@@ -77,6 +77,7 @@ different readers.
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
 | `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
 | `OI-13` | Kotlin call sites are invisible to the AST pass | 2.2.0 | `9456ead` (PR #34) | Kotlin repos gain `sql` sinks, `script-exec` sinks and `raw-code-payload` findings from the AST tier for the first time. |
+| `OI-28` | The index fast path bypasses the significant-segment filter | 2.2.0 | `75c5422` (PR #37) | Cross-repo edges resolved through a bare `/v1`, `/api` or `/{id}` disappear — the edges `OI-24` was meant to remove but did not reach. |
 
 ---
 
@@ -1991,3 +1992,59 @@ The same dispatch bug is worth checking for elsewhere: any language whose entry 
 ### Residual not covered
 
 Kotlin's regex tiers already work, so string-built SQL in Kotlin is detected today; this issue is only about the AST pass. Scala and other JVM languages are not scanned at all and are out of scope.
+
+## OI-28 — The index fast path bypasses the significant-segment filter
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** `75c5422` — PR #37  
+**Tests:** `tests/test_oi28_index_fast_path.py` — 25 cases: every segment shape that names nothing, the real routes that must survive, the memo, an end-to-end `collect_service_edges` assertion, and a consistency invariant across sixteen paths. Mutant `OI28-M1`.
+
+### Symptom
+
+Reported from the field against 2.1.0. `OI-24` moved the equality shortcut in
+`path_templates_match` below the guard that a path reducing to no significant
+segments names nothing — and the service-call edges never went through it.
+
+```
+  path_templates_match('/v1', '/v1')            -> None
+  match_path_in_inbound_index('/v1', inbound)   -> conf='high' rows=[...]
+```
+
+`match_path_in_inbound_index` looks the normalised path up in a dict first, and a
+hit returns `high` without consulting the predicate at all. Two repos each
+exposing a bare `/v1` still produced a confident cross-repo edge.
+
+### Root cause
+
+Two separate code paths answer the same question — *does this path denote that
+route* — and nothing required them to agree. `OI-24` was verified against the
+function the issue named, and nothing checked whether the callers reached it. The
+reporter's phrasing is the diagnosis: **same issue in the caller instead of the
+callee**.
+
+### What changed
+
+`_names_a_destination` is applied at the top of the lookup, before both the dict
+fast path and the fuzzy pass, so a path that names nothing is rejected however it
+is matched — and before the memo, so a wrong answer is not cached and served to
+every later call site sharing that path.
+
+**The durable part is not the guard.** A test now asserts the invariant directly:
+if the predicate rejects a path, the index must return no rows for it, and if the
+predicate accepts one, the index must not lose it. That is what would have caught
+this without a second report, and it holds across every shape either has been
+wrong about.
+
+### No version bump
+
+`match_path_in_inbound_index` reaches only aggregators; the record path
+(`extract_urls_and_paths`) is untouched. Aggregate output is recomputed from
+records every run, so nothing is served stale.
+
+### Behaviour change
+
+Cross-repo edges resolved through a bare `/v1`, `/api`, `/service` or `/{id}`
+disappear. These are the edges `OI-24` was raised to remove and did not reach, so
+anyone who saw no change from `OI-24` in 2.1.0 will see it now.
