@@ -75,6 +75,7 @@ different readers.
 | `OI-26` | File-scoped SQL evidence admits every sink-named call in the file | 2.1.0 | `feba873` (PR #28) | `sql` sinks disappear where the receiver reads as another kind of boundary; the fabricated `raw-code-payload` endpoints built on them go with them. |
 | `OI-19` | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | 2.1.0 | `a42c487` (PR #30) | Go and Python repos report dependencies for the first time; every dependency gains `version_kind`; unparsed ecosystems say so in notes. |
 | `OI-18` | Dependency versions are recorded unresolved | 2.1.0 | `a20a0c5` (PR #31) | `${property}` and empty versions are replaced by resolved values or an explicit unresolved; BOM entries stop appearing as dependencies. |
+| `OI-21` | Entry points are HTTP-annotation-only | 2.2.0 | `1f6edad` (PR #33) | New `entry-point` and `entry-marker` families. Queue consumers, gRPC, GraphQL, scheduled jobs and CLI entry points appear as ways in for the first time. |
 
 ---
 
@@ -1784,3 +1785,84 @@ sibling repo is that repo at HEAD, not at the pinned version. Record
 
 Gradle's resolution is a program, not a document. `OI-3` handled version
 catalogues, the tractable part; anything beyond should report `unresolved`.
+
+## OI-21 — Entry points are HTTP-annotation-only
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** `b9edd57` (red), `1f6edad` (fix) — PR #33  
+**Tests:** `tests/test_entry_points.py` — nine cases across HTTP, queue, gRPC, GraphQL, scheduled and CLI, plus the externally-triggered distinction, the producer exclusion, and the assertion that entry points are derived rather than extracted. Mutants `OI21-M1`..`OI21-M3`.
+
+**What changed.** Two families. `entry-marker` is an *observation* recording that
+a non-HTTP entry mechanism was seen; `entry-point` is *derived*, unifying HTTP
+endpoints, queue consumers and markers into one set.
+
+**The part that needed no new extraction at all.** A `@KafkaListener` has
+produced a `queue-sub`/`source` node since 1.x — it was already recorded, and
+simply never treated as a front door. The fixture corpus proves it: of the seven
+entry points that appeared, one is a Kafka consumer in `notifications/sms-consumer`
+that has been visible to the scanner and invisible as a way in for every release
+so far.
+
+**Derived, not extracted, deliberately.** What counts as a front door is a
+classification, and the list will keep growing — every framework is another
+mechanism. Deriving it means adding one costs a re-derive over records rather
+than a fleet re-parse, which is exactly the property the observation layer was
+built for.
+
+**`externally_triggered`.** A scheduled job is a way in, but the clock opens it,
+not a caller — so it carries no untrusted input by that route. Recorded as a
+field rather than resolved by either omitting scheduled work or silently
+equating it with an HTTP endpoint, because `OI-17` will need to tell them apart
+when it reports what an attacker controls.
+
+**Deviation.** The issue listed file watchers and environment input alongside the
+rest. File watches are covered by a marker; environment reads are not, because
+the `config` family already records them and a second reading would double-count.
+Recorded here rather than quietly dropped.
+
+**Behaviour change.** Records gain both families. `DETECTION_VERSION` and
+`DERIVATION_VERSION` both bump, so the fleet rescans — the extraction half is new,
+not only the classification.
+
+---
+
+_The original issue, verbatim:_
+
+**Severity:** High — and it gates `OI-17`.
+
+### Symptom
+
+`HTTP_IN_RX` is keyed per framework bucket, so an entry point is recognised only
+if it is an HTTP framework annotation. Invisible today: message consumers
+(`@KafkaListener`, JMS, SQS, Rabbit), gRPC services, GraphQL resolvers, scheduled
+jobs, file watchers, CLI arguments, and environment input.
+
+The tool sees one *kind* of front door.
+
+### Why it gates `OI-17`
+
+Reachability computed from an incomplete entry-point set produces confident,
+incomplete answers: a trace reporting "no path from any entrypoint" when the
+entrypoint was a `@KafkaListener` nobody can see. That is the failure class this
+project has spent its effort removing, and it is worse here because the
+conclusion looks like a clean result.
+
+**Decided:** `OI-21` lands before `OI-17`
+([`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §7, Q7).
+
+### Suggested tests
+
+* A Kafka/JMS/SQS consumer is recognised as an entry point in Java and Kotlin.
+* A gRPC service method and a GraphQL resolver are recognised.
+* A scheduled job is recognised, and distinguished from an externally-triggered
+  entry — it carries no untrusted input by that route.
+* A repo with only non-HTTP entry points is distinguishable from one with none.
+
+### Residual not covered
+
+Entry points reached through frameworks that wire handlers dynamically at
+runtime — reflection, service loaders, annotation processors — stay invisible.
+The record must say which mechanisms were searched, so a caller can tell "none
+found" from "none looked for".

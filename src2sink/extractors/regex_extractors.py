@@ -20,6 +20,7 @@ from .patterns import (
     AUTH_RX,
     CRYPTO_RX,
     FILE_SINK_RX,
+    ENTRY_MARKER_RX,
     HTTP_IN_RX,
     PII_LOG_RX,
     PII_STORAGE_RX,
@@ -577,4 +578,37 @@ def extract_pii_sinks(ctx: FileExtractionContext) -> None:
                 pii_classification=pii_c,
                 data_class=mime_c,
                 confidence="medium" if field else "low",
+            ))
+
+
+def extract_entry_markers(ctx: FileExtractionContext) -> None:
+    """Record markers for non-HTTP ways into a service (OI-21).
+
+    An *observation*: it says this code is reachable from outside by some
+    mechanism, and leaves what that means to the entry-point derivation. Recording
+    it rather than concluding is what lets the definition of a front door change
+    without re-parsing the fleet.
+
+    Scans untrusted source text; matches are only recorded, never evaluated.
+    """
+    seen: set[tuple[str, int]] = set()
+    for pat, mechanism, external in ENTRY_MARKER_RX:
+        for m in pat.finditer(ctx.source):
+            line = ctx.line_number(m.start())
+            if (mechanism, line) in seen:
+                continue
+            seen.add((mechanism, line))
+            ctx.nodes.append(make_node(
+                repo=ctx.repo_id,
+                file=ctx.rel_path,
+                line=line,
+                language=ctx.language,
+                kind="reference",
+                family="entry-marker",
+                detail={
+                    "mechanism": mechanism,
+                    "externally_triggered": external,
+                    "raw": m.group(0)[:120],
+                },
+                confidence="high",
             ))

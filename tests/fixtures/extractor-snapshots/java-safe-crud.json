@@ -1,10 +1,28 @@
 {
   "edge_count": 0,
   "families": [
+    "entry-point",
     "http-in"
   ],
-  "node_count": 1,
+  "node_count": 2,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "/items",
+        "externally_triggered": true,
+        "mechanism": "http",
+        "method": "GET"
+      },
+      "family": "entry-point",
+      "file": "src/ItemsController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 8,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,

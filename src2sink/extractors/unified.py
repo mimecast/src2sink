@@ -16,6 +16,7 @@ from .regex_extractors import (
     extract_pii_field_declarations,
     extract_pii_sinks,
     extract_queue_io,
+    extract_entry_markers,
     extract_raw_sql_field_markers,
     extract_sql_string_sources,
 )
@@ -61,6 +62,7 @@ def extract_from_file(
     extract_pii_field_declarations(ctx)
     extract_data_class_field_declarations(ctx)
     extract_raw_sql_field_markers(ctx)
+    extract_entry_markers(ctx)
     extract_pii_sinks(ctx)
 
     # AST pass. Records observations only — no classification happens here.

@@ -1,12 +1,30 @@
 {
   "edge_count": 0,
   "families": [
+    "entry-point",
     "pii-field",
     "pii-log",
     "queue-sub"
   ],
-  "node_count": 6,
+  "node_count": 7,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "customer-phone-updates",
+        "externally_triggered": true,
+        "mechanism": "queue",
+        "system": "kafka"
+      },
+      "family": "entry-point",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": null,

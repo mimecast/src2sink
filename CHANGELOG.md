@@ -7,6 +7,18 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- **Entry points beyond HTTP (`OI-21`).** A way into a service counted only if it
+  was an HTTP annotation, so queue consumers, gRPC services, GraphQL resolvers,
+  scheduled jobs and CLI entry points were invisible as front doors. A new
+  derived `entry-point` family unifies them, with `mechanism` naming which kind
+  and `externally_triggered` separating a door a caller can open from one only
+  the clock opens.
+  A `@KafkaListener` needed **no new extraction** — it has produced a `queue-sub`
+  node since 1.x and was simply never treated as a way in.
+  Both versions bump, so the fleet rescans.
+
 ## [2.1.0] - 2026-08-06
 
 Observation and classification, separated. `2.0.0` was about findings that were

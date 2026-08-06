@@ -60,7 +60,6 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
 | OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
 | OI-20 | 20 | Only SQL has a library evidence catalogue | large | deserialization has no family at all; every other sink type is pattern-only | **P1** |
-| OI-21 | 21 | Entry points are HTTP-annotation-only | large | queue consumers, gRPC, GraphQL, file watchers, CLI and env are invisible | **P0** |
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
@@ -501,47 +500,6 @@ config and additions cost no fleet rescan.
   nodes, and emits no node itself.
 * Adding a catalogue entry changes no record, only aggregate output (valid only
   after the observation layer lands).
-
----
-
-## 21. Entry points are HTTP-annotation-only  `OI-21`
-
-**Severity:** High — and it gates `OI-17`.
-
-### Symptom
-
-`HTTP_IN_RX` is keyed per framework bucket, so an entry point is recognised only
-if it is an HTTP framework annotation. Invisible today: message consumers
-(`@KafkaListener`, JMS, SQS, Rabbit), gRPC services, GraphQL resolvers, scheduled
-jobs, file watchers, CLI arguments, and environment input.
-
-The tool sees one *kind* of front door.
-
-### Why it gates `OI-17`
-
-Reachability computed from an incomplete entry-point set produces confident,
-incomplete answers: a trace reporting "no path from any entrypoint" when the
-entrypoint was a `@KafkaListener` nobody can see. That is the failure class this
-project has spent its effort removing, and it is worse here because the
-conclusion looks like a clean result.
-
-**Decided:** `OI-21` lands before `OI-17`
-([`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §7, Q7).
-
-### Suggested tests
-
-* A Kafka/JMS/SQS consumer is recognised as an entry point in Java and Kotlin.
-* A gRPC service method and a GraphQL resolver are recognised.
-* A scheduled job is recognised, and distinguished from an externally-triggered
-  entry — it carries no untrusted input by that route.
-* A repo with only non-HTTP entry points is distinguishable from one with none.
-
-### Residual not covered
-
-Entry points reached through frameworks that wire handlers dynamically at
-runtime — reflection, service loaders, annotation processors — stay invisible.
-The record must say which mechanisms were searched, so a caller can tell "none
-found" from "none looked for".
 
 ---
 
