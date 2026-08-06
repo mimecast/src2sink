@@ -31,7 +31,7 @@ Each clause is a workstream, and they are not independent:
 | "which entrypoints reach which sinks, with evidence" | intra-repo reachability | `OI-17` (P0) |
 | "over a fleet too large to hold in memory" | persisted, incremental index | `OI-15` (P1) |
 | "know when the answer went stale" | metabase versioning | design doc, D1–D3 |
-| (prerequisite to all three) | separate computation from rendering | Finding A |
+| ~~(prerequisite to all three)~~ | separate computation from rendering | Finding A — **withdrawn, see §2a** |
 
 ---
 
@@ -40,9 +40,10 @@ Each clause is a workstream, and they are not independent:
 `OI-15` and `OI-17` both look like features that could be built independently.
 Neither can.
 
-* **`OI-15` is blocked by Finding A.** 14 of 32 aggregator modules import
+* ~~**`OI-15` is blocked by Finding A.** 14 of 32 aggregator modules import
   `renderers.markdown`, and 23 functions compute-and-write in one step. There is
-  no computation to persist without first separating it from its rendering.
+  no computation to persist without first separating it from its rendering.~~
+  **Withdrawn — this was wrong.** See §2a.
 * **`OI-17` is blocked by Finding E and a schema change.** Nodes carry no
   enclosing method, and `FlowEdge` advertises `intra-repo` edges that nothing
   emits while cross-repo relationships live in a *separate* `CallEdge` type.
@@ -51,6 +52,55 @@ Neither can.
 
 Sequencing them as three parallel deliverables means discovering this in the
 middle. So the plan front-loads the unglamorous phase.
+
+---
+
+## 2a. Correction: Phase 1 is not on `OI-15`'s critical path
+
+Found while starting Phase 1, by reading what `trace` actually consumes rather
+than reasoning from the aggregator inventory.
+
+**`trace` does not read a single rendered artefact.** It recomputes from
+records, through three calls in `run_trace`:
+
+```python
+records          = load_v2_repo_records(metabase_root)      # every repo JSON in the fleet
+service_edges, _ = collect_service_edges(records)
+producer_indices = build_producer_indices(metabase_root, repos_root=repos_root)
+```
+
+All three are already pure functions returning data, and `run_trace` already
+returns a `TraceReport` that `render_trace_markdown` renders separately. **The
+compute/render split `OI-15` needs is already done on the path `OI-15` runs on.**
+
+So Finding A described a real problem — it just is not *this* problem. The 14
+fused aggregators block persisting the *catalogue views*. They do not block
+persisting the *trace inputs*, which is what makes `trace` slow, because `trace`
+never touches them. Sequencing Phase 1 first would have meant ~2,400 lines of
+mechanical refactoring across 13 modules before starting the work that makes
+`trace` usable on a 34GB fleet — none of it on the critical path.
+
+**Revised sequencing:**
+
+| Was | Now |
+|---|---|
+| Phase 1 (all 14) → `OI-15` | `OI-15` directly: persist `records` / `service_edges` / `producer_indices` |
+| Phase 1 exit: no aggregator imports `renderers.*` | Deferred with no phase of its own; split each aggregator when a phase needs its view persisted |
+
+Phase 1 still has value — persisting the catalogue views needs it, and a
+`compute_*` boundary is a better tested surface. It is no longer a *prerequisite*,
+so it moves behind the work that pays for itself.
+
+**What was kept from the aborted Phase 1:** the golden-output harness
+(`tests/test_aggregate_output_golden.py`), which pins all 27 generated artefacts
+byte for byte and is what makes any later split safe; and `queues.py`, split as
+the reference for the pattern (`compute_queue_graph` → `QueueGraph` →
+`render_queue_graph`).
+
+**The lesson worth keeping:** Finding A was derived from an inventory — counting
+which modules import `renderers.markdown` — and never checked against the code
+path the slow command actually executes. An inventory says what the code looks
+like; only reading the caller says what it does.
 
 ---
 
@@ -71,50 +121,35 @@ whether §7 of the design is important or theoretical.
 
 **Exit:** written key definitions. Nothing below starts first.
 
-### Phase 1 — separate computation from rendering
+### Phase 1 — the golden-output harness (was: separate computation from rendering)
 
-The prerequisite. For each of the 14 aggregators that render: split into a pure
-`compute_*` returning data and a thin `write_*` at the edge.
+Reduced to its one load-bearing part after §2a. The 14 splits moved to Phase 4.
 
-* Mechanical, incremental, one aggregator per commit.
-* Each split makes the tested surface *purer*, so coverage should hold or improve.
-* No behaviour change; the rendered Markdown must stay byte-identical, which is
-  the regression test.
+What ships here is the safety net: `tests/test_aggregate_output_golden.py` runs
+the full aggregation over the synthetic fleet and pins all 27 generated
+artefacts, content and all, with generation timestamps normalised. Any later
+change that claims to preserve output has to prove it, and the failure names the
+file and the line.
 
-**Why first:** every later phase consumes computed data. Doing this after
-`OI-15` means touching all 14 twice.
+`queues.py` is split as the reference implementation of the pattern — a pure
+`compute_queue_graph` returning a `QueueGraph`, a pure `render_queue_graph`, and
+a thin `write_queue_graph` at the edge. One worked example is what the remaining
+13 need; doing all 14 before the work that needs them is not.
 
-**Exit:** no aggregator imports `renderers.*`; a golden-output test proves the
-Markdown is unchanged.
+**Exit:** golden harness green; one aggregator split as the pattern. ✅ **Done.**
 
-### Phase 2 — intra-repo reachability (`OI-17`)
+### Phase 2 — versioning and the persisted index (`OI-15`)
 
-The primary capability, and deliberately before the storage work: it produces
-*more* data, so it should be settled before choosing how to store data.
+**Moved ahead of reachability** (§2a, and the fleet is already >34 GB and
+swapping). The trace path's compute is already separated, so nothing gates
+this. The two `OI-17` steps that were done first — method structure and type
+declarations — are extraction-side and are not lost by resequencing; they are
+already in `2.1.0` records.
 
-1. **Kotlin AST parity (`OI-13`)** — a prerequisite, not a side quest. Half the
-   JVM fleet is Kotlin, and reachability that silently covers one language is
-   worse than none because its absence looks like a clean result.
-2. **Method-level structure** — declarations extracted; every node stamped with
-   its enclosing method. Schema change.
-3. **Repo symbol table** — class → field types, method signatures, superclass.
-4. **Tiered resolution** — T1 receiver-typed (`high`), T2 interface→impl
-   (`medium`, explicitly ambiguous when >1), T3 name-unique (`low`), else
-   dropped. Tier recorded on every edge.
-5. **Tainted-path search** — BFS from entrypoint parameters to sinks, pruning
-   hops that carry no tainted argument; confidence degrades along the path, with
-   a floor below which nothing is emitted.
-
-Prototyped already: ~60 lines of tree-sitter resolved the canonical
-controller→service→DAO chain at high confidence and pruned a decoy.
-
-**Exit:** the three-file fixture yields exactly one path, `unrelated`/`countAll`
-appear in none, Java and Kotlin agree, and a four-hop `medium` chain does not
-report as `medium`.
-
-### Phase 3 — versioning and the persisted index (`OI-15`)
-
-Now that the data is separable and its shape is settled:
+The earlier argument for reachability-first was that it produces *more* data,
+so the shape should settle before choosing storage. That still holds as a
+caution: the schema below must leave room for resolved call edges rather than
+assume today's node families are all there will be.
 
 1. **Stream records** — `load_v2_repo_records` becomes a generator; the 19
    importers consume once or declare what they retain.
@@ -128,6 +163,33 @@ Now that the data is separable and its shape is settled:
 **Exit:** peak memory for a trace is flat as the fleet grows (ratio assertion
 across two fleet sizes, not an absolute threshold); a persisted index and a
 freshly computed one produce identical edges.
+
+### Phase 3 — intra-repo reachability (`OI-17`)
+
+The primary capability. Steps 1–2 shipped in `2.1.0`; steps 3–5 remain, and
+step 3's volume question is settled — widen, since the fleet is already large
+enough that the persisted index of Phase 2 is what absorbs the cost.
+
+1. ~~**Kotlin AST parity (`OI-13`)**~~ — ✅ shipped. Half the JVM fleet is
+   Kotlin, and reachability that silently covers one language is worse than
+   none because its absence looks like a clean result.
+2. ~~**Method-level structure**~~ — ✅ shipped in `2.1.0`; declarations
+   extracted and every node stamped with its enclosing method.
+3. ~~**Repo symbol table**~~ — ✅ shipped in `2.1.0` as `type-decl`
+   observations: class → field types, supertypes, interface flag.
+4. **Tiered resolution** — T1 receiver-typed (`high`), T2 interface→impl
+   (`medium`, explicitly ambiguous when >1), T3 name-unique (`low`), else
+   dropped. Tier recorded on every edge.
+5. **Tainted-path search** — BFS from entrypoint parameters to sinks, pruning
+   hops that carry no tainted argument; confidence degrades along the path, with
+   a floor below which nothing is emitted.
+
+Prototyped already: ~60 lines of tree-sitter resolved the canonical
+controller→service→DAO chain at high confidence and pruned a decoy.
+
+**Exit:** the three-file fixture yields exactly one path, `unrelated`/`countAll`
+appear in none, Java and Kotlin agree, and a four-hop `medium` chain does not
+report as `medium`.
 
 ### Phase 4 — retention, privacy, and drift reporting
 
@@ -181,7 +243,7 @@ through `OI-17`:
 
 | Risk | Why it is plausible | Mitigation |
 |---|---|---|
-| Phase 1 stalls as "just refactoring" | It has no user-visible payoff | Time-box it and let byte-identical output prove it is safe; it is 14 mechanical splits |
+| Phase 1 stalls as "just refactoring" | It has no user-visible payoff | **Realised, and resolved by §2a:** it was not a prerequisite at all. Cut to the golden harness plus one reference split; the other 13 wait until a phase needs them |
 | `OI-17` produces confident wrong paths | Chained heuristics look authoritative | Tier on every edge, confidence degradation, a path floor, and `R6` reviewing exactly this |
 | Interface-heavy code resolves poorly | T1 needs a concrete declared type | Measure T1/T2/T3 mix on the real fleet **during** Phase 2, not after; if T1 is rare the design needs revisiting |
 | Phase 3 schema needs changing later | Persisted keys are the expensive mistake | Phase 0 gates it, and Phase 2 lands first so the data shape is known |
@@ -209,11 +271,11 @@ through `OI-17`:
 ```
 Phase 0  decide            R0, R1, R1b, R2  + skew measurement
    |
-Phase 1  separate          14 aggregators, byte-identical output
+Phase 1  harness           golden output pinned; queues.py as the pattern
    |
-Phase 2  reach   (OI-13 -> OI-17)     the capability the tool is named for
+Phase 2  persist (OI-15)              streaming, SQLite skeleton, Parquet payload
    |
-Phase 3  persist (OI-15)              streaming, SQLite skeleton, Parquet payload
+Phase 3  reach   (OI-13 -> OI-17)     the capability the tool is named for
    |
 Phase 4  retain  (R4)                 retention policy, threat model, drift queries
 ```
