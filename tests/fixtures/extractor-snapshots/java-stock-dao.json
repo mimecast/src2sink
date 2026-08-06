@@ -1,11 +1,31 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "data-class-field",
     "sql"
   ],
-  "node_count": 5,
+  "node_count": 6,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "file_sql_evidence": true,
+        "library_hint": false,
+        "raw": "jdbcTemplate.query(byReference(ref), mapper)",
+        "receiver": "jdbcTemplate",
+        "receiver_is_database": true,
+        "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 27,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",
