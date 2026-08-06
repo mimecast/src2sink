@@ -1083,6 +1083,32 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI33-M1",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    repos_by_class = _repos_by_class(records)\n",
+        new="",
+        selector="tests/test_discovery_scan_cost.py",
+        note=(
+            "The index is rebuilt inside the target loop instead of before it, "
+            "restoring the per-class rescan of the whole fleet — the quadratic "
+            "that made discovery unusable at fleet scale."
+        ),
+    ),
+    Mutant(
+        id="OI33-M2",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="            cls = _enclosing_class(str(node.get(\"file\", \"\")))\n"
+            "            if cls:\n"
+            "                by_class[cls].add(rid)",
+        new="            by_class[str(node.get(\"file\", \"\"))].add(rid)",
+        selector="tests/test_discovery_scan_cost.py",
+        note=(
+            "The index keys on the full path rather than the class name, so "
+            "every lookup misses and no class ever appears over-generic — the "
+            "'too generic to be safe' warning silently stops firing."
+        ),
+    ),
+    Mutant(
         id="OI31-M1",
         file="src2sink/checkout_scan.py",
         old="    return any(part in SKIP_DIRS for part in rel.parts)",

@@ -2470,3 +2470,91 @@ walks separately, because it reads files by *suffix* across the whole tree rathe
 than by name; folding it in would mean holding every source path in memory,
 trading this fix for the one `OI-15` exists to prevent.
 
+---
+
+## OI-33 — Api-client discovery rescans the whole fleet once per class
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_discovery_scan_cost.py` — 11 cases: equivalence against the replaced implementation kept as an oracle, one-pass node-visit counts, the growth curve across two fleet sizes, and the over-generic warning the scan exists to produce. Mutants `OI33-M1`, `OI33-M2`.
+
+### Symptom
+
+Reported from the field, immediately after `OI-31`: *"discovery is a quadratic
+scan."* It was, and in the worst shape rather worse than quadratic.
+
+### Root cause
+
+`_apply_demand_side` iterated targets, and each target's candidate classes, and
+asked the corpus about every one:
+
+```python
+for target, seen in sorted(observed.items()):        # T targets
+    for cls in sorted(seen["classes"]):              # C classes each
+        repos = _repos_containing_class(records, cls)  # walks EVERY node of EVERY record
+```
+
+So the cost was `targets x classes x records x nodes`. Measured on a synthetic
+fleet where all four scale together, node visits grew **~15x for every doubling**
+of the repository count:
+
+```
+ repos   nodes    node visits
+     8      20            320
+    16      72          4,608   14.4x
+    32     272         69,632   15.1x
+    48     600        345,600
+```
+
+`_enclosing_class` — a path-stem split — was recomputed for every node on every
+one of those passes.
+
+### The fix
+
+Nothing about the answer needed the rescan. "Which repos contain a file called
+`StockClient`" is corpus-wide and **target-independent**, so it is answered from
+an index built in one pass before the loop rather than by a scan inside it.
+
+```
+ repos   nodes       before      after     saving
+     8      20          320         20        16x
+    16      72        4,608         72        64x
+    32     272       69,632        272       256x
+    48     600      345,600        600       576x
+```
+
+Node visits now equal the fleet's node count exactly, and the saving keeps
+growing with the fleet — on a real corpus of thousands of repositories it is
+orders of magnitude.
+
+### Why the equivalence test matters more than the speed test
+
+An index that is faster and answers differently is not a fix, and the answer here
+decides a *safety* warning: a class pattern appearing in too many repositories is
+too generic to accept as a binding, and a reviewer is told so. So the replaced
+implementation is kept in the test file as an **oracle** and the two are asserted
+identical across every shape, including the empty class name and a class present
+nowhere. `OI33-M2` — keying the index on the full path instead of the class name
+— is the mutant for the failure that would otherwise be silent: every lookup
+misses, and the warning simply stops appearing.
+
+### The pattern this is the third instance of
+
+`OI-30` (producer scan, once per binding), `OI-31` (checkout walk, once per
+filename), and now `OI-33` (fleet scan, once per class). Each is the same shape:
+**a loop over what to look for placed outside the loop over where to look.**
+`OI-14` was the first, in the service-call graph. It is worth treating as a
+recognised smell rather than four coincidences — any `for x in things: scan(fleet)`
+deserves the question of whether the scan is `x`-independent, and here it always
+has been.
+
+### Residual not covered
+
+The remaining passes over the fleet — `_http_in_paths_by_repo`,
+`_collect_candidates`, `_demand_side_observations`, and this index — each run
+exactly once, verified by inspection of the call sites. They are linear and are
+not worth merging: they read different fields and merging them would trade a
+clear cost for an unclear one.
+
