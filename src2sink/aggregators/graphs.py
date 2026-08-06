@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ..graph_common import (
     iter_v2_repo_records,
@@ -26,6 +27,7 @@ def write_fleet_index(
     repo_jsons: list[Path],
     *,
     repos_root: Path | None = None,
+    producer_indices: list[Any] | None = None,
 ) -> Path:
     """Persist the four things a trace consults, keyed by target repo (`OI-15`).
 
@@ -35,13 +37,18 @@ def write_fleet_index(
     The two fleet-wide derivations are computed the same way `trace` computed
     them, from the same functions — the index is a cache of this code's output,
     not a reimplementation of it, which is what keeps the two from drifting.
+
+    ``producer_indices`` is taken from the caller when aggregation has already
+    built it. Rebuilding it here meant the fleet's source tree was scanned a
+    second time, which doubled the slowest step of the whole run (`OI-30`).
     """
     paths = v2_record_paths(metabase_root, json_paths=repo_jsons)
     records = load_v2_repo_records(metabase_root, json_paths=paths)
     call_edges, _unmatched = collect_service_edges(records)
-    producer_indices = build_producer_indices(
-        metabase_root, repos_root=repos_root, json_paths=paths,
-    )
+    if producer_indices is None:
+        producer_indices = build_producer_indices(
+            metabase_root, repos_root=repos_root, json_paths=paths,
+        )
     del records  # the streamed pass below must not be served from this list
 
     return build_index(
@@ -67,11 +74,16 @@ def aggregate_graphs_v2(
         write_openapi_artifacts(metabase_root, repos_root, repo_jsons)
     write_queue_graph(metabase_root, repo_jsons)
     write_data_store_graph(metabase_root, repo_jsons)
-    write_payload_producer_index(metabase_root, repo_jsons, repos_root=repos_root)
+    producer_indices = write_payload_producer_index(
+        metabase_root, repo_jsons, repos_root=repos_root,
+    )
     write_index_v2(metabase_root, repo_jsons)
     write_pii_flow_v2(metabase_root, repo_jsons)
     write_traces_index(metabase_root)
     if phase3:
         aggregate_phase3_v2(metabase_root, repo_jsons)
     if fleet_index:
-        write_fleet_index(metabase_root, repo_jsons, repos_root=repos_root)
+        write_fleet_index(
+            metabase_root, repo_jsons, repos_root=repos_root,
+            producer_indices=producer_indices,
+        )

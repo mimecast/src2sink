@@ -1077,6 +1077,37 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI30-M1",
+        file="src2sink/aggregators/payload_producers.py",
+        old="    seen: list[set[tuple[str, str]]] = [set() for _ in bindings]",
+        new="    _shared: set[tuple[str, str]] = set()\n"
+            "    seen: list[set[tuple[str, str]]] = [_shared for _ in bindings]",
+        selector="tests/test_producer_scan_single_pass.py",
+        note=(
+            "The per-binding dedup sets collapse into one, so the first binding "
+            "to match a repo suppresses every other binding's hit in it. The "
+            "exact mistake collapsing the loops invites, and it loses findings "
+            "silently rather than failing."
+        ),
+    ),
+    Mutant(
+        id="OI30-M2",
+        file="src2sink/aggregators/graphs.py",
+        old="    if producer_indices is None:\n"
+            "        producer_indices = build_producer_indices(\n"
+            "            metabase_root, repos_root=repos_root, json_paths=paths,\n"
+            "        )",
+        new="    producer_indices = build_producer_indices(\n"
+            "        metabase_root, repos_root=repos_root, json_paths=paths,\n"
+            "    )",
+        selector="tests/test_producer_scan_single_pass.py",
+        note=(
+            "The fleet index rebuilds the producer indices instead of taking "
+            "them from the caller, scanning the fleet's whole source tree a "
+            "second time and doubling the slowest step of the run."
+        ),
+    ),
+    Mutant(
         id="OI15-M1",
         file="src2sink/index_store.py",
         old='    if stored.get("fleet_signature") != fleet_signature(record_paths):\n'
