@@ -375,6 +375,8 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-in` | source | Inbound route |
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
+| `entry-point` | source | **Derived**: a way untrusted input enters this service. `mechanism` is `http`, `queue`, `grpc`, `graphql`, `schedule`, `cli` or `file-watch`; `channel` names the specific door; `externally_triggered` is false for a scheduled job, which is reachable but not opened by a caller. See `OI-21`. |
+| `entry-marker` | reference | An **observation**: a non-HTTP entry mechanism was seen here. Input to the `entry-point` derivation. |
 | `sql-field-marker` | reference | An **observation**: a SQL-shaped field name appears at this line. Input to the `raw-code-payload` derivation, which is why it is recorded rather than held in memory. |
 | `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised`). Asserts nothing about danger — see below. |
 | `file` | sink | Filesystem write / archive extract |
@@ -465,7 +467,7 @@ Nodes divide in two, and the distinction is load-bearing rather than cosmetic:
 
 * **Observations** (`call-site`, `sql-field-marker`, `kind: reference`) record
   what the extractor saw.
-* **Findings** (`sql`/`sink`, `raw-code-payload`/`source`) are *derived* from
+* **Findings** (`sql`/`sink`, `raw-code-payload`/`source`, `entry-point`/`source`) are *derived* from
   observations by `src2sink/derive.py`.
 
 Strip the findings from a record and what remains is exactly the input they were

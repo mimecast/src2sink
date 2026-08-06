@@ -48,13 +48,17 @@ from .schema import FlowEdge, FlowNode
 # It lives here rather than in schema.py deliberately. schema.py is a *detection*
 # input, so a bump there would change the detection fingerprint and force the
 # fleet rescan this separation exists to avoid.
-DERIVATION_VERSION = 1
+DERIVATION_VERSION = 2
 
-DERIVED_FAMILIES = frozenset({("sql", "sink"), ("raw-code-payload", "source")})
+DERIVED_FAMILIES = frozenset({
+    ("sql", "sink"),
+    ("raw-code-payload", "source"),
+    ("entry-point", "source"),
+})
 
 # Families that are pure observation: recorded by extraction, never findings in
 # themselves, and read by the derivations below.
-OBSERVATION_FAMILIES = frozenset({"call-site", "sql-field-marker"})
+OBSERVATION_FAMILIES = frozenset({"call-site", "sql-field-marker", "entry-marker"})
 
 
 def is_derived(node: FlowNode) -> bool:
@@ -234,6 +238,79 @@ def link_raw_code_payloads(
     return nodes, edges
 
 
+def classify_entry_points(observations: list[FlowNode]) -> list[FlowNode]:
+    """Emit one `entry-point` node per way untrusted input can enter this service.
+
+    A *derivation*, so the definition of a front door can change without
+    re-parsing the fleet — and it will change, because every framework is another
+    mechanism (`OI-21`).
+
+    Three sources, all already observed:
+
+    * ``http-in`` — an HTTP endpoint, the only mechanism that used to count;
+    * ``queue-sub`` with ``direction: consume`` — extracted since 1.x for the
+      queue graph, and never treated as a way in, which is the case that would
+      have made `OI-17` answer "no path" for a whole class of service;
+    * ``entry-marker`` — gRPC, GraphQL, scheduled work, CLI and file watches.
+
+    ``externally_triggered`` separates a door someone outside can open from one
+    only the clock opens. A scheduled job is reachable, but carries no untrusted
+    input by that route, and a reachability answer that cannot tell them apart
+    will overstate what an attacker controls.
+    """
+    out: list[FlowNode] = []
+    # A marker announces a *mechanism*, not a distinct door: a gRPC service
+    # carries both `@GrpcService` and `extends ...ImplBase`, and one service is
+    # one way in. HTTP and queue entries are keyed on their channel instead,
+    # because a path and a topic really are distinct doors.
+    seen_markers: set[tuple[str, str]] = set()
+    for obs in observations:
+        detail = _entry_detail(obs)
+        if detail is None:
+            continue
+        if obs.family == "entry-marker":
+            key = (obs.file, detail["mechanism"])
+            if key in seen_markers:
+                continue
+            seen_markers.add(key)
+        out.append(make_node(
+            repo=obs.repo,
+            file=obs.file,
+            line=obs.line,
+            language=obs.language,
+            kind="source",
+            family="entry-point",
+            detail=detail,
+            confidence=obs.confidence,
+        ))
+    return out
+
+
+def _entry_detail(obs: FlowNode) -> dict[str, Any] | None:
+    """Return the entry-point detail for one observation, or None if it is not one."""
+    if obs.family == "http-in":
+        return {
+            "mechanism": "http",
+            "channel": obs.detail.get("path") or "?",
+            "externally_triggered": True,
+            "method": obs.detail.get("method"),
+        }
+    if obs.family == "queue-sub" and obs.detail.get("direction") == "consume":
+        return {
+            "mechanism": "queue",
+            "channel": obs.detail.get("topic") or "?",
+            "externally_triggered": True,
+            "system": obs.detail.get("system"),
+        }
+    if obs.family == "entry-marker":
+        return {
+            "mechanism": obs.detail["mechanism"],
+            "channel": obs.detail.get("raw") or "?",
+            "externally_triggered": obs.detail["externally_triggered"],
+        }
+    return None
+
+
 def derive_from_observations(
     observations: list[FlowNode],
 ) -> tuple[list[FlowNode], list[FlowEdge]]:
@@ -245,6 +322,7 @@ def derive_from_observations(
     """
     sql_sinks = classify_sql(observations)
     payload_nodes, payload_edges = link_raw_code_payloads(observations, sql_sinks)
-    return [*sql_sinks, *payload_nodes], payload_edges
+    entry_points = classify_entry_points(observations)
+    return [*sql_sinks, *payload_nodes, *entry_points], payload_edges
 
 # probe

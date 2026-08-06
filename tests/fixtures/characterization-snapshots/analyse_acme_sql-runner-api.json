@@ -6,6 +6,7 @@
   "families": [
     "call-site",
     "data-class-field",
+    "entry-point",
     "http-in",
     "raw-code-payload",
     "sql",
@@ -15,7 +16,7 @@
   "language_breakdown": {
     "java": 1
   },
-  "node_count": 11,
+  "node_count": 12,
   "nodes": [
     {
       "confidence": "high",
@@ -91,6 +92,23 @@
       "kind": "source",
       "language": "java",
       "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "/queries",
+        "externally_triggered": true,
+        "mechanism": "http",
+        "method": "REQUEST"
+      },
+      "family": "entry-point",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 7,
       "pii_classification": null
     },
     {

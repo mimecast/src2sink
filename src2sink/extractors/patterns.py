@@ -386,6 +386,36 @@ HTTP_IN_RX: dict[str, list[tuple[re.Pattern[str], str]]] = {
     ],
 }
 
+# Ways into a service that are not HTTP and are not a queue. Each is an
+# *observation* — a marker that this code is reachable from outside by some
+# mechanism — and the entry-point derivation decides what that means (OI-21).
+#
+# Every run is length-bounded, because these read untrusted scanned source
+# (TA-005). `externally_triggered` is False only for `schedule`: a cron job is a
+# front door nobody outside chooses to open, so it carries no untrusted input by
+# that route and a reachability answer must be able to tell it apart.
+ENTRY_MARKER_RX: list[tuple[re.Pattern[str], str, bool]] = [
+    # gRPC: the service annotation, and the generated base class a service extends.
+    (re.compile(r"@GrpcService\b"), "grpc", True),
+    (re.compile(r"\bextends\s+\w{1,80}Grpc\.\w{1,80}ImplBase\b"), "grpc", True),
+    (re.compile(r"@(?:GRpcService|GrpcAdvice)\b"), "grpc", True),
+    # GraphQL: Spring for GraphQL, and the DGS annotations.
+    (re.compile(r"@(?:QueryMapping|MutationMapping|SubscriptionMapping)\b"), "graphql", True),
+    (re.compile(r"@Dgs(?:Query|Mutation|Subscription|Data)\b"), "graphql", True),
+    (re.compile(r"@SchemaMapping\b"), "graphql", True),
+    # Scheduled work. Triggered by the clock, not by a caller.
+    (re.compile(r"@Scheduled\b"), "schedule", False),
+    (re.compile(r"@DisallowConcurrentExecution\b"), "schedule", False),
+    (re.compile(r"@app\.task\b"), "schedule", False),
+    # Command-line input.
+    (re.compile(r"\bargparse\.ArgumentParser\s*\("), "cli", True),
+    (re.compile(r"\bsys\.argv\b"), "cli", True),
+    (re.compile(r"\bpublic\s+static\s+void\s+main\s*\(\s*String\s*(?:\[\]\s*\w{1,80}|\w{1,80}\s*\[\])"), "cli", True),
+    (re.compile(r"@click\.command\b"), "cli", True),
+    # Filesystem input.
+    (re.compile(r"@FileWatch\b|\bWatchService\b"), "file-watch", True),
+]
+
 QUEUE_RX: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r'@KafkaListener[^)]*topics\s*=\s*"([^"]+)"'), "consume", "kafka"),
     (re.compile(r'kafkaTemplate\.send\s*\(\s*"([^"]+)"'), "produce", "kafka"),

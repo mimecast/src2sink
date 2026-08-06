@@ -3,12 +3,13 @@
   "families": [
     "call-site",
     "data-class-field",
+    "entry-point",
     "http-in",
     "raw-code-payload",
     "sql",
     "sql-field-marker"
   ],
-  "node_count": 7,
+  "node_count": 8,
   "nodes": [
     {
       "confidence": "high",
@@ -56,6 +57,23 @@
       "kind": "source",
       "language": "java",
       "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "/execute",
+        "externally_triggered": true,
+        "mechanism": "http",
+        "method": "POST"
+      },
+      "family": "entry-point",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 4,
       "pii_classification": null
     },
     {

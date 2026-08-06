@@ -182,6 +182,40 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI21-M1",
+        file="src2sink/derive.py",
+        old='    if obs.family == "queue-sub" and obs.detail.get("direction") == "consume":',
+        new='    if False:',
+        selector="tests/test_entry_points.py",
+        note=(
+            "Queue consumers stop counting as entry points, so a whole class of "
+            "service reports no way in — the case that would make OI-17 answer "
+            "'no path' while looking certain."
+        ),
+    ),
+    Mutant(
+        id="OI21-M2",
+        file="src2sink/derive.py",
+        old='            "externally_triggered": obs.detail["externally_triggered"],',
+        new='            "externally_triggered": True,',
+        selector="tests/test_entry_points.py",
+        note=(
+            "A scheduled job reads as externally triggered, overstating what an "
+            "attacker controls: the clock opens that door, not a caller."
+        ),
+    ),
+    Mutant(
+        id="OI21-M3",
+        file="src2sink/derive.py",
+        old="        if obs.family == \"entry-marker\":\n            key = (obs.file, detail[\"mechanism\"])\n            if key in seen_markers:\n                continue\n            seen_markers.add(key)\n",
+        new="",
+        selector="tests/test_entry_points.py",
+        note=(
+            "Marker dedup removed, so a gRPC service carrying both @GrpcService "
+            "and extends ...ImplBase counts as two doors instead of one."
+        ),
+    ),
+    Mutant(
         id="DRV-M1",
         file="src2sink/derive.py",
         old='    return (node.family, node.kind) in DERIVED_FAMILIES',

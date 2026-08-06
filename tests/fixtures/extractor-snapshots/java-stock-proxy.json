@@ -3,10 +3,11 @@
   "families": [
     "call-site",
     "data-class-field",
+    "entry-point",
     "http-in",
     "sql-field-marker"
   ],
-  "node_count": 10,
+  "node_count": 11,
   "nodes": [
     {
       "confidence": "high",
@@ -88,6 +89,23 @@
       "kind": "source",
       "language": "java",
       "line": 19,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "channel": "/v1/forward",
+        "externally_triggered": true,
+        "mechanism": "http",
+        "method": "POST"
+      },
+      "family": "entry-point",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "source",
+      "language": "java",
+      "line": 29,
       "pii_classification": null
     },
     {

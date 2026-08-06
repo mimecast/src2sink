@@ -1,10 +1,10 @@
 {
   "_comment": "Content fingerprint of the detection inputs, frozen against DETECTION_VERSION. Regenerate with scripts/detection_version_check.py --update.",
   "derivation_files": {
-    "src2sink/derive.py": "3f3679648ebeb8947ca5b112eaba334b9fcbd29033c3327d9fa975f4d0203e1a"
+    "src2sink/derive.py": "8c7724ea91a7f4b9aa1474e750e5e16810083da6f7e8eeaad439d0a154f3c5a4"
   },
-  "derivation_version": 1,
-  "detection_version": 6,
+  "derivation_version": 2,
+  "detection_version": 7,
   "files": {
     "src2sink/build_metabase_v2.py": "ad8ecc18baa6e598bf3a758748a9da012ad4a342ed11e91e1963bab6fbc0c410",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
@@ -20,12 +20,12 @@
     "src2sink/extractors/javascript.py": "b21b6cd56150fca8da3653a2b4505130d970746b9702afd45ab9e4820d9e2a42",
     "src2sink/extractors/kotlin.py": "1a6551711635eacb47d22e8fa603b0f236085362c33d857426754d17d1d81abd",
     "src2sink/extractors/node_factory.py": "4083a23ffbc594a6fa51d0033f7077178964ef5588e2a4dceaec7c802c0c7702",
-    "src2sink/extractors/patterns.py": "2921c2d6886acc95e4e2b17d319e6e5db536c0937b0e5bc472211e31a61265c6",
+    "src2sink/extractors/patterns.py": "efcdc791d44c2d1e1ab284f5418a9d512612af461a0dab8e53ed8694082f2a84",
     "src2sink/extractors/python_extractor.py": "149bb9c80c0791248be622d74b6e76ff6270031299f81842308409fca6e7a232",
-    "src2sink/extractors/regex_extractors.py": "bec9ce483413c3c8a23617ae38a9c35e4bdf056091970d964e64d45c750e9a03",
+    "src2sink/extractors/regex_extractors.py": "28b18f87166f497efc8f6a81f5c33823be74182256f5591190e83b70e9e2bd39",
     "src2sink/extractors/symbols.py": "c3516ca04394e0abc9cdd9f137f8b107b11488fe1fd6bf4dd7db3effb53e0ee4",
     "src2sink/extractors/ts_extractors.py": "28e8452ef1808154a8e4b3751d293c0820c1741dae012a8fff03ef8df47fec06",
-    "src2sink/extractors/unified.py": "6badb6ce01a3ba8b6e9f7e5a407f97992162e5d1ed70cc63ed3c46a2819943a9",
+    "src2sink/extractors/unified.py": "d1bd940b5f3b3d2ed26077dac4fc747280a01f618a386b37f9aaf21eed05fbb2",
     "src2sink/graph_common.py": "2bb3bc61c9cd589e9a1bc60b5e3df2b34ff198d7e7396c25ae50c918079fdcf4",
     "src2sink/internal_groups.py": "382ecc2c855820f64990cd5d3f43af8f208b7325b744124091cb34ebdc378e20",
     "src2sink/known_api_clients.py": "450107cf45481387dc115f9bbfef76c6a22c4e3e91e44dbfe88e8e2bc35ef1fa",
@@ -36,7 +36,7 @@
     "src2sink/repo_utils.py": "eeec4672236d8898665a56fb1e84016b72c4f4e38684c1af49113a42bffcf75f",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "d30054d872ea322132db424943f0dd63da170f2cd4ea07767860bf3f4e574b98",
+    "src2sink/schema.py": "6d647f05b28bc3e2a1e3024f5352db8a998da2f18bd68012a6158722965a34d7",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }
