@@ -7,7 +7,7 @@
   "target_repo": "acme/sql-runner-api",
   "upstream": [
     {
-      "confidence": "low",
+      "confidence": "medium",
       "kind": "http-out-graph",
       "source_repo": "acme/api-consumer"
     }

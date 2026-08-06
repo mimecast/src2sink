@@ -9,7 +9,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..graph_common import host_matches_repo, load_v2_repo_records, repo_id
+from ..graph_common import (
+    confidence_rank,
+    host_matches_repo,
+    load_v2_repo_records,
+    repo_id,
+)
 from ..known_api_clients import ApiClientBinding, get_bindings
 from ..renderers.markdown import md_table
 from ..sanitize import UNTRUSTED_CONTENT_NOTICE
@@ -286,8 +291,12 @@ def build_producer_indices(
 
 
 def _conf_rank(c: str) -> int:
-    """Map a confidence label to a sortable integer rank."""
-    return {"high": 3, "medium": 2, "low": 1}.get(c, 0)
+    """Map a confidence label to a sortable integer rank.
+
+    Delegates so there is one definition of "stronger evidence"; this module
+    and `trace` were comparing confidences against separate copies of it.
+    """
+    return confidence_rank(c)
 
 
 def write_payload_producer_index(

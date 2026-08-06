@@ -930,6 +930,64 @@ CATALOGUE: tuple[Mutant, ...] = (
         note="Significance filtering removed — `/v1` becomes a destination again.",
     ),
     Mutant(
+        id="OI15-M1",
+        file="src2sink/index_store.py",
+        old='    if stored.get("fleet_signature") != fleet_signature(record_paths):\n'
+            "        conn.close()\n"
+            "        return None",
+        new="",
+        selector="tests/test_fleet_index.py",
+        note=(
+            "Staleness checking removed, so an index built from a metabase that "
+            "has since changed is served anyway — a fast, confident answer about "
+            "a fleet that no longer exists, which is worse than the slowness "
+            "OI-15 set out to fix."
+        ),
+    ),
+    Mutant(
+        id="OI15-M2",
+        file="src2sink/index_store.py",
+        old='    digest.update(f"index={INDEX_VERSION} schema={SCHEMA_VERSION} "\n'
+            '                  f"derivation={DERIVATION_VERSION}\\n".encode())',
+        new='    digest.update(f"index={INDEX_VERSION}\\n".encode())',
+        selector="tests/test_fleet_index.py",
+        note=(
+            "The signature stops folding in the versions that produced the "
+            "records, so a DERIVATION_VERSION bump leaves the index looking "
+            "fresh. A record's bytes can be unchanged while its meaning is not."
+        ),
+    ),
+    Mutant(
+        id="OI15-M3",
+        file="src2sink/index_store.py",
+        old='_OUTBOUND_FAMILIES = frozenset({"http-out", "api-client-consumer"})',
+        new='_OUTBOUND_FAMILIES = frozenset(\n'
+            '    {"http-out", "api-client-consumer", "http-in", "sql", "data-store"}\n'
+            ")",
+        selector="tests/test_fleet_index.py",
+        note=(
+            "The subset widens until `outbound_node` holds most of the fleet's "
+            "nodes, so scanning it is a scan of the fleet again and the memory "
+            "ceiling returns by the side door. Deliberately a *plausible* set "
+            "rather than `None`: setting it to None kills by TypeError in every "
+            "test, which proves the code runs, not that the invariant holds."
+        ),
+    ),
+    Mutant(
+        id="OI29-M1",
+        file="src2sink/trace.py",
+        old="        prev = upstream.get(key)\n"
+            "        if prev is None or confidence_rank(hit.confidence) > confidence_rank(prev.confidence):\n"
+            "            upstream[key] = hit",
+        new="        upstream[key] = hit",
+        selector="tests/test_fleet_index.py tests/test_characterization.py",
+        note=(
+            "Back to last-edge-wins, so a caller's confidence is whichever of its "
+            "several route edges the collector yielded last — a `high` edge "
+            "silently overwritten by a `low` one, understating a real finding."
+        ),
+    ),
+    Mutant(
         id="OI28-M1",
         file="src2sink/graph_common.py",
         old="    return bool(norm) and bool(_significant_segments(norm))",
