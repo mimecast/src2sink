@@ -376,6 +376,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
 | `entry-point` | source | **Derived**: a way untrusted input enters this service. `mechanism` is `http`, `queue`, `grpc`, `graphql`, `schedule`, `cli` or `file-watch`; `channel` names the specific door; `externally_triggered` is false for a scheduled job, which is reachable but not opened by a caller. See `OI-21`. |
+| `type-decl` | reference | An **observation**: a type this file declares, with `fields` (name → declared type), `supertypes` and `is_interface`. The facts a call is resolved against (`OI-17`). |
 | `method-decl` | reference | An **observation**: a callable this file declares, with `class`, `method`, `params` and its `start_line`/`end_line` span. The unit a source-to-sink path is made of (`OI-17`). |
 | `entry-marker` | reference | An **observation**: a non-HTTP entry mechanism was seen here. Input to the `entry-point` derivation. |
 | `sql-field-marker` | reference | An **observation**: a SQL-shaped field name appears at this line. Input to the `raw-code-payload` derivation, which is why it is recorded rather than held in memory. |

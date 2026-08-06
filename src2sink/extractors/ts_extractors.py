@@ -6,6 +6,7 @@ from .ast_walk import (
     extract_call_receiver,
     iter_calls,
     iter_method_declarations,
+    iter_type_declarations,
     line_number,
     node_text,
 )
@@ -245,6 +246,46 @@ def extract_method_declarations(ctx: FileExtractionContext) -> None:
                 "params": params,
                 "start_line": start,
                 "end_line": end,
+            },
+            confidence="high",
+        ))
+
+
+def extract_type_declarations(ctx: FileExtractionContext) -> None:
+    """Record each type this file declares, with its field types and supertypes.
+
+    The facts a call is resolved against (`OI-17`). A field's declared type is
+    what makes `stockService.process()` resolvable offline; the supertypes are
+    what let a call on an interface reach the implementations that have a body,
+    which is the difference between a weak answer and a dead end.
+
+    An observation: it records what the file declares, never that anything is
+    wrong.
+    """
+    ts_lang = ctx.language if ctx.language in supported_languages() else None
+    if not ts_lang:
+        return
+    src_bytes = ctx.source.encode("utf-8")
+    try:
+        tree = parse_source(ts_lang, src_bytes)
+    except (KeyError, OSError, ValueError):
+        return
+
+    for name, fields, supertypes, is_interface, line in iter_type_declarations(
+        src_bytes, tree.root_node, ctx.language
+    ):
+        ctx.nodes.append(make_node(
+            repo=ctx.repo_id,
+            file=ctx.rel_path,
+            line=line,
+            language=ctx.language,
+            kind="reference",
+            family="type-decl",
+            detail={
+                "class": name,
+                "fields": fields,
+                "supertypes": supertypes,
+                "is_interface": is_interface,
             },
             confidence="high",
         ))

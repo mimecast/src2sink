@@ -146,3 +146,32 @@ def test_type_declarations_are_observations():
         source=_JAVA,
     )[0]
     assert all(n.kind == "reference" for n in nodes if n.family == "type-decl")
+
+
+def test_an_unsupported_language_yields_no_declarations():
+    """The pass must decline cleanly rather than guessing at a grammar it lacks."""
+    nodes = extract_from_file(
+        repo_id="g/r", rel_path="src/thing.rb", language="ruby",
+        source="class Foo; end",
+    )[0]
+    assert [n for n in nodes if n.family in ("type-decl", "method-decl")] == []
+
+
+def test_unparsable_source_yields_no_declarations():
+    """Scanned source is untrusted and often partial; a bad parse must not raise."""
+    nodes = extract_from_file(
+        repo_id="g/r", rel_path="src/Broken.java", language="java",
+        source="public class { { { unterminated",
+    )[0]
+    assert all(n.family != "type-decl" or "class" in n.detail for n in nodes)
+
+
+def test_a_language_without_field_syntax_still_records_its_types():
+    """Python declares no field types, so `fields` is empty rather than absent."""
+    nodes = extract_from_file(
+        repo_id="g/r", rel_path="src/dao.py", language="python",
+        source="class StockDao:\n    def find(self):\n        pass\n",
+    )[0]
+    types = {n.detail["class"]: n.detail for n in nodes if n.family == "type-decl"}
+    assert types["StockDao"]["fields"] == {}
+    assert types["StockDao"]["supertypes"] == []

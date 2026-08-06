@@ -3,9 +3,10 @@
   "families": [
     "http-out",
     "method-decl",
-    "path-constant"
+    "path-constant",
+    "type-decl"
   ],
-  "node_count": 4,
+  "node_count": 5,
   "nodes": [
     {
       "confidence": "high",
@@ -84,6 +85,26 @@
       "kind": "reference",
       "language": "java",
       "line": 13,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockRequestProcessor",
+        "fields": {
+          "STOCK_SUBMIT_URL": "String",
+          "client": "ApiClient"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 11,
       "pii_classification": null
     }
   ]

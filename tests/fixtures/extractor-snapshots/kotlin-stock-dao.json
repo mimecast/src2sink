@@ -6,9 +6,10 @@
     "entry-point",
     "http-in",
     "method-decl",
-    "sql"
+    "sql",
+    "type-decl"
   ],
-  "node_count": 13,
+  "node_count": 14,
   "nodes": [
     {
       "confidence": "high",
@@ -255,6 +256,25 @@
       "kind": "source",
       "language": "kotlin",
       "line": 20,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryBuilder",
+        "fields": {
+          "jdbcTemplate": "JdbcTemplate"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/StockQueryBuilder.kt",
+      "framework": null,
+      "kind": "reference",
+      "language": "kotlin",
+      "line": 15,
       "pii_classification": null
     }
   ]

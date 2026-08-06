@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -305,4 +306,131 @@ def iter_method_declarations(
             _parameter_names(source, node, language),
             node.start_point[0] + 1,
             node.end_point[0] + 1,
+        )
+
+
+# Where each grammar declares a field's type. Java puts it on `field_declaration`
+# with a separate declarator; Kotlin uses `property_declaration` in the body and
+# `class_parameter` in the constructor — and the constructor form is the standard
+# Spring shape, so missing it would leave Kotlin resolvable only by accident.
+FIELD_NODE_TYPES: dict[str, frozenset[str]] = {
+    "java": frozenset({"field_declaration"}),
+    "kotlin": frozenset({"property_declaration", "class_parameter"}),
+}
+
+# Java names the two relations; Kotlin gives both as `delegation_specifier` and
+# separates them only by a trailing constructor call. Recorded as one list,
+# because for resolution a superclass and an interface answer the same question:
+# where else might this method be declared.
+SUPERTYPE_NODE_TYPES: dict[str, frozenset[str]] = {
+    "java": frozenset({"superclass", "super_interfaces"}),
+    "kotlin": frozenset({"delegation_specifier"}),
+}
+
+# Bounded like every pattern that reads scanned source (TA-005). An identifier
+# longer than this is not a type name, and leaving the run open invites the
+# harvest gate to fail for a reason nobody has to think about.
+_TYPE_NAME_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,200}")
+
+
+def _java_fields(source: bytes, body: Node) -> dict[str, str]:
+    """Return {field name: declared type} for a Java class body."""
+    out: dict[str, str] = {}
+    for node in walk(body):
+        if node.type != "field_declaration":
+            continue
+        type_node = node.child_by_field_name("type")
+        if type_node is None:
+            continue
+        declared = node_text(source, type_node)
+        for declarator in node.children_by_field_name("declarator"):
+            name = declarator.child_by_field_name("name")
+            if name is not None:
+                out[node_text(source, name)] = declared
+    return out
+
+
+def _kotlin_named_type(source: bytes, node: Node) -> tuple[str, str] | None:
+    """Read a Kotlin `name: Type` pair positionally.
+
+    The grammar exposes no `name` or `type` fields here — a `class_parameter` and
+    a `variable_declaration` are both an `identifier`, a `:` and a `user_type` in
+    sequence, so they are read by position rather than by field.
+    """
+    name = next((c for c in node.children if c.type == "identifier"), None)
+    declared = next((c for c in node.children if c.type == "user_type"), None)
+    if name is None or declared is None:
+        return None
+    return node_text(source, name), node_text(source, declared)
+
+
+def _kotlin_fields(source: bytes, node: Node) -> dict[str, str]:
+    """Return {field name: declared type} for a Kotlin class.
+
+    Covers both the constructor form — `class C(private val svc: Service)`, which
+    is the standard Spring shape — and a property declared in the body. A local
+    variable inside a function body is *not* a field, so only the
+    `variable_declaration` directly beneath a `property_declaration` counts.
+    """
+    out: dict[str, str] = {}
+    for child in walk(node):
+        if child.type == "class_parameter":
+            pair = _kotlin_named_type(source, child)
+        elif child.type == "property_declaration":
+            decl = next(
+                (c for c in child.children if c.type == "variable_declaration"), None
+            )
+            pair = _kotlin_named_type(source, decl) if decl is not None else None
+        else:
+            continue
+        if pair is not None:
+            out[pair[0]] = pair[1]
+    return out
+
+
+def _supertypes(source: bytes, node: Node, language: str) -> list[str]:
+    """Return the type names this declaration extends or implements."""
+    wanted = SUPERTYPE_NODE_TYPES.get(language, frozenset())
+    if not wanted:
+        return []
+    out: list[str] = []
+    for child in walk(node):
+        if child.type not in wanted:
+            continue
+        text = node_text(source, child)
+        for name in _TYPE_NAME_RX.findall(text):
+            if name not in ("extends", "implements") and name not in out:
+                out.append(name)
+    return out
+
+
+def iter_type_declarations(
+    source: bytes, root: Node, language: str
+) -> Iterator[tuple[str, dict[str, str], list[str], bool, int]]:
+    """Yield (class, fields, supertypes, is_interface, line) for each type declared.
+
+    The facts a call is resolved against (`OI-17`). ``fields`` is what makes
+    ``stockService.process()`` resolvable without a compiler; ``supertypes`` is
+    what lets a call on an interface reach the implementations that have a body,
+    which is the difference between a weak answer and a dead end.
+    """
+    for node in walk(root):
+        if node.type not in CLASS_NODE_TYPES.get(language, frozenset()):
+            continue
+        name = _declaration_name(source, node)
+        if name is None:
+            continue
+        body = node.child_by_field_name("body")
+        if language == "java":
+            fields = _java_fields(source, body) if body is not None else {}
+        elif language == "kotlin":
+            fields = _kotlin_fields(source, node)
+        else:
+            fields = {}
+        yield (
+            name,
+            fields,
+            _supertypes(source, node, language),
+            node.type == "interface_declaration",
+            node.start_point[0] + 1,
         )

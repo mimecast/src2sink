@@ -6,9 +6,10 @@
     "method-decl",
     "path-constant",
     "sql-field-marker",
-    "sql-payload-out"
+    "sql-payload-out",
+    "type-decl"
   ],
-  "node_count": 11,
+  "node_count": 12,
   "nodes": [
     {
       "confidence": "medium",
@@ -191,6 +192,26 @@
       "kind": "sink",
       "language": "java",
       "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockQueryForwarder",
+        "fields": {
+          "SUBMIT_URL": "String",
+          "restTemplate": "RestTemplate"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 11,
       "pii_classification": null
     }
   ]

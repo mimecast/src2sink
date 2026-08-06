@@ -19,6 +19,13 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### Added
 
+- **Type facts for call resolution (`OI-17`, step 2).** A new `type-decl`
+  observation records each declared type's field types, supertypes and whether it
+  is an interface. A field's declared type is what makes `stockService.process()`
+  resolvable offline without a compiler; the supertypes are what let a call on an
+  interface reach the implementations that have a body. Kotlin constructor
+  properties count as fields, since that is how the standard Spring shape declares
+  its collaborators.
 - **Nodes know which method they are in (`OI-17`, step 1).** A node recorded
   `file` and `line` and nothing about its enclosing method, so there was no
   "entrypoint 1 of B" to reason about. Callables are now recorded as `method-decl`

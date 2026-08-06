@@ -182,6 +182,42 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI17-M4",
+        file="src2sink/extractors/ast_walk.py",
+        old='            if name not in ("extends", "implements") and name not in out:',
+        new="            if name not in out:",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "The Java keywords land in the supertype list, so a class reads as "
+            "extending a type called `implements` — and interface resolution "
+            "goes looking for it."
+        ),
+    ),
+    Mutant(
+        id="OI17-M5",
+        file="src2sink/extractors/ast_walk.py",
+        old='            node.type == "interface_declaration",',
+        new="            False,",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "An interface reads as a class, so a call resolving to its bodiless "
+            "method looks like a dead end rather than a prompt to expand to the "
+            "implementations."
+        ),
+    ),
+    Mutant(
+        id="OI17-M6",
+        file="src2sink/extractors/ast_walk.py",
+        old='        if child.type == "class_parameter":',
+        new="        if False:",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "Kotlin constructor properties stop counting as fields, so the "
+            "standard Spring shape loses every receiver type and Kotlin becomes "
+            "resolvable only where a property sits in the body."
+        ),
+    ),
+    Mutant(
         id="OI17-M1",
         file="src2sink/extractors/ts_extractors.py",
         old="            if start <= node.line <= end:",
