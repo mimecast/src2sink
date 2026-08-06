@@ -67,7 +67,14 @@ FINGERPRINT_FILE = Path("scripts/detection-fingerprint.json")
 # existing records rather than a fleet rescan. Fingerprinting it under
 # DETECTION_VERSION would force the expensive event for the cheap change, which
 # is exactly the coupling docs/plans/observe-then-classify.md removed.
-DERIVATION_INPUT_FILES = ("src2sink/derive.py",)
+DERIVATION_INPUT_FILES = (
+    "src2sink/derive.py",
+    # `OI-17` step 3. Call resolution is a derivation for the same reason
+    # classification is: every tier is a judgement about what a syntactic read
+    # is worth, and those get revised. Watched at the cheaper granularity, so
+    # changing a tier rule costs a re-derive over records, not a fleet rescan.
+    "src2sink/resolve.py",
+)
 
 DETECTION_INPUT_DIRS = ("src2sink/extractors",)
 DETECTION_INPUT_FILES = (
@@ -186,7 +193,11 @@ def check_fingerprint(
             f"still {deriv_version_now}:\n  " + "\n  ".join(changed) + "\n\n"
             "Findings derived by the previous rules would be kept, because a repo "
             "is only re-derived when the recorded derivation version differs.\n"
-            "Bump DERIVATION_VERSION in src2sink/schema.py, then re-freeze with:\n"
+            # Not schema.py. DERIVATION_VERSION was moved into derive.py because
+            # schema.py is a *detection* input, so bumping it there tripped the
+            # detection fingerprint and forced the fleet rescan the split exists
+            # to avoid. The message kept pointing at the old home.
+            "Bump DERIVATION_VERSION in src2sink/derive.py, then re-freeze with:\n"
             "  uv run python scripts/detection_version_check.py --update\n"
             "This costs a re-derive over existing records, not a fleet rescan — "
             "which is the point of versioning the two separately."

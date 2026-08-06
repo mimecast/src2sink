@@ -1,13 +1,32 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "entry-point",
     "http-in",
     "method-decl",
     "type-decl"
   ],
-  "node_count": 4,
+  "node_count": 5,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [],
+        "enclosing_class": "ItemsController",
+        "enclosing_method": "list",
+        "receiver": "repository",
+        "symbol": "findAll"
+      },
+      "family": "call-site",
+      "file": "src/ItemsController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,

@@ -11,12 +11,15 @@
     "sql-field-marker",
     "type-decl"
   ],
-  "node_count": 11,
+  "node_count": 12,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [
+          "req.getSql()"
+        ],
         "enclosing_class": "SqlRunner",
         "enclosing_method": "run",
         "file_sql_evidence": false,
@@ -26,6 +29,24 @@
         "receiver": "jdbcTemplate",
         "receiver_is_database": true,
         "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [],
+        "enclosing_class": "SqlRunner",
+        "enclosing_method": "run",
+        "receiver": "req",
+        "symbol": "getSql"
       },
       "family": "call-site",
       "file": "src/SqlRunner.java",

@@ -173,6 +173,53 @@ def extract_call_receiver(source: bytes, node: Node, language: str) -> str | Non
     return None
 
 
+# The field naming the argument list, per grammar. Java and Kotlin agree on
+# `arguments`; the C-family grammars all use it too, so the exceptions are what
+# is listed rather than the rule.
+_ARGUMENT_FIELDS = ("arguments", "argument_list")
+
+# Wrapper nodes that hold the arguments themselves. Yielding these instead of
+# the real arguments would make every call look like it took one argument
+# spelled "(a, b)".
+_ARGUMENT_NOISE = frozenset({"(", ")", ",", "value_argument", "argument"})
+
+
+def extract_call_arguments(source: bytes, node: Node, language: str) -> list[str]:
+    """Return the argument expressions a call passes, as source text.
+
+    `stockService.process(req.getFilter())` -> `["req.getFilter()"]`.
+
+    Text rather than a resolved value, because that is all a syntactic read can
+    honestly give: `OI-17` step 4 asks whether the argument at a call site
+    carries something a parameter upstream received, which is a comparison of
+    expressions, not an evaluation of them.
+
+    Captured now rather than with step 4 deliberately. Recording it changes what
+    a record contains, so it costs a `DETECTION_VERSION` bump and a fleet rescan
+    — and step 3's widening already forces one. Two rescans for work that fits
+    in one is the expensive way round.
+    """
+    args = None
+    for field in _ARGUMENT_FIELDS:
+        args = node.child_by_field_name(field)
+        if args is not None:
+            break
+    if args is None:
+        return []
+
+    out: list[str] = []
+    for child in args.named_children:
+        if child.type in _ARGUMENT_NOISE:
+            # Kotlin wraps each argument in a `value_argument`; unwrap to the
+            # expression so Java and Kotlin record the same text (OI-13 parity).
+            inner = child.named_children
+            if inner:
+                out.append(node_text(source, inner[0]))
+            continue
+        out.append(node_text(source, child))
+    return [a for a in (t.strip() for t in out) if a]
+
+
 # The declaration nodes each grammar uses for a class and for a callable. A path
 # through a service is a chain of these, so they are what `OI-17` needs before
 # anything can be resolved or traversed.
@@ -431,6 +478,27 @@ def iter_type_declarations(
             name,
             fields,
             _supertypes(source, node, language),
-            node.type == "interface_declaration",
+            _is_interface(node, language),
             node.start_point[0] + 1,
         )
+
+
+def _is_interface(node: Node, language: str) -> bool:
+    """Whether a type declaration declares an interface rather than a class.
+
+    Java gets its own node type. **Kotlin does not** — `interface Foo { }` parses
+    as a `class_declaration` whose first child is the `interface` keyword, so
+    testing the node type marked every Kotlin interface as a class.
+
+    That was silently wrong from the moment `type-decl` shipped, and it only
+    surfaced when `OI-17` step 3 tried to resolve through one: a Kotlin call on
+    an interface-typed field bound to the interface's own bodiless method and
+    the chain stopped there, reporting a dead end for the standard Spring shape
+    across half the JVM fleet. Exactly the failure `OI-13` exists to prevent —
+    an answer that looks clean because a language was invisible.
+    """
+    if node.type == "interface_declaration":
+        return True
+    if language != "kotlin":
+        return False
+    return any(child.type == "interface" for child in node.children)

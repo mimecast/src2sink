@@ -2,7 +2,7 @@
   "build_systems": [],
   "dependencies_external_count": 0,
   "dependencies_internal": [],
-  "edge_count": 2,
+  "edge_count": 3,
   "families": [
     "call-site",
     "data-class-field",
@@ -18,12 +18,15 @@
   "language_breakdown": {
     "java": 1
   },
-  "node_count": 17,
+  "node_count": 18,
   "nodes": [
     {
       "confidence": "high",
       "data_class": null,
       "detail": {
+        "arguments": [
+          "request.getSql()"
+        ],
         "enclosing_class": "QueryController",
         "enclosing_method": "execute",
         "file_sql_evidence": true,
@@ -33,6 +36,24 @@
         "receiver": "jdbcTemplate",
         "receiver_is_database": true,
         "symbol": "query"
+      },
+      "family": "call-site",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 17,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [],
+        "enclosing_class": "QueryController",
+        "enclosing_method": "execute",
+        "receiver": "request",
+        "symbol": "getSql"
       },
       "family": "call-site",
       "file": "src/QueryController.java",

@@ -1,12 +1,33 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "data-class-field",
     "method-decl",
     "sql-field-marker"
   ],
-  "node_count": 3,
+  "node_count": 4,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"https://sql-runner-api.example/v1/queries\""
+        ],
+        "enclosing_class": null,
+        "enclosing_method": "callSqlRunnerApi",
+        "receiver": "http",
+        "symbol": "Get"
+      },
+      "family": "call-site",
+      "file": "main.go",
+      "framework": null,
+      "kind": "reference",
+      "language": "go",
+      "line": 8,
+      "pii_classification": null
+    },
     {
       "confidence": "medium",
       "data_class": "dangerous-payload",

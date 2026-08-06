@@ -31,6 +31,7 @@ from .extractors.patterns import (
     SQL_SINK_NAMES,
     receiver_is_another_boundary,
 )
+from .resolve import call_edges
 from .schema import FlowEdge, FlowNode
 
 # Produced *here* rather than by extraction. Keyed on (family, kind) rather than
@@ -48,7 +49,7 @@ from .schema import FlowEdge, FlowNode
 # It lives here rather than in schema.py deliberately. schema.py is a *detection*
 # input, so a bump there would change the detection fingerprint and force the
 # fleet rescan this separation exists to avoid.
-DERIVATION_VERSION = 3
+DERIVATION_VERSION = 4
 
 DERIVED_FAMILIES = frozenset({
     ("sql", "sink"),
@@ -98,11 +99,11 @@ def _has_sql_evidence(detail: dict[str, Any], *, hint: bool) -> bool:
     else*. Collapsing the two either reinstates `OI-26` or withdraws the
     unknown-receiver recall that file evidence exists for.
     """
-    if hint or detail["receiver_is_database"]:
+    if hint or detail.get("receiver_is_database", False):
         return True
-    if receiver_is_another_boundary(detail["receiver"]):
+    if receiver_is_another_boundary(detail.get("receiver")):
         return False
-    return bool(detail["file_sql_evidence"])
+    return bool(detail.get("file_sql_evidence", False))
 
 
 def sql_verdict(detail: dict[str, Any]) -> bool | None:
@@ -113,7 +114,12 @@ def sql_verdict(detail: dict[str, Any]) -> bool | None:
     classification is made.
     """
     name = detail["symbol"]
-    hint = detail["library_hint"]
+    # `.get`, because `OI-17` step 3 widened observation to every call and an
+    # ordinary call carries none of the SQL fields — recording them for the ~75%
+    # of nodes that are now plain call sites would cost far more than it tells.
+    # Absent reads as "no SQL evidence", which is the truthful default: nothing
+    # vouched for this call being SQL because nothing looked.
+    hint = detail.get("library_hint", False)
     if not (name in SQL_SINK_NAMES or hint):
         return None
     if not _has_sql_evidence(detail, hint=hint):
@@ -140,10 +146,10 @@ def classify_sql(observations: list[FlowNode]) -> list[FlowNode]:
             family="sql",
             detail=_with_scope({
                 "symbol": d["symbol"],
-                "receiver": d["receiver"] or "",
+                "receiver": d.get("receiver") or "",
                 "execution": is_execution,
-                "parameterised": d["parameterised"],
-                "raw": d["raw"],
+                "parameterised": d.get("parameterised", ""),
+                "raw": d.get("raw", ""),
             }, obs),
             confidence="high" if is_execution else "medium",
         ))
@@ -336,6 +342,10 @@ def derive_from_observations(
     sql_sinks = classify_sql(observations)
     payload_nodes, payload_edges = link_raw_code_payloads(observations, sql_sinks)
     entry_points = classify_entry_points(observations)
-    return [*sql_sinks, *payload_nodes, *entry_points], payload_edges
+    # Resolution is a derivation for the same reason classification is: every
+    # tier is a judgement about what a syntactic read is worth, and those get
+    # revised. Here that costs a re-derive rather than a fleet rescan.
+    resolved = call_edges(observations)
+    return [*sql_sinks, *payload_nodes, *entry_points], [*payload_edges, *resolved]
 
 # probe

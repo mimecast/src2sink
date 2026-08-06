@@ -1,13 +1,35 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "method-decl",
     "pii-field",
     "queue-pub",
     "type-decl"
   ],
-  "node_count": 7,
+  "node_count": 8,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "\"customer-phone-updates\"",
+          "phoneNumber + \":\" + body"
+        ],
+        "enclosing_class": "EventPublisher",
+        "enclosing_method": "publishSms",
+        "receiver": "kafkaTemplate",
+        "symbol": "send"
+      },
+      "family": "call-site",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 13,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,

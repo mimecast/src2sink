@@ -175,3 +175,32 @@ def test_a_language_without_field_syntax_still_records_its_types():
     types = {n.detail["class"]: n.detail for n in nodes if n.family == "type-decl"}
     assert types["StockDao"]["fields"] == {}
     assert types["StockDao"]["supertypes"] == []
+
+
+def test_a_kotlin_interface_is_recognised_as_one():
+    """Kotlin has no `interface_declaration` node, and this was silently wrong.
+
+    `interface Foo { }` parses as a `class_declaration` whose first child is the
+    `interface` keyword, so testing the node type marked every Kotlin interface
+    as a class. Shipped that way in 2.1.0 and invisible until `OI-17` step 3
+    tried to resolve through one: a call on an interface-typed field bound to the
+    bodiless interface method and the chain stopped, reporting a dead end for the
+    standard Spring shape across half the JVM fleet.
+
+    The Java case passed throughout, which is exactly the failure `OI-13` exists
+    to prevent — an answer that looks clean because one language was invisible.
+    """
+    types = _types(
+        "interface StockService {\n    fun process(f: String): Result\n}\n",
+        "kotlin", "src/StockService.kt",
+    )
+    assert types["StockService"]["is_interface"] is True
+
+
+def test_a_kotlin_class_is_not_mistaken_for_an_interface():
+    """The other direction, so the fix cannot be 'return True for Kotlin'."""
+    types = _types(
+        "class StockServiceImpl : StockService {\n    fun process(f: String): Result? = null\n}\n",
+        "kotlin", "src/StockServiceImpl.kt",
+    )
+    assert types["StockServiceImpl"]["is_interface"] is False

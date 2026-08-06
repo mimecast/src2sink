@@ -1,13 +1,36 @@
 {
   "edge_count": 0,
   "families": [
+    "call-site",
     "http-out",
     "method-decl",
     "path-constant",
     "type-decl"
   ],
-  "node_count": 5,
+  "node_count": 6,
   "nodes": [
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "arguments": [
+          "STOCK_SUBMIT_URL",
+          "request",
+          "StockSubmitResponse.class"
+        ],
+        "enclosing_class": "StockRequestProcessor",
+        "enclosing_method": "submit",
+        "receiver": "client",
+        "symbol": "post"
+      },
+      "family": "call-site",
+      "file": "src/StockRequestProcessor.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 22,
+      "pii_classification": null
+    },
     {
       "confidence": "high",
       "data_class": null,
