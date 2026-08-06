@@ -2207,3 +2207,80 @@ Nothing compared two independently-ordered computations of the same answer. The
 characterization snapshot recorded the buggy value as correct, which is what a
 characterization snapshot is for — it pins behaviour, and pinning includes
 pinning a defect until something else disputes it. The index was that something.
+
+---
+
+## OI-30 — The producer scan reads the whole fleet once per binding
+
+### Resolution
+
+**Fixed in:** 2.2.0 (unreleased)  
+**Commit:** _this PR_  
+**Tests:** `tests/test_producer_scan_single_pass.py` — 9 cases: read counts flat across binding counts, no file read twice, the per-binding dedup isolation, and one build per aggregation run. Mutants `OI30-M1`, `OI30-M2`.
+
+### Symptom
+
+Reported from the field: `payload-endpoint-producers` is the slowest part of a
+scan apart from fleet-wide traces, at **70 minutes**.
+
+### Root cause
+
+`build_producer_indices` looped over bindings on the *outside*:
+
+```python
+for binding in get_bindings():          # N bindings
+    for group/repo in repos_root:       # every repo
+        for path in repo_dir.rglob("*"):
+            text = _read_capped(path)   # read from disk, once per binding
+```
+
+So the entire checkout is read from disk **once per binding**, and the only
+thing that differs between passes is which regex runs over text already in
+memory. `IMPORT_SCAN_RX` was inside the loop too, so it re-ran over the same
+text N times. Instrumented before the fix:
+
+```
+     1 bindings ->   11 file reads  (1x the fleet)
+     3 bindings ->   33 file reads  (3x the fleet)
+    10 bindings ->  110 file reads  (10x the fleet)
+```
+
+**And `OI-15` doubled it.** `aggregate_graphs_v2` called `build_producer_indices`
+twice — once for the catalogue and once to populate the fleet index — so ten
+bindings meant reading a 34 GB fleet twenty times. That regression was
+introduced by the index work and landed on the slowest step of the run.
+
+### The fix
+
+Invert the loops: walk the fleet once, read each file once, and match it against
+every binding while it is in memory. `scan_repos_for_bindings` returns one hit
+list per binding, in the same order as before.
+
+Disk I/O is the dominant term and regex over resident text is not, so the
+reduction in reads is the reduction in time: **N×**, plus the 2× from building
+the indices once per run and handing them to both consumers.
+
+```
+ bindings |   before |    after | speedup
+        1 |       11 |       11 |   1.0x
+       10 |      110 |       11 |  10.0x
+       20 |      220 |       11 |  20.0x
+```
+
+### What the tests are really for
+
+This is a pure performance change, so the output tests matter more than the
+speed one. The scan's dedup state is keyed `(repo, kind)` **per binding**, and
+collapsing the loops is exactly the change that would quietly share one set —
+after which the first binding to match a repo silently suppresses every other
+binding's hit in it. A repo importing two different clients is the fixture that
+catches it, and `OI30-M1` is the mutant that proves the fixture works.
+
+### Residual not covered
+
+The walk is still single-threaded and still reads every file with a scannable
+suffix. If 70 minutes becomes 7 and that is still too slow, the next lever is
+skipping files by content-addressed repo version — only rescanning repos whose
+version changed — which is what the versioning design's keys exist to enable and
+is the same unfinished step 4 of `OI-15`.
+

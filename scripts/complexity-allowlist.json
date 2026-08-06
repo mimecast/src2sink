@@ -47,14 +47,6 @@
       "cyclomatic": 11,
       "cognitive": 10
     },
-    "src2sink/aggregators/payload_producers.py:_scan_repo_for_binding": {
-      "cyclomatic": 11,
-      "cognitive": 13
-    },
-    "src2sink/aggregators/payload_producers.py:build_producer_indices": {
-      "cyclomatic": 10,
-      "cognitive": 21
-    },
     "src2sink/aggregators/pii_cross_repo.py:_build_queue_flows": {
       "cyclomatic": 11,
       "cognitive": 20

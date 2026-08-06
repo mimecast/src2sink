@@ -62,6 +62,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
+| OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering

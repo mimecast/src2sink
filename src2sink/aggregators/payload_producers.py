@@ -7,6 +7,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 from ..graph_common import (
@@ -155,17 +156,65 @@ def _read_capped(path: Path, cap: int = 400_000) -> str | None:
         return None
 
 
+@dataclass(frozen=True)
+class _BindingMatcher:
+    """One binding with its build-file patterns compiled once."""
+
+    binding: ApiClientBinding
+    pom_rx: re.Pattern[str]
+    gradle_rx: re.Pattern[str]
+
+
+def _matchers(bindings: list[ApiClientBinding]) -> list[_BindingMatcher]:
+    """Compile the per-binding build-file patterns once for the whole walk."""
+    return [
+        _BindingMatcher(
+            binding=b,
+            pom_rx=re.compile(
+                rf"<artifactId>({re.escape(b.maven_artifact)})</artifactId>",
+                re.IGNORECASE,
+            ),
+            gradle_rx=re.compile(re.escape(b.maven_artifact), re.IGNORECASE),
+        )
+        for b in bindings
+    ]
+
+
 def _import_hits_in_file(
     text: str, path: Path, repo_dir: Path, src: str,
     binding: ApiClientBinding, seen: set[tuple[str, str]],
 ) -> list[ProducerHit]:
     """Scan one file's imports for the binding's import prefix, deduped via `seen`."""
-    hits: list[ProducerHit] = []
+    return _import_hits_from_scanned(
+        _scan_imports(text), text, path, repo_dir, src, binding, seen,
+    )
+
+
+def _scan_imports(text: str) -> list[tuple[str, int]]:
+    """Every imported package in a file, with the offset it was found at.
+
+    Run **once per file** rather than once per binding. `IMPORT_SCAN_RX` was
+    inside the per-binding loop, so a fleet with ten bindings matched the same
+    regex over the same text ten times.
+    """
+    out: list[tuple[str, int]] = []
     for m in IMPORT_SCAN_RX.finditer(text):
         pkg = m.group(1) or m.group(2) or ""
+        if pkg:
+            out.append((pkg, m.start()))
+    return out
+
+
+def _import_hits_from_scanned(
+    imports: list[tuple[str, int]], text: str, path: Path, repo_dir: Path,
+    src: str, binding: ApiClientBinding, seen: set[tuple[str, str]],
+) -> list[ProducerHit]:
+    """Turn already-scanned imports into hits for one binding."""
+    hits: list[ProducerHit] = []
+    for pkg, offset in imports:
         if binding.import_prefix in pkg and (src, "import") not in seen:
             seen.add((src, "import"))
-            line = text.count("\n", 0, m.start()) + 1
+            line = text.count("\n", 0, offset) + 1
             hits.append(ProducerHit(
                 source_repo=src,
                 target_repo=binding.target_repo,
@@ -178,13 +227,8 @@ def _import_hits_in_file(
     return hits
 
 
-def _scan_repo_for_binding(
-    repo_dir: Path, src: str, binding: ApiClientBinding,
-    seen: set[tuple[str, str]], pom_rx: re.Pattern[str], gradle_rx: re.Pattern[str],
-) -> list[ProducerHit]:
-    """Scan a repo directory tree for imports and build-file references to the binding."""
-    hits: list[ProducerHit] = []
-    found_pom = False
+def _iter_scannable_files(repo_dir: Path) -> Iterator[tuple[Path, str]]:
+    """Yield each scannable file in a repo with its text, reading each one once."""
     for path in repo_dir.rglob("*"):
         if path.suffix.lower() not in _BINDING_SCAN_SUFFIXES:
             continue
@@ -193,37 +237,78 @@ def _scan_repo_for_binding(
         text = _read_capped(path)
         if text is None:
             continue
-        if path.name in _BUILD_FILE_NAMES and (pom_rx.search(text) or gradle_rx.search(text)):
-            found_pom = True
-        hits.extend(_import_hits_in_file(text, path, repo_dir, src, binding, seen))
+        yield path, text
 
-    if found_pom and (src, "pom") not in seen:
-        seen.add((src, "pom"))
-        hits.append(ProducerHit(
-            source_repo=src,
-            target_repo=binding.target_repo,
-            path="*",
-            kind="build-dep-scan",
-            confidence="high",
-            evidence=binding.maven_artifact,
-        ))
+
+def _scan_repo_for_bindings(
+    repo_dir: Path, src: str, matchers: list[_BindingMatcher],
+    seen: list[set[tuple[str, str]]],
+) -> list[list[ProducerHit]]:
+    """Scan one repo once, matching every binding against each file as it is read.
+
+    The inversion that `OI-30` is about. Each file was previously read from disk
+    once *per binding*, so a fleet with ten bindings was read ten times over and
+    the only thing that differed between passes was which regex ran against text
+    already in memory.
+    """
+    hits: list[list[ProducerHit]] = [[] for _ in matchers]
+    found_pom = [False] * len(matchers)
+
+    for path, text in _iter_scannable_files(repo_dir):
+        imports = _scan_imports(text)
+        is_build_file = path.name in _BUILD_FILE_NAMES
+        for i, matcher in enumerate(matchers):
+            if src == matcher.binding.target_repo:
+                continue
+            if is_build_file and _names_artifact(matcher, text):
+                found_pom[i] = True
+            hits[i].extend(_import_hits_from_scanned(
+                imports, text, path, repo_dir, src, matcher.binding, seen[i],
+            ))
+
+    for i, matcher in enumerate(matchers):
+        pom_hit = _build_dep_hit(matcher, src, found=found_pom[i], seen=seen[i])
+        if pom_hit is not None:
+            hits[i].append(pom_hit)
     return hits
 
 
-def _scan_repos_for_binding(
-    repos_root: Path,
-    binding: ApiClientBinding,
-) -> list[ProducerHit]:
-    """Scan every repo under `repos_root` for source-level uses of the binding."""
-    if not repos_root.is_dir():
-        return []
-    hits: list[ProducerHit] = []
-    seen: set[tuple[str, str]] = set()
-    pom_rx = re.compile(
-        rf"<artifactId>({re.escape(binding.maven_artifact)})</artifactId>",
-        re.IGNORECASE,
+def _names_artifact(matcher: _BindingMatcher, text: str) -> bool:
+    """Whether a build file declares a dependency on the binding's artifact."""
+    return bool(matcher.pom_rx.search(text) or matcher.gradle_rx.search(text))
+
+
+def _build_dep_hit(
+    matcher: _BindingMatcher, src: str, *, found: bool, seen: set[tuple[str, str]],
+) -> ProducerHit | None:
+    """The one build-dependency hit a repo contributes to a binding, if any."""
+    if not found or (src, "pom") in seen:
+        return None
+    seen.add((src, "pom"))
+    return ProducerHit(
+        source_repo=src,
+        target_repo=matcher.binding.target_repo,
+        path="*",
+        kind="build-dep-scan",
+        confidence="high",
+        evidence=matcher.binding.maven_artifact,
     )
-    gradle_rx = re.compile(re.escape(binding.maven_artifact), re.IGNORECASE)
+
+
+def scan_repos_for_bindings(
+    repos_root: Path,
+    bindings: list[ApiClientBinding],
+) -> list[list[ProducerHit]]:
+    """Walk the fleet **once**, returning the hits for each binding in order."""
+    hits: list[list[ProducerHit]] = [[] for _ in bindings]
+    if not repos_root.is_dir() or not bindings:
+        return hits
+
+    matchers = _matchers(bindings)
+    # `seen` stays per binding: the dedup key is (repo, kind) *for that binding*,
+    # so sharing one set across bindings would let the first binding to match a
+    # repo suppress every other binding's hit in it.
+    seen: list[set[tuple[str, str]]] = [set() for _ in bindings]
 
     for group_dir in repos_root.iterdir():
         if not group_dir.is_dir():
@@ -232,10 +317,10 @@ def _scan_repos_for_binding(
             if not repo_dir.is_dir():
                 continue
             src = f"{group_dir.name}/{repo_dir.name}"
-            if src != binding.target_repo:
-                hits.extend(
-                    _scan_repo_for_binding(repo_dir, src, binding, seen, pom_rx, gradle_rx)
-                )
+            for i, repo_hits in enumerate(
+                _scan_repo_for_bindings(repo_dir, src, matchers, seen)
+            ):
+                hits[i].extend(repo_hits)
     return hits
 
 
@@ -259,35 +344,49 @@ def build_producer_indices(
         One ProducerIndex per binding, hits sorted by (source_repo, kind).
     """
     records = load_v2_repo_records(metabase_root, json_paths=json_paths)
-    indices: list[ProducerIndex] = []
+    bindings = list(get_bindings())
 
-    for binding in get_bindings():
+    # One walk of the fleet for every binding, rather than one walk each. The
+    # source scan reads every file in the checkout, so doing it per binding read
+    # a 34 GB fleet once per binding — and the only thing that differed between
+    # passes was which regex ran over text already in memory (`OI-30`).
+    scanned = (
+        scan_repos_for_bindings(repos_root, bindings)
+        if repos_root else [[] for _ in bindings]
+    )
+
+    indices: list[ProducerIndex] = []
+    for binding, scan_hits in zip(bindings, scanned, strict=True):
         by_repo: dict[str, list[ProducerHit]] = defaultdict(list)
 
         for data in records:
             for hit in _hits_from_repo_json(data, binding):
                 by_repo[hit.source_repo].append(hit)
 
-        if repos_root:
-            for hit in _scan_repos_for_binding(repos_root, binding):
-                by_repo[hit.source_repo].append(hit)
-
-        # Merge per repo: keep highest confidence per kind
-        merged: list[ProducerHit] = []
-        for src, repo_hits in sorted(by_repo.items()):
-            kinds: dict[str, ProducerHit] = {}
-            for h in repo_hits:
-                prev = kinds.get(h.kind)
-                if prev is None or _conf_rank(h.confidence) > _conf_rank(prev.confidence):
-                    kinds[h.kind] = h
-            merged.extend(kinds.values())
+        for hit in scan_hits:
+            by_repo[hit.source_repo].append(hit)
 
         indices.append(ProducerIndex(binding=binding, hits=sorted(
-            merged,
+            _strongest_per_repo_and_kind(by_repo),
             key=lambda h: (h.source_repo, h.kind),
         )))
 
     return indices
+
+
+def _strongest_per_repo_and_kind(
+    by_repo: dict[str, list[ProducerHit]],
+) -> list[ProducerHit]:
+    """Keep the best-evidenced hit per (repo, kind), discarding weaker duplicates."""
+    merged: list[ProducerHit] = []
+    for _src, repo_hits in sorted(by_repo.items()):
+        kinds: dict[str, ProducerHit] = {}
+        for h in repo_hits:
+            prev = kinds.get(h.kind)
+            if prev is None or _conf_rank(h.confidence) > _conf_rank(prev.confidence):
+                kinds[h.kind] = h
+        merged.extend(kinds.values())
+    return merged
 
 
 def _conf_rank(c: str) -> int:
@@ -304,8 +403,13 @@ def write_payload_producer_index(
     repo_jsons: list[Path],
     *,
     repos_root: Path | None = None,
-) -> None:
-    """Write the payload-endpoint-producers markdown + jsonl catalogue."""
+) -> list[ProducerIndex]:
+    """Write the payload-endpoint-producers markdown + jsonl catalogue.
+
+    Returns the indices it built. They are the most expensive thing aggregation
+    computes — a full source scan of the fleet — so a second consumer takes them
+    from here rather than rebuilding them (`OI-30`).
+    """
     root = repos_root
     if root is None:
         candidate = metabase_root.parent / "repos"
@@ -376,3 +480,4 @@ def write_payload_producer_index(
     with jsonl_path.open("w", encoding="utf-8") as fh:
         for rec in all_records:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return indices
