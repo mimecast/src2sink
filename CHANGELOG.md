@@ -7,6 +7,26 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-06
+
+Observation and classification, separated. `2.0.0` was about findings that were
+*wrong*; this release is mostly about making a wrong finding **cheap to correct**
+— plus one defect reported from the field that made Maven dependency data empty
+for most real repositories.
+
+**Why a minor bump.** Two new node families and new record fields. Nothing is
+removed and no field changes meaning, so a `2.0.0` consumer keeps working;
+`docs/releasing.md` makes a new family a minor bump.
+
+**Before you upgrade:** the first build after installing rescans **every
+repository** — `DETECTION_VERSION` moved from 1 to 6. If you have not yet run the
+rescan `2.0.0` required, this replaces it rather than adding to it.
+
+**The one to read if you read nothing else:** namespaced POMs — which is to say
+every POM an IDE or archetype emits — parsed to zero dependencies in `2.0.0` and
+earlier, silently. If you have Maven repositories, your dependency data was
+empty and nothing said so.
+
 ### Added
 
 - **`call-site` observation nodes.** The extractor now records every call
@@ -497,6 +517,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[2.1.0]: https://github.com/mimecast/src2sink/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mimecast/src2sink/releases/tag/v2.0.0
 [1.1.0]: https://github.com/mimecast/src2sink/releases/tag/v1.1.0
 [1.0.3]: https://github.com/mimecast/src2sink/releases/tag/v1.0.3

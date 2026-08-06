@@ -1321,7 +1321,7 @@ metabase drifting from the *tool*.
 
 ### Resolution
 
-**Fixed in:** 2.1.0 (unreleased)  
+**Fixed in:** 2.1.0  
 **Commit:** `e09215f` (red), `45c2ca3` (fix) — PR #23  
 **Tests:** `tests/test_path_match_significance.py::test_a_path_that_names_nothing_never_matches_itself` (all eight version and layer segments), plus the preservation cases. Mutant `OI24-M1`.
 
@@ -1398,7 +1398,7 @@ equality check. Equality then means "the same meaningful route", which is what
 
 ### Resolution
 
-**Fixed in:** 2.1.0 (unreleased)  
+**Fixed in:** 2.1.0  
 **Commit:** `e09215f` (red), `45c2ca3` (fix) — PR #23  
 **Tests:** `tests/test_path_match_significance.py` — placeholder cases, the verb cap, and `test_a_real_route_that_looks_like_a_verb_survives`. Mutants `OI25-M1`, `OI25-M2`.
 
@@ -1488,7 +1488,7 @@ trade: recall is preserved, confidence is not overstated.
 
 ### Resolution
 
-**Fixed in:** 2.1.0 (unreleased)  
+**Fixed in:** 2.1.0  
 **Commit:** `13c0444` (red), `feba873` (fix) — PR #28  
 **Tests:** `tests/test_oi26_receiver_scope.py` (13 cases: four non-database receivers, the `ps`/`pstmt` vocabulary, the receiver-less rescue, the library-hint override, and the fabricated endpoint). Mutants `OI26-M1`..`OI26-M3`.
 
@@ -1599,7 +1599,7 @@ the observation layer first — **not** for leaving this unfixed.
 
 ### Resolution
 
-**Fixed in:** 2.1.0 (unreleased)  
+**Fixed in:** 2.1.0  
 **Commit:** `1cdc8c7` (red), `a42c487` (fix) — PR #30  
 **Tests:** `tests/test_polyglot_dependencies.py` — Go requires, internal/external classification of a module path, Python lock-vs-manifest, npm lock-vs-manifest, and the unparsed-ecosystem note. Mutants `OI19-M1`..`OI19-M3`.
 
@@ -1685,7 +1685,7 @@ must say "not parsed" rather than `[]`.
 
 ### Resolution
 
-**Fixed in:** 2.1.0 (unreleased)  
+**Fixed in:** 2.1.0  
 **Commit:** `0060158` (red), `a20a0c5` (fix) — PR #31  
 **Tests:** `tests/test_maven_resolution.py` — nine cases across the five tiers, the BOM exclusion, the placeholder rule, and both property-chain terminations. Mutants `OI18-M1`..`OI18-M4`.
 
