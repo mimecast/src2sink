@@ -31,6 +31,7 @@ from .extractors.patterns import (
     SQL_SINK_NAMES,
     receiver_is_another_boundary,
 )
+from .paths import find_tainted_paths, path_details
 from .resolve import call_edges
 from .schema import FlowEdge, FlowNode
 
@@ -49,12 +50,13 @@ from .schema import FlowEdge, FlowNode
 # It lives here rather than in schema.py deliberately. schema.py is a *detection*
 # input, so a bump there would change the detection fingerprint and force the
 # fleet rescan this separation exists to avoid.
-DERIVATION_VERSION = 4
+DERIVATION_VERSION = 5
 
 DERIVED_FAMILIES = frozenset({
     ("sql", "sink"),
     ("raw-code-payload", "source"),
     ("entry-point", "source"),
+    ("tainted-path", "finding"),
 })
 
 # Families that are pure observation: recorded by extraction, never findings in
@@ -346,6 +348,41 @@ def derive_from_observations(
     # tier is a judgement about what a syntactic read is worth, and those get
     # revised. Here that costs a re-derive rather than a fleet rescan.
     resolved = call_edges(observations)
-    return [*sql_sinks, *payload_nodes, *entry_points], [*payload_edges, *resolved]
+    # Step 4 runs last because it consumes what the steps above produce: the
+    # entry points are its sources, the sinks its targets, and the resolved
+    # calls the graph between them.
+    derived = [*sql_sinks, *payload_nodes, *entry_points]
+    tainted = classify_tainted_paths(observations, derived)
+    return [*derived, *tainted], [*payload_edges, *resolved]
 
 # probe
+
+
+def classify_tainted_paths(
+    observations: list[FlowNode], derived: list[FlowNode]
+) -> list[FlowNode]:
+    """Emit a `tainted-path` finding for each entry point that reaches a sink.
+
+    The claim the tool exists to make, and the first one it has ever been able to
+    state: not "this service has an endpoint and also a sink somewhere", but
+    "a value from this door arrives at this sink, by these hops, and here is the
+    weakest link in that chain".
+    """
+    paths, truncated = find_tainted_paths(observations, derived)
+    out: list[FlowNode] = []
+    for path, detail in zip(paths, path_details(paths), strict=True):
+        if truncated:
+            # Never silently. A caller weighing "no path exists" has to know the
+            # search stopped early, because that is the expensive error.
+            detail = {**detail, "search_truncated": True}
+        out.append(make_node(
+            repo=path.entry.repo,
+            file=path.sink.file,
+            line=path.sink.line,
+            language=path.entry.language,
+            kind="finding",
+            family="tainted-path",
+            detail=detail,
+            confidence=path.confidence,
+        ))
+    return out

@@ -155,3 +155,26 @@ def test_declarations_are_observations_not_findings():
     assert all(
         n.kind == "reference" for n in nodes if n.family == "method-decl"
     )
+
+
+def test_kotlin_parameters_are_recorded():
+    """Kotlin recorded an empty parameter list for every method, from step 1 on.
+
+    Kotlin exposes no `parameters` field — a `fun` declaration holds a
+    `function_value_parameters` child — so `params` was `[]` everywhere. It went
+    unnoticed because `test_java_and_kotlin_agree` compares method *names*, and
+    a parity test that checks the easy half of a record is not a parity test.
+
+    It surfaced only when `OI-17` step 4 tried to taint a parameter and found
+    nothing to taint, so no Kotlin path existed anywhere in the fleet.
+    """
+    decls = _decls(_nodes(_KOTLIN, "kotlin", "src/StockController.kt"))
+    assert decls["submit"]["params"] == ["req"]
+
+
+def test_java_and_kotlin_agree_on_parameters_too():
+    """The assertion the original parity test was missing."""
+    java = _decls(_nodes(_JAVA, "java", "src/StockController.java"))
+    kotlin = _decls(_nodes(_KOTLIN, "kotlin", "src/StockController.kt"))
+    assert java["submit"]["params"] == kotlin["submit"]["params"] == ["req"]
+    assert java["unrelated"]["params"] == kotlin["unrelated"]["params"] == []
