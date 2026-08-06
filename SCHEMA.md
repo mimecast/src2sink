@@ -373,7 +373,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-in` | source | Inbound route |
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
-| `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`). Asserts nothing about danger — see below. |
+| `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised`). Asserts nothing about danger — see below. |
 | `file` | sink | Filesystem write / archive extract |
 | `queue-pub` / `queue-sub` | sink / source | Messaging |
 | `pii-field` | source | Field-name heuristic |
@@ -473,6 +473,7 @@ what a library *means* becomes a re-aggregation rather than a fleet rescan. See
 | `receiver_is_database` | whether the receiver reads as a database handle |
 | `library_hint` | whether the call text names a known data-access API |
 | `file_sql_evidence` | whether the *file* shows SQL evidence — **file-scoped, and too coarse to decide a call-level question alone** (`OI-26`); recorded so a classifier can weigh it, not act on it |
+| `parameterised` | the statement posture, computed here because it needs the whole file — an observation about shape, not a safety verdict |
 | `raw` | the call text, truncated |
 
 A consumer must not read a `call-site` as a finding. The absence of a

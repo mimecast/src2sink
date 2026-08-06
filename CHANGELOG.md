@@ -16,9 +16,18 @@ set out in [`docs/releasing.md`](docs/releasing.md).
   the fleet. `kind` is `reference`: an observation asserts nothing about danger,
   and the absence of a corresponding `sql` node says the classifier declined it,
   not that the code is safe.
-  **`DETECTION_VERSION` bumps to 2**, so the first build after upgrading rescans
+  **`DETECTION_VERSION` bumps**, so the first build after upgrading rescans
   every repository. Measured at ~7% more nodes on the fixture corpus, roughly
   one observation per `sql` node.
+
+### Changed
+
+- **SQL classification now reads observations, not source.** The rules are
+  unchanged and the `sql` nodes emitted are byte-identical; what changed is the
+  input. `classify_sql_from_observations` consumes `call-site` records and never
+  touches the source or the AST, so correcting a classification — `OI-26`, or any
+  entry in the boundary catalogue — becomes a change to one function over stored
+  data rather than a reason to re-extract the fleet.
 
 ### Fixed
 

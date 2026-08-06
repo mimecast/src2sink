@@ -15,6 +15,7 @@
       "detail": {
         "file_sql_evidence": true,
         "library_hint": false,
+        "parameterised": "unknown",
         "raw": "jdbcTemplate.query(request.getSql())",
         "receiver": "jdbcTemplate",
         "receiver_is_database": true,

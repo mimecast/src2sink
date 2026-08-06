@@ -1,6 +1,6 @@
 {
   "_comment": "Content fingerprint of the detection inputs, frozen against DETECTION_VERSION. Regenerate with scripts/detection_version_check.py --update.",
-  "detection_version": 2,
+  "detection_version": 3,
   "files": {
     "src2sink/build_metabase_v2.py": "13400e7ec0f6f2962847b376fe23577794cbc3bb69bfa0295da96b5b20b87b3d",
     "src2sink/constants.py": "f306628e6b11cecc4f1073512e28b0c07784e5eb6ad8594490e0a2bb4f9a792a",
@@ -19,7 +19,7 @@
     "src2sink/extractors/python_extractor.py": "149bb9c80c0791248be622d74b6e76ff6270031299f81842308409fca6e7a232",
     "src2sink/extractors/regex_extractors.py": "ba7bd97931db5b6fb4e1748a958a402f242c6d05f9872770a419242a4f91e841",
     "src2sink/extractors/symbols.py": "c3516ca04394e0abc9cdd9f137f8b107b11488fe1fd6bf4dd7db3effb53e0ee4",
-    "src2sink/extractors/ts_extractors.py": "42d510a1d381d4b8a6f202c4632e6492c31dde596ecff54368994e9796c2deba",
+    "src2sink/extractors/ts_extractors.py": "6801a3287cf3acf1293c4ea5a52e7c633ddde3d461227bfe70c542ab80a00f84",
     "src2sink/extractors/unified.py": "4d17f661f386129c5389763ef34d92a65417e2dfb386a842f9835279e29d2266",
     "src2sink/graph_common.py": "2bb3bc61c9cd589e9a1bc60b5e3df2b34ff198d7e7396c25ae50c918079fdcf4",
     "src2sink/internal_groups.py": "382ecc2c855820f64990cd5d3f43af8f208b7325b744124091cb34ebdc378e20",
@@ -30,7 +30,7 @@
     "src2sink/repo_utils.py": "77ca212063966db23b97457ef3beb5f196282e3035c7638db416b709e29cd87b",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "91bc1275b7656acfb8f355ef42be1907e6e7532443aa48eab08abb53f3ce4c97",
+    "src2sink/schema.py": "a077447ecc2c68cdbc61163abcdc2ea186ec53d2a34f8eda876bef796ea797f4",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }
