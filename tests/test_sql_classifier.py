@@ -18,8 +18,7 @@ See docs/plans/observe-then-classify.md §3.
 
 from __future__ import annotations
 
-from src2sink.extractors.file_context import FileExtractionContext
-from src2sink.extractors.ts_extractors import classify_sql_from_observations
+from src2sink.derive import classify_sql
 from src2sink.extractors.unified import extract_from_file
 
 _LAYERED = """
@@ -47,13 +46,7 @@ def test_the_classifier_needs_no_source():
     observed = [n for n in _nodes(_LAYERED) if n.family == "call-site"]
     assert observed, "fixture must produce observations"
 
-    ctx = FileExtractionContext(
-        repo_id="g/r", rel_path="src/Dao.java", language="java", source=""
-    )
-    ctx.nodes.extend(observed)
-    classify_sql_from_observations(ctx)
-
-    sql = [n for n in ctx.nodes if n.family == "sql" and n.kind == "sink"]
+    sql = classify_sql(observed)
     # `httpClient.execute` is absent since OI-26 was fixed — and that fix was made
     # here, in `_sql_verdict`, over observations. This test is the demonstration
     # that a classification can be corrected without touching the extractor.

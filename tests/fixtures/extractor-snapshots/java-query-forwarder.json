@@ -4,9 +4,10 @@
     "data-class-field",
     "http-out",
     "path-constant",
+    "sql-field-marker",
     "sql-payload-out"
   ],
-  "node_count": 6,
+  "node_count": 9,
   "nodes": [
     {
       "confidence": "medium",
@@ -84,6 +85,48 @@
       "kind": "reference",
       "language": "java",
       "line": 13,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "SQL"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 4,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockQueryForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 7,
       "pii_classification": null
     },
     {

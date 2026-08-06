@@ -1,9 +1,10 @@
 {
   "edge_count": 0,
   "families": [
-    "data-class-field"
+    "data-class-field",
+    "sql-field-marker"
   ],
-  "node_count": 1,
+  "node_count": 2,
   "nodes": [
     {
       "confidence": "medium",
@@ -15,6 +16,20 @@
       "file": "main.go",
       "framework": null,
       "kind": "source",
+      "language": "go",
+      "line": 8,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "main.go",
+      "framework": null,
+      "kind": "reference",
       "language": "go",
       "line": 8,
       "pii_classification": null

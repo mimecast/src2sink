@@ -15,6 +15,7 @@ from src2sink.build_metabase_v2 import (
     _worker_init,
     process_one_v2,
 )
+from src2sink.derive import DERIVATION_VERSION
 from src2sink.schema import DETECTION_VERSION
 
 VALID_SHA = "a" * 40
@@ -48,7 +49,11 @@ def test_process_one_v2_skips_unchanged(tmp_path):
     out = metabase / "repos" / "g"
     out.mkdir(parents=True)
     (out / "r.json").write_text(
-        json.dumps({"git_sha": VALID_SHA, "detection_version": DETECTION_VERSION}),
+        json.dumps({
+            "git_sha": VALID_SHA,
+            "detection_version": DETECTION_VERSION,
+            "derivation_version": DERIVATION_VERSION,
+        }),
         encoding="utf-8",
     )
 

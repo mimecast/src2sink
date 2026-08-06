@@ -119,6 +119,10 @@
       "cyclomatic": 13,
       "cognitive": 13
     },
+    "src2sink/derive.py:_link_one_file": {
+      "cyclomatic": 13,
+      "cognitive": 4
+    },
     "src2sink/extractors/ast_walk.py:call_name_js_go": {
       "cyclomatic": 13,
       "cognitive": 24

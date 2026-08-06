@@ -2,9 +2,10 @@
   "edge_count": 0,
   "families": [
     "data-class-field",
-    "http-out"
+    "http-out",
+    "sql-field-marker"
   ],
-  "node_count": 6,
+  "node_count": 10,
   "nodes": [
     {
       "confidence": "medium",
@@ -104,6 +105,62 @@
       "kind": "sink",
       "language": "java",
       "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 7,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 10,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/RunnerClient.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 10,
       "pii_classification": null
     }
   ]

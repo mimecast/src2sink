@@ -3,9 +3,10 @@
   "families": [
     "call-site",
     "data-class-field",
-    "http-in"
+    "http-in",
+    "sql-field-marker"
   ],
-  "node_count": 6,
+  "node_count": 10,
   "nodes": [
     {
       "confidence": "high",
@@ -103,6 +104,62 @@
       "kind": "source",
       "language": "java",
       "line": 29,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "SQL"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 9,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 11,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 12,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 19,
       "pii_classification": null
     }
   ]

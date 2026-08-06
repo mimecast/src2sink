@@ -5,9 +5,10 @@
     "data-class-field",
     "http-in",
     "raw-code-payload",
-    "sql"
+    "sql",
+    "sql-field-marker"
   ],
-  "node_count": 6,
+  "node_count": 7,
   "nodes": [
     {
       "confidence": "high",
@@ -106,6 +107,20 @@
       "kind": "sink",
       "language": "java",
       "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 3,
       "pii_classification": null
     }
   ]

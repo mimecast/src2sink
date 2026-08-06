@@ -516,7 +516,21 @@ def extract_raw_sql_field_markers(ctx: FileExtractionContext) -> None:
     Scans untrusted source text; matches are only recorded, never evaluated.
     """
     for m in _RAW_SQL_FIELD_IN_FILE.finditer(ctx.source):
-        ctx.raw_sql_field_lines.append(ctx.line_number(m.start()))
+        line = ctx.line_number(m.start())
+        ctx.raw_sql_field_lines.append(line)
+        # Also recorded as an observation, so the derive pass can see it. It was
+        # a bare line number held in memory, which meant raw-code-payload could
+        # only ever be linked during extraction — see docs/plans/observe-then-classify.md.
+        ctx.nodes.append(make_node(
+            repo=ctx.repo_id,
+            file=ctx.rel_path,
+            line=line,
+            language=ctx.language,
+            kind="reference",
+            family="sql-field-marker",
+            detail={"raw": m.group(0)[:120]},
+            confidence="high",
+        ))
 
 
 def extract_pii_sinks(ctx: FileExtractionContext) -> None:

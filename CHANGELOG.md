@@ -32,6 +32,13 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### Changed
 
+- **Findings are now derived from observations, in a separate pass.** Extraction
+  records what it saw; `src2sink/derive.py` decides what it means. The two are
+  versioned apart: `derivation_version` governs the findings, and changing a
+  classification rule now re-derives from existing records — **no source, no
+  parsing, no fleet rescan** — while `detection_version` still governs what is
+  observed. A new `sql-field-marker` observation carries the input the
+  `raw-code-payload` link previously held only in memory.
 - **SQL classification now reads observations, not source.** The rules are
   unchanged and the `sql` nodes emitted are byte-identical; what changed is the
   input. `classify_sql_from_observations` consumes `call-site` records and never

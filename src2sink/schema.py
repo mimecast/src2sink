@@ -24,6 +24,7 @@ SCHEMA_VERSION = 2
 DETECTION_VERSION = 4
 
 
+
 @dataclasses.dataclass
 class FlowNode:
     """One point of interest in a repo's data flow — a source, sink or propagator.
@@ -70,6 +71,11 @@ class RepoSummaryV2:
 
     schema_version: int = SCHEMA_VERSION
     detection_version: int = DETECTION_VERSION
+    # Set by the builder from src2sink.derive, which is where the constant
+    # lives: a version must sit inside the fingerprint scope it governs, or
+    # bumping it trips the *other* gate and forces the rescan it exists to
+    # avoid.
+    derivation_version: int = 0
     group: str = ""
     name: str = ""
     path: str = ""
