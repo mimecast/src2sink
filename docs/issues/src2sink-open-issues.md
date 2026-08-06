@@ -25,6 +25,12 @@ reporting a wrong result:
 * **Measuring, rather than reasoning about, cost.** `OI-14` and `OI-15` came
   from profiling `trace` over a synthetic fleet. Both the reported symptom and
   the first hypothesis about its cause were wrong; see the `OI-14` resolution.
+* **A design review that went sideways.** `OI-18` to `OI-23` and `OI-26` came
+  from reviewing the versioning model against four questions about drift. Each
+  is recorded with the measurement that found it in
+  [`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md)
+  and [`observe-then-classify.md`](../plans/observe-then-classify.md), which are
+  kept as the record of *why* these decisions were taken.
 * **Asking whether the stated purpose is delivered.** `OI-17` came from
   checking the claim in the tool's own name — source to sink — against a
   three-file layered service. It is not delivered, and nothing said so.
@@ -53,12 +59,25 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-13 | 13 | Kotlin call sites invisible to the AST pass | medium | a supported language silently loses its SQL sinks | **P1** |
 | OI-15 | 15 | The whole fleet is held in memory, so a large metabase cannot be read at all | large | decides whether the tool works at 34 GB and above | **P1** |
 | OI-17 | 17 | Nothing connects an entrypoint to a sink inside a service | large | the capability the tool is named for | **P0** |
-| OI-24 | 24 | The equality shortcut bypasses the significant-segment filter | small | `/v1` matches `/v1` at `high`, reinstating OI-1 | **P1** |
-| OI-25 | 25 | Placeholder and operation-verb segments treated as destinations | small | `/{id}` matches `/{name}`; `/search` matches `/search` at `high` | **P1** |
+| OI-18 | 18 | Dependency versions are recorded unresolved | medium | placeholders and empty strings presented as versions, plus a phantom BOM edge | **P1** |
+| OI-19 | 19 | Dependency parsing covers 2 of 9 ecosystems, reads no lockfile | medium | `dependencies_internal: []` means "not implemented" for most of the fleet | **P1** |
+| OI-20 | 20 | Only SQL has a library evidence catalogue | large | deserialization has no family at all; every other sink type is pattern-only | **P1** |
+| OI-21 | 21 | Entry points are HTTP-annotation-only | large | queue consumers, gRPC, GraphQL, file watchers, CLI and env are invisible | **P0** |
+| OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
+| OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
+| OI-26 | 26 | File-scoped SQL evidence admits every sink-named call in the file | small | `httpClient.execute` catalogued as a SQL sink; can still manufacture a fabricated injection endpoint | **P1** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
-rationale preserved alongside each one. Both entries above were found later and
+rationale preserved alongside each one.
+
+**On sequencing.** Three of these gate each other and the order is not the id
+order. `OI-21` lands before `OI-17`, because reachability from an incomplete
+entry-point set produces confident, incomplete answers. `OI-26` and `OI-20` are
+both cheaper after the observation layer in
+[`observe-then-classify.md`](../plans/observe-then-classify.md), which turns a
+classification change from a fleet rescan into a re-aggregation. See
+[`src2sink-3.0-plan.md`](../plans/src2sink-3.0-plan.md) for the phase order. Both entries above were found later and
 by different means — `OI-13` while raising test coverage, `OI-15` while
 profiling — rather than while investigating a report. That is the argument for
 the coverage and measurement work paying for itself.
@@ -431,120 +450,369 @@ described as exactly that rather than as taint analysis.
 
 ---
 
-## 24. The equality shortcut bypasses the significant-segment filter  `OI-24`
+## 18. Dependency versions are recorded unresolved  `OI-18`
 
-**Severity:** High — reinstates `OI-1` for every pair of identical meaningless
-paths, at `high` confidence.
-
-**Found:** reported from a separate review session; confirmed by measurement.
+**Severity:** Medium — the tool records placeholders and empty strings in a field
+consumers read as a version, and invents a dependency that does not exist.
 
 ### Symptom
 
+Measured against `parse_pom_dependencies` on four POM shapes:
+
 ```
-  /v1       vs /v1       -> high    significant: () / ()
-  /api      vs /api      -> high    significant: () / ()
-  /service  vs /service  -> high    significant: () / ()
-  /v1       vs /v1/stock -> None    significant: () / ('stock',)
+literal version                      -> [('warehouse-client', '1.4.2')]        OK
+property-interpolated                -> [('warehouse-client', '${warehouse.version}')]
+inherited from parent                -> [('warehouse-client', '<empty>')]
+BOM-managed (dependencyManagement)   -> [('platform-bom', '7.2.0'), ('warehouse-client', '<empty>')]
 ```
 
-Two repositories each exposing a bare `/v1` produce a `high`-confidence
-cross-repo edge — the exact defect `OI-1` was raised to remove. The last line
-shows the guard working when the paths are *not* identical, which is what hid
-this: only the equality case leaks.
+Only the literal case works. Properties, parent inheritance and BOM imports are
+the norm in enterprise Maven, so most recorded versions are a `${property}`
+string or an empty string presented as a version — and in the BOM case
+`platform-bom` is emitted as a **dependency in its own right**, an edge to an
+artefact the code never calls.
 
 ### Root cause
 
-`path_templates_match` returns before it asks whether either side names
-anything:
-
-```python
-if o == i:
-    return "high"          # <-- returns here
-
-op = _significant_segments(o)
-ip = _significant_segments(i)
-if not op or not ip:       # <-- the guard OI-1 added, never reached
-    return None
-```
-
-The shortcut was presumably added as an optimisation — identical strings are
-obviously the same route. They are not: `/v1` is the same *string*, and no route
-at all.
+`parse_pom_dependencies` reads `<version>` as text. Maven resolves it from four
+places and the parser knows one. `<dependencyManagement>` is additionally read as
+if it were `<dependencies>`, which produces the phantom BOM edge.
 
 ### Proposed fix
 
-Compute the significant segments and apply the emptiness guard **before** the
-equality check. Equality then means "the same meaningful route", which is what
-`high` is supposed to assert.
+Resolve offline, in tiers, recording which tier answered: `literal`, `property`
+(same file), `parent-in-repo`, `parent-in-fleet` (via the identity index), else
+`unresolved`.
+
+**Demonstrated feasible without `mvn`, a registry, or downloading anything** —
+the identity index already maps `(group, name)` to a clone path, so a parent POM
+in another repository is a file read. See
+[`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §4.2.
+
+Two rules matter more than the tiers:
+
+1. **An unresolved version is recorded as unresolved**, never as `${...}` or `""`.
+2. **`<dependencyManagement>` entries are not dependencies.** They constrain
+   versions; the BOM edge must go.
+
+**Known imprecision, to be labelled not hidden:** a parent POM read from a
+sibling repo is that repo at HEAD, not at the pinned version. Record
+`parent-resolved-at: head`.
 
 ### Suggested tests
 
-* Every generic and version segment fails to match itself: `/v1`, `/v2`, `/api`,
-  `/rest`, `/internal`, `/public`, `/service`, `/services`.
-* Real routes still match exactly: `/stock` vs `/stock` stays `high`.
-* `/orders/{id}` vs `/orders/{ref}` stays `high` — normalisation makes them the
-  same route, and that is a genuine equality.
-
----
-
-## 25. Placeholder and operation-verb segments are treated as destinations  `OI-25`
-
-**Severity:** High — same class as `OI-24`, and the two compound: both defects
-surface through the equality shortcut.
-
-**Found:** reported from a separate review session; confirmed by measurement.
-
-### Symptom
-
-```
-  /{id}     vs /{name}   -> high    significant: ('{}',)     / ('{}',)
-  /create   vs /create   -> high    significant: ('create',) / ('create',)
-  /search   vs /search   -> high    significant: ('search',) / ('search',)
-```
-
-A placeholder names nothing at all; an operation verb names what you are doing
-rather than what you are addressing. Both are exactly the argument that removed
-`/api` and `/service` in `OI-1`.
-
-### Root cause
-
-`_significant_segments` drops version segments and a fixed set of layer names.
-It does not drop the collapsed path parameter `{}` that
-`normalize_path_template` produces, and it has no notion of an operation name.
-
-### Proposed fix — and why the two halves differ
-
-**Placeholders are dropped.** `{}` names nothing under any circumstances, so it
-is filtered exactly like `/api`.
-
-**Operation verbs are *not* dropped.** This is the part that needs care:
-`/v1/query` reduces to `('query',)` and is a real route of a real query service —
-the fixture in `tests/test_sql_payload_out.py` uses it. Filtering verbs out would
-delete legitimate endpoints, replacing false edges with missing ones.
-
-Instead, a match whose significant segments are **entirely** operation verbs is
-capped at `low`. Two services both exposing `/search` is weak evidence, not no
-evidence, and `low` is what the confidence ladder already means by that.
-
-### Behaviour change worth stating
-
-`/orders/create` and `/orders/delete` stop matching each other. They are
-different endpoints on the same service, and conflating them was never intended —
-but any consumer relying on the previous behaviour would see those edges
-disappear.
-
-### Suggested tests
-
-* `/{id}` vs `/{name}` does not match; `/orders/{id}/lines` still reduces to
-  `('orders', 'lines')` and matches its equivalent at `high`.
-* Each bare operation verb matches itself at `low`, never `high`.
-* `/v1/query` still resolves to `('query',)` and still matches `/query`.
-* A verb alongside a resource keeps full strength: `/orders/create` vs
-  `/orders/create` is `high`, and `/orders/create` vs `/users/create` is `None`.
+* Each of the four shapes resolves or is explicitly `unresolved`.
+* A parent in another repo resolves through the identity index as `parent-in-fleet`.
+* A `<dependencyManagement>` entry never appears in `dependencies_internal`.
+* An external parent yields `unresolved`, not a guess.
+* A property referring to another property terminates rather than looping.
 
 ### Residual not covered
 
-The operation-verb list is a fixed vocabulary and will not cover every project's
-naming. A verb that is genuinely a resource name in some service (`/search` as a
-search *service*) is capped to `low` rather than lost, which is the deliberate
-trade: recall is preserved, confidence is not overstated.
+Gradle's resolution is a program, not a document. `OI-3` handled version
+catalogues, the tractable part; anything beyond should report `unresolved`.
+
+---
+
+## 19. Dependency parsing covers two of nine ecosystems, and reads no lockfile  `OI-19`
+
+**Severity:** Medium — for most of the fleet `dependencies_internal: []` means
+"not implemented" and is indistinguishable from "no internal dependencies".
+
+### Symptom
+
+| | |
+|---|---|
+| **Identity** | polyglot — 9 ecosystems recognised |
+| **Dependencies** | Java + npm only — 4 parsers |
+| **Lockfiles** | **never read.** `yarn.lock` and `pnpm-lock.yaml` are touched at `repo_utils.py:224` solely to detect the build system |
+
+### Root cause
+
+Two wrong assumptions. **That Maven is representative** — it is the hardest
+ecosystem, while three others keep exact versions in a committed file nothing
+reads. **That a manifest states a version** — npm and Python manifests state
+*ranges*; the lockfile holds the resolved answer, and it is committed.
+
+| Ecosystem | Where exact versions live | Parsed today | Effort |
+|---|---|---|---|
+| **Go** | `go.mod` — exact, MVS, no ranges | no | trivial |
+| **Python** | `uv.lock` / `poetry.lock` / pinned requirements | no | small |
+| **npm/yarn/pnpm** | the lockfile | `package.json` only, i.e. ranges | small |
+| **Maven** | parent chain + properties + BOM | literal only | `OI-18` |
+| **Gradle** | catalogue + `ext` + computed | catalogue only (`OI-3`) | hard ceiling |
+
+### Proposed fix
+
+**Lockfile first; inheritance chasing only where no lockfile convention exists.**
+Go `go.mod`; Python lock then manifest; npm lockfile then manifest range marked
+*as* a range. Plus ecosystem-aware internal detection —
+`is_internal_coordinate` only ever receives Maven/Gradle/npm coordinates, so a Go
+module path and a Python distribution name are never tested.
+
+### A consequence to design for
+
+**A range is not a version.** Where no lockfile exists the honest record is a
+constraint, and anything consuming it must handle "satisfies `^1.4.2`" rather
+than "equals 1.4.2". Recording a range as a version would repeat `OI-18` in a new
+ecosystem.
+
+### Suggested tests
+
+* A Go repo reports internal `require` entries with exact versions.
+* A Python repo with a lockfile reports resolved versions; without one, ranges
+  marked as ranges.
+* An npm repo reports the lockfile's resolved version, not the manifest range.
+* Internal detection recognises a Go module path and a Python distribution name.
+* A repo with genuinely no internal dependencies is distinguishable in the record
+  from one the tool cannot parse.
+
+### Residual not covered
+
+Rust, PHP, .NET and Ruby stay identity-only. A deliberate stop — but the record
+must say "not parsed" rather than `[]`.
+
+---
+
+## 20. Only SQL has a library evidence catalogue  `OI-20`
+
+**Severity:** High — whole classes of dangerous boundary are invisible, and one
+of them has no family at all.
+
+### Symptom
+
+19 families are emitted, but `SQL_DB_IMPORT_RX` is the **only** library keyword
+list in the codebase:
+
+```python
+SQL_DB_IMPORT_RX = r"\b(?:java\.sql|javax\.sql|jakarta\.persistence
+   |org\.springframework\.jdbc|org\.hibernate|org\.jooq|mybatis
+   |sqlalchemy|psycopg2?|pymysql|sqlite3|asyncpg
+   |database/sql|gorm\.io|jmoiron/sqlx|knex|typeorm|sequelize)\b"
+```
+
+Already polyglot, already curated, never generalised. So `script-exec` is
+detected by call pattern alone, and `file`, `data-store` and `crypto-*` likewise.
+
+**Deserialization has no family at all** — the archetypal "dangerous if used
+incorrectly": Jackson with polymorphic typing, SnakeYAML `Constructor`, Java
+`ObjectInputStream`, Python `pickle`, PHP `unserialize`. Same for LDAP, XPath,
+template engines and SSRF-capable clients.
+
+### Proposed fix
+
+One declarative catalogue mapping library identifiers to `(role, family,
+mechanism)`, generalising `SQL_DB_IMPORT_RX`.
+
+**Imports are the evidence channel; the manifest is not.** An import is
+file-scoped by language design, reflects use rather than declared intent, and is
+immune to the stale-POM drift a manifest suffers. A manifest is repo-scoped, and
+applying repo-scoped evidence to a file-level decision is the `OI-7` scope error
+one level up. The manifest keeps a role as a **recall check** — "this repo
+declares `spring-jdbc` and we found no `sql` nodes" — which never emits a node
+and only questions an absence.
+
+**Sequencing:** this should follow the observation layer in
+[`observe-then-classify.md`](../plans/observe-then-classify.md) §3. Once
+classification is downstream of extraction, a catalogue entry is a
+re-aggregation rather than a detection change, so the catalogue can live in
+config and additions cost no fleet rescan.
+
+### Suggested tests
+
+* A deserialization sink is detected in each supported language.
+* A catalogue entry with no matching import produces nothing — the catalogue
+  informs classification, it does not assert.
+* The manifest recall check reports a declared library with no corresponding
+  nodes, and emits no node itself.
+* Adding a catalogue entry changes no record, only aggregate output (valid only
+  after the observation layer lands).
+
+---
+
+## 21. Entry points are HTTP-annotation-only  `OI-21`
+
+**Severity:** High — and it gates `OI-17`.
+
+### Symptom
+
+`HTTP_IN_RX` is keyed per framework bucket, so an entry point is recognised only
+if it is an HTTP framework annotation. Invisible today: message consumers
+(`@KafkaListener`, JMS, SQS, Rabbit), gRPC services, GraphQL resolvers, scheduled
+jobs, file watchers, CLI arguments, and environment input.
+
+The tool sees one *kind* of front door.
+
+### Why it gates `OI-17`
+
+Reachability computed from an incomplete entry-point set produces confident,
+incomplete answers: a trace reporting "no path from any entrypoint" when the
+entrypoint was a `@KafkaListener` nobody can see. That is the failure class this
+project has spent its effort removing, and it is worse here because the
+conclusion looks like a clean result.
+
+**Decided:** `OI-21` lands before `OI-17`
+([`identity-versioning-boundaries.md`](../plans/identity-versioning-boundaries.md) §7, Q7).
+
+### Suggested tests
+
+* A Kafka/JMS/SQS consumer is recognised as an entry point in Java and Kotlin.
+* A gRPC service method and a GraphQL resolver are recognised.
+* A scheduled job is recognised, and distinguished from an externally-triggered
+  entry — it carries no untrusted input by that route.
+* A repo with only non-HTTP entry points is distinguishable from one with none.
+
+### Residual not covered
+
+Entry points reached through frameworks that wire handlers dynamically at
+runtime — reflection, service loaders, annotation processors — stay invisible.
+The record must say which mechanisms were searched, so a caller can tell "none
+found" from "none looked for".
+
+---
+
+## 22. No identity when git history is absent  `OI-22`
+
+**Severity:** Medium — the incremental scan stops working entirely on stripped
+snapshots.
+
+### Symptom
+
+Measured with no `.git` present:
+
+```
+detect_git_sha -> None
+first scan  -> analysed
+second scan -> analysed   <-- every scan re-analyses everything
+```
+
+Fail-safe — it rescans rather than serving stale records — but the incremental
+scan is gone. POC snapshots, exported tarballs, vendored copies and `--depth 1`
+mirrors are all affected.
+
+### Why it matters beyond speed
+
+The versioning model keys a repo version on `(repo, git_sha, detection_version,
+schema_version)`. With no sha that key has a **null component**, so
+content-addressing collapses and "storage grows with change, not with scan count"
+stops holding.
+
+### Proposed fix
+
+A **content-hash fallback** over the scanned file set — the scan reads every file
+anyway, so the marginal cost is one hash per file. Record which source produced
+the identity (`git-sha` or `content-hash`): they are not interchangeable, so
+switching invalidates once, and the hash must cover only scanned files or a stray
+build artefact causes spurious churn.
+
+### Suggested tests
+
+* A repo with no `.git` is skipped on the second scan when nothing changed.
+* Touching a scanned file forces a rescan; touching an ignored file does not.
+* The identity source is recorded, and a record switching source is treated as
+  stale exactly once.
+
+---
+
+## 23. A repo's own declared version is never recorded  `OI-23`
+
+**Severity:** Medium — half of every version comparison is missing.
+
+### Symptom
+
+The metabase is asymmetric:
+
+| Side | Recorded |
+|---|---|
+| **Consumer** | `dependencies_internal` → `{groupId, artifactId, version, kind}` |
+| **Provider** | identity index → `(group, name)` → clone path. **No version.** |
+
+Nothing reads a repo's own `<version>`. So the tool knows what every repo
+*consumes*, including which version, and nothing about what any repo
+*publishes* — the comparison cannot be made even in principle.
+
+### Why it is worth more than it looks
+
+Fixing it enables skew detection with **no historical scanning at all**: consumer
+pins `warehouse-client:1.4.2`, provider declares `2.1.0`, a major version behind
+and actionable immediately.
+
+It is also robust where the sha is not: a stripped export (`OI-22`) has no `.git`
+but still has `<version>2.3.1</version>`.
+
+### Proposed fix
+
+Capture the project's own declared version alongside its coordinates in the
+identity index and on the record, per ecosystem. Where the version is itself
+unresolved (`${revision}`), record it as unresolved — the `OI-18` rule.
+
+### Suggested tests
+
+* A repo's own version is recorded for each supported ecosystem.
+* An unresolvable own-version is recorded as unresolved, not as the placeholder.
+* A consumer pinning an older version of a scanned provider is reportable
+  without any historical scan.
+
+---
+
+## 26. File-scoped SQL evidence admits every sink-named call in the file  `OI-26`
+
+**Severity:** High — `OI-7`'s residual, and it can still manufacture the
+fabricated injection endpoint `OI-7` was raised to stop.
+
+### Symptom
+
+Measured:
+
+| File | `file_has_sql_evidence` | `sql` sinks emitted |
+|---|---|---|
+| an HTTP client call alone | `False` | none — the gate works |
+| **the same call, plus one real SQL query elsewhere in the file** | `True` | **`httpClient.execute`** *and* `jdbcTemplate.query` |
+
+`receiver_is_database('httpClient')` is `False` — the receiver is known not to be
+a database — but file evidence overrides it.
+
+### Root cause
+
+The evidence terms are OR'd and one of them is file-scoped, so the weakest term
+decides once satisfied:
+
+```python
+if not (has_hint or receiver_is_database(receiver) or file_sql_evidence):
+    return
+```
+
+One real SQL statement anywhere in a file admits every sink-named call in that
+file. `OI-7` replaced "name alone" with "name OR three evidence terms", and file
+scope is too coarse for a call-level decision — the same scope error as using a
+repo-level manifest to justify a file-level finding.
+
+Because an execution sink feeds `link_raw_code_payload_endpoints`, this still
+produces `raw-code-payload` findings for endpoints that were never vulnerable.
+
+### Proposed fix
+
+Two sides, and both are needed or recall drops:
+
+1. File evidence must not override a receiver known **not** to be a database. It
+   should rescue only calls with no receiver, or with a library hint in the call
+   text.
+2. The receiver vocabulary needs widening to compensate: `ps` and `pstmt` are
+   absent while `stmt`, `conn` and `session` are present, so tightening alone
+   would drop real `PreparedStatement` calls.
+
+### Sequencing note
+
+Under the current architecture this is a detection change and forces a fleet
+rescan. Under the observation layer
+([`observe-then-classify.md`](../plans/observe-then-classify.md) §3) it is a
+classifier change costing a re-aggregation. That is an argument for sequencing
+the observation layer first — **not** for leaving this unfixed.
+
+### Suggested tests
+
+* An HTTP client call in a file containing real SQL produces no `sql` sink.
+* `ps.execute()` and `pstmt.execute()` still produce sinks.
+* A bare `execute(sql)` with no receiver is still rescued by file evidence.
+* No `raw-code-payload` node is produced for an endpoint whose only "sink" was an
+  HTTP call in a SQL-bearing file.
