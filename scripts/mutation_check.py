@@ -930,6 +930,18 @@ CATALOGUE: tuple[Mutant, ...] = (
         note="Significance filtering removed — `/v1` becomes a destination again.",
     ),
     Mutant(
+        id="OI28-M1",
+        file="src2sink/graph_common.py",
+        old="    return bool(norm) and bool(_significant_segments(norm))",
+        new="    return bool(norm)",
+        selector="tests/test_oi28_index_fast_path.py",
+        note=(
+            "The index fast path stops consulting the significance filter, so a "
+            "dict hit on `/v1` returns a confident edge again — OI-24's defect "
+            "reached through the caller instead of the callee."
+        ),
+    ),
+    Mutant(
         id="OI24-M1",
         file="src2sink/graph_common.py",
         old="    label = _structural_match(o, i, op, ip)",
