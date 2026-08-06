@@ -322,7 +322,15 @@ innermost-first, and left unset rather than guessed for a node inside no method.
 Derived nodes inherit scope from the observation they came from, because
 derivation also runs over a stored record with no extraction context.
 
-**Measured while landing it, and it decides step 3.** Call observations are
+**Step 2 landed** (type facts, PR #36). `type-decl` observations record each
+declared type's field types, supertypes and whether it is an interface. Kotlin
+constructor properties count as fields — that is how the Spring shape declares
+its collaborators, and missing them would leave Kotlin resolvable only by
+accident. Supertypes are one list rather than extends/implements split, because
+Kotlin gives both as `delegation_specifier` and for resolution they answer the
+same question.
+
+**Measured while landing step 1, and it decides step 3.** Call observations are
 emitted only for *sink-shaped* names, because that is what bounded their volume
 when the observation layer was built. On the fixture corpus:
 

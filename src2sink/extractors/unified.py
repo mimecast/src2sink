@@ -23,6 +23,7 @@ from .regex_extractors import (
 from .ts_extractors import (
     assign_enclosing_methods,
     extract_method_declarations,
+    extract_type_declarations,
     extract_tree_sitter_calls,
     link_sql_payload_out,
 )
@@ -70,6 +71,7 @@ def extract_from_file(
     # AST pass. Records observations only — no classification happens here.
     extract_tree_sitter_calls(ctx)
     extract_method_declarations(ctx)
+    extract_type_declarations(ctx)
     link_sql_payload_out(ctx)
 
     # Scope every node once all passes have produced their nodes, so a node from

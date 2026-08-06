@@ -3,9 +3,10 @@
   "families": [
     "method-decl",
     "pii-field",
-    "queue-pub"
+    "queue-pub",
+    "type-decl"
   ],
-  "node_count": 6,
+  "node_count": 7,
   "nodes": [
     {
       "confidence": "high",
@@ -112,6 +113,25 @@
       "kind": "sink",
       "language": "java",
       "line": 13,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "EventPublisher",
+        "fields": {
+          "kafkaTemplate": "KafkaTemplate<String, String>"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/EventPublisher.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 5,
       "pii_classification": null
     }
   ]

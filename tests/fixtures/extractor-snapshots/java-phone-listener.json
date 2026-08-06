@@ -5,9 +5,10 @@
     "method-decl",
     "pii-field",
     "pii-log",
-    "queue-sub"
+    "queue-sub",
+    "type-decl"
   ],
-  "node_count": 8,
+  "node_count": 9,
   "nodes": [
     {
       "confidence": "high",
@@ -145,6 +146,25 @@
       "kind": "source",
       "language": "java",
       "line": 10,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "PhoneListener",
+        "fields": {
+          "logger": "Logger"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/PhoneListener.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 7,
       "pii_classification": null
     }
   ]

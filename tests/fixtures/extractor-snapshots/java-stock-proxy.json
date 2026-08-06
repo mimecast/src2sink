@@ -6,9 +6,10 @@
     "entry-point",
     "http-in",
     "method-decl",
-    "sql-field-marker"
+    "sql-field-marker",
+    "type-decl"
   ],
-  "node_count": 13,
+  "node_count": 14,
   "nodes": [
     {
       "confidence": "high",
@@ -228,6 +229,27 @@
       "kind": "reference",
       "language": "java",
       "line": 19,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "StockForwarder",
+        "fields": {
+          "httpClient": "HttpClientWrapper",
+          "messageDigest": "MessageDigest",
+          "sql": "String"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/StockForwarder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 16,
       "pii_classification": null
     }
   ]

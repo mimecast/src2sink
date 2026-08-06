@@ -43,7 +43,7 @@ from src2sink.aggregators import (
     traces_index,
 )
 from src2sink.extractors import config as config_extractor
-from src2sink.extractors import http_out, patterns, regex_extractors, symbols
+from src2sink.extractors import ast_walk, http_out, patterns, regex_extractors, symbols
 from src2sink.extractors.file_context import FileExtractionContext
 from src2sink.internal_groups import DEFAULT_INTERNAL_GROUP_PATTERN_STRINGS
 from src2sink import build_metabase_v2
@@ -116,6 +116,8 @@ _HARVESTED_MODULES = (
     # Manifest and lockfile patterns, run against untrusted repo content exactly
     # as the Gradle ones above are. Harvested as a module for the same reason.
     dependencies, maven,
+    # Type-name matching over scanned source, same as every pattern above.
+    ast_walk,
     # Added by the completeness check below, which found nine modules defining
     # module-level regexes that had never been inside this gate at all.
     config_extractor,

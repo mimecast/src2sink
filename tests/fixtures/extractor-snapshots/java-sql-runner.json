@@ -8,9 +8,10 @@
     "method-decl",
     "raw-code-payload",
     "sql",
-    "sql-field-marker"
+    "sql-field-marker",
+    "type-decl"
   ],
-  "node_count": 9,
+  "node_count": 11,
   "nodes": [
     {
       "confidence": "high",
@@ -167,6 +168,44 @@
         "raw": "sql"
       },
       "family": "sql-field-marker",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 3,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "SqlRunner",
+        "fields": {
+          "sql": "String"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/SqlRunner.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 1,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "Req",
+        "fields": {
+          "sql": "String"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
       "file": "src/SqlRunner.java",
       "framework": null,
       "kind": "reference",

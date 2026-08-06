@@ -11,13 +11,14 @@
     "method-decl",
     "raw-code-payload",
     "sql",
-    "sql-field-marker"
+    "sql-field-marker",
+    "type-decl"
   ],
   "frameworks": [],
   "language_breakdown": {
     "java": 1
   },
-  "node_count": 15,
+  "node_count": 17,
   "nodes": [
     {
       "confidence": "high",
@@ -274,6 +275,45 @@
       "kind": "reference",
       "language": "java",
       "line": 22,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "QueryController",
+        "fields": {
+          "jdbcTemplate": "JdbcTemplate",
+          "sql": "String"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "class": "QueryRequest",
+        "fields": {
+          "sql": "String"
+        },
+        "is_interface": false,
+        "supertypes": []
+      },
+      "family": "type-decl",
+      "file": "src/QueryController.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 20,
       "pii_classification": null
     }
   ],
