@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src2sink.build_metabase_v2 import process_one_v2
+from src2sink.derive import DERIVATION_VERSION
 from src2sink.schema import DETECTION_VERSION, SCHEMA_VERSION
 
 _SHA = "a" * 40
@@ -76,7 +77,11 @@ def test_a_fresh_record_names_the_detector_that_made_it(tmp_path):
 def test_an_unchanged_repo_is_still_skipped(tmp_path):
     """The incremental scan is what makes a fleet run affordable; it must survive."""
     repo = _repo(tmp_path)
-    _seed_record(tmp_path, detection_version=DETECTION_VERSION)
+    _seed_record(
+        tmp_path,
+        detection_version=DETECTION_VERSION,
+        derivation_version=DERIVATION_VERSION,
+    )
     assert _scan(tmp_path, repo).get("_skipped") is True
 
 

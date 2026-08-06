@@ -81,15 +81,27 @@ CATALOGUE: tuple[Mutant, ...] = (
         # Re-derived when classification moved out of _maybe_add_sql_sink and into
         # _sql_verdict over observations. Same defect, same guard, new home.
         id="OI7-M1",
-        file="src2sink/extractors/ts_extractors.py",
+        file="src2sink/derive.py",
         old="    if not _has_sql_evidence(detail, hint=hint):\n        return None\n",
         new="",
         selector="tests/test_sql_sink_evidence.py tests/test_sql_classifier.py",
         note="Evidence gate removed entirely — restores the 1.1.0 name-only match.",
     ),
     Mutant(
+        id="DRV-M1",
+        file="src2sink/derive.py",
+        old='    return (node.family, node.kind) in DERIVED_FAMILIES',
+        new="    return node.family in {f for f, _ in DERIVED_FAMILIES}",
+        selector="tests/test_derive_pass.py",
+        note=(
+            "Derived nodes keyed on family alone, so stripping for a re-derive "
+            "also deletes the observed `sql`/`source` nodes that derivation does "
+            "not rebuild."
+        ),
+    ),
+    Mutant(
         id="OI26-M1",
-        file="src2sink/extractors/ts_extractors.py",
+        file="src2sink/derive.py",
         old='    if receiver_is_another_boundary(detail["receiver"]):\n        return False\n',
         new="",
         selector="tests/test_oi26_receiver_scope.py",
@@ -101,7 +113,7 @@ CATALOGUE: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="OI26-M2",
-        file="src2sink/extractors/ts_extractors.py",
+        file="src2sink/derive.py",
         old='    return bool(detail["file_sql_evidence"])',
         new="    return False",
         selector="tests/test_oi26_receiver_scope.py tests/test_sql_sink_evidence.py",
@@ -125,9 +137,9 @@ CATALOGUE: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="OBS-M1",
-        file="src2sink/extractors/ts_extractors.py",
-        old="    classify_sql_from_observations(ctx)",
-        new="    pass",
+        file="src2sink/extractors/unified.py",
+        old="    derived_nodes, derived_edges = derive_from_observations(ctx.nodes)",
+        new="    derived_nodes, derived_edges = [], []",
         selector="tests/test_sql_classifier.py tests/test_sql_sink_evidence.py",
         note=(
             "Classification never runs, so observations are recorded and no sql "
@@ -136,9 +148,9 @@ CATALOGUE: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="OBS-M2",
-        file="src2sink/extractors/ts_extractors.py",
-        old='    for obs in [n for n in ctx.nodes if n.family == "call-site"]:',
-        new="    for obs in ctx.nodes:",
+        file="src2sink/derive.py",
+        old='        if obs.family != "call-site":\n            continue\n',
+        new="",
         selector="tests/test_sql_classifier.py",
         note=(
             "The classifier stops filtering to observations and reads every node, "

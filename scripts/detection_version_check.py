@@ -39,6 +39,8 @@ class FrozenFingerprint(TypedDict):
 
     detection_version: int | None
     files: dict[str, str]
+    derivation_version: int | None
+    derivation_files: dict[str, str]
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -61,6 +63,12 @@ FINGERPRINT_FILE = Path("scripts/detection-fingerprint.json")
 # records are written and their artefacts are rebuilt from records on every run,
 # so they are never served stale. Fingerprinting them would force fleet-wide
 # rescans to fix output that was already being regenerated.
+# Derivation is versioned separately, because changing it costs a re-derive over
+# existing records rather than a fleet rescan. Fingerprinting it under
+# DETECTION_VERSION would force the expensive event for the cheap change, which
+# is exactly the coupling docs/plans/observe-then-classify.md removed.
+DERIVATION_INPUT_FILES = ("src2sink/derive.py",)
+
 DETECTION_INPUT_DIRS = ("src2sink/extractors",)
 DETECTION_INPUT_FILES = (
     "src2sink/constants.py",
@@ -78,6 +86,11 @@ DETECTION_INPUT_FILES = (
     "src2sink/safe_paths.py",         # decides which files are eligible to scan
     "src2sink/schema.py",             # record shape and field defaults
 )
+
+
+def _expand_derivation() -> list[str]:
+    """Return every declared derivation input as a repo-relative path."""
+    return sorted(DERIVATION_INPUT_FILES)
 
 
 def _expand(root: Path) -> list[str]:
@@ -108,11 +121,16 @@ def _load_frozen(root: Path) -> FrozenFingerprint:
     """Read the committed fingerprint, or an empty record if there is none yet."""
     path = root / FINGERPRINT_FILE
     if not path.is_file():
-        return {"detection_version": None, "files": {}}
+        return {
+            "detection_version": None, "files": {},
+            "derivation_version": None, "derivation_files": {},
+        }
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {
         "detection_version": raw.get("detection_version"),
         "files": dict(raw.get("files") or {}),
+        "derivation_version": raw.get("derivation_version"),
+        "derivation_files": dict(raw.get("derivation_files") or {}),
     }
 
 
@@ -120,6 +138,22 @@ def _current_version() -> int:
     from src2sink.schema import DETECTION_VERSION
 
     return DETECTION_VERSION
+
+
+def _current_derivation_version() -> int:
+    from src2sink.derive import DERIVATION_VERSION
+
+    return DERIVATION_VERSION
+
+
+def compute_derivation_fingerprint(root: Path) -> dict[str, str]:
+    """Return {repo-relative path: sha256} over the current derivation inputs."""
+    out: dict[str, str] = {}
+    for rel in _expand_derivation():
+        path = root / rel
+        if path.is_file():
+            out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return out
 
 
 def check_fingerprint(
@@ -137,8 +171,30 @@ def check_fingerprint(
     current_files = compute_fingerprint(root)
     version_now = _current_version()
 
+    deriv_now = compute_derivation_fingerprint(root)
+    deriv_recorded = record.get("derivation_files") or {}
+    deriv_version_now = _current_derivation_version()
+    if deriv_now != deriv_recorded and record.get("derivation_version") == deriv_version_now:
+        changed = sorted(
+            k for k in set(deriv_now) | set(deriv_recorded)
+            if deriv_now.get(k) != deriv_recorded.get(k)
+        )
+        return False, (
+            f"{len(changed)} derivation input(s) changed with DERIVATION_VERSION "
+            f"still {deriv_version_now}:\n  " + "\n  ".join(changed) + "\n\n"
+            "Findings derived by the previous rules would be kept, because a repo "
+            "is only re-derived when the recorded derivation version differs.\n"
+            "Bump DERIVATION_VERSION in src2sink/schema.py, then re-freeze with:\n"
+            "  uv run python scripts/detection_version_check.py --update\n"
+            "This costs a re-derive over existing records, not a fleet rescan — "
+            "which is the point of versioning the two separately."
+        )
+
     if current_files == recorded_files:
-        return True, f"detection inputs unchanged (DETECTION_VERSION={version_now})"
+        return True, (
+            f"detection inputs unchanged (DETECTION_VERSION={version_now}, "
+            f"DERIVATION_VERSION={deriv_version_now})"
+        )
 
     changed = sorted(
         k for k in set(current_files) | set(recorded_files)
@@ -181,6 +237,8 @@ def freeze(root: Path) -> int:
         ),
         "detection_version": _current_version(),
         "files": files,
+        "derivation_version": _current_derivation_version(),
+        "derivation_files": compute_derivation_fingerprint(root),
     }
     (root / FINGERPRINT_FILE).write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"

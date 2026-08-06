@@ -3,9 +3,10 @@
   "families": [
     "call-site",
     "data-class-field",
-    "sql"
+    "sql",
+    "sql-field-marker"
   ],
-  "node_count": 6,
+  "node_count": 8,
   "nodes": [
     {
       "confidence": "high",
@@ -103,6 +104,34 @@
       "kind": "source",
       "language": "java",
       "line": 23,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "SQL"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 6,
+      "pii_classification": null
+    },
+    {
+      "confidence": "high",
+      "data_class": null,
+      "detail": {
+        "raw": "sql"
+      },
+      "family": "sql-field-marker",
+      "file": "src/StockQueryBuilder.java",
+      "framework": null,
+      "kind": "reference",
+      "language": "java",
+      "line": 7,
       "pii_classification": null
     }
   ]

@@ -18,6 +18,7 @@ File path: `repos/<group>/<repo>.md` (human-readable),
 | `path` | string | Filesystem path relative to `repos/` |
 | `git_sha` | string | HEAD commit SHA of the analysed tree (if a `.git` directory is present) |
 | `analysed_at` | ISO-8601 datetime | When the script last ran on this repo |
+| `derivation_version` | integer | Which rules *interpreted* the observations into findings. Separate from `detection_version` because a rule change costs a **re-derive over existing records** — no source, no parsing — while a detector change costs a full rescan. See [`docs/plans/observe-then-classify.md`](docs/plans/observe-then-classify.md). |
 | `detection_version` | integer | Which detector produced this record. Together with `git_sha` it forms the incremental scan's cache key: a record whose detector is older than the running build is rebuilt rather than reused. A record without this field predates it and is always treated as stale. See `OI-16`. |
 
 ### `language`
@@ -373,6 +374,7 @@ Produced by `src2sink/build_metabase_v2.py`. JSON **must** include `"schema_vers
 | `http-in` | source | Inbound route |
 | `http-out` | sink | Outbound client |
 | `sql` | source or sink | **source** = string concat; **sink** = `executeQuery` / `JdbcTemplate` (see below) |
+| `sql-field-marker` | reference | An **observation**: a SQL-shaped field name appears at this line. Input to the `raw-code-payload` derivation, which is why it is recorded rather than held in memory. |
 | `call-site` | reference | An **observation**, not a finding: a call the extractor examined, with the inputs a classifier needs (`receiver`, `receiver_is_database`, `library_hint`, `file_sql_evidence`, `parameterised`). Asserts nothing about danger — see below. |
 | `file` | sink | Filesystem write / archive extract |
 | `queue-pub` / `queue-sub` | sink / source | Messaging |
@@ -455,6 +457,21 @@ repo and a `raw-code-payload` in another are recorded independently.
 |-------|--------|
 | `pii_classification` | `direct-pii`, `sensitive`, `special-category-gdpr`, `quasi-id` |
 | `data_class` | `tenant-content`, `credential`, `dangerous-payload`, … |
+
+### Observations and findings
+
+Nodes divide in two, and the distinction is load-bearing rather than cosmetic:
+
+* **Observations** (`call-site`, `sql-field-marker`, `kind: reference`) record
+  what the extractor saw.
+* **Findings** (`sql`/`sink`, `raw-code-payload`/`source`) are *derived* from
+  observations by `src2sink/derive.py`.
+
+Strip the findings from a record and what remains is exactly the input they were
+derived from, so re-deriving reproduces them without reading a single source
+file. That is why a corrected classification costs a pass over records rather
+than a fleet rescan — and why `derivation_version` is versioned apart from
+`detection_version`.
 
 ### `call-site` — observations, not findings
 

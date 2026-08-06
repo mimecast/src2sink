@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..constants import TEST_PATH_RX
+from ..derive import derive_from_observations
 from .file_context import FileExtractionContext
 from .regex_extractors import (
     extract_api_client_imports,
@@ -20,7 +21,6 @@ from .regex_extractors import (
 )
 from .ts_extractors import (
     extract_tree_sitter_calls,
-    link_raw_code_payload_endpoints,
     link_sql_payload_out,
 )
 from ..schema import FlowEdge, FlowNode
@@ -63,9 +63,12 @@ def extract_from_file(
     extract_raw_sql_field_markers(ctx)
     extract_pii_sinks(ctx)
 
-    # AST pass + correlate endpoints that accept SQL-shaped fields.
+    # AST pass. Records observations only — no classification happens here.
     extract_tree_sitter_calls(ctx)
-    link_raw_code_payload_endpoints(ctx)
     link_sql_payload_out(ctx)
 
-    return ctx.nodes, ctx.edges
+    # Findings are derived from the observations, not produced alongside them.
+    # A scan runs this inline for convenience; the same call re-runs over a
+    # stored record with no source in sight, which is the point (OI-26, OI-20).
+    derived_nodes, derived_edges = derive_from_observations(ctx.nodes)
+    return [*ctx.nodes, *derived_nodes], [*ctx.edges, *derived_edges]

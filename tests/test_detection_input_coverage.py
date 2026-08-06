@@ -84,10 +84,17 @@ def _record_path_modules() -> set[str]:
 
 
 def _watched_modules() -> set[str]:
-    """Return the modules the committed fingerprint covers."""
-    files = json.loads(
+    """Return the modules either committed fingerprint covers.
+
+    Both count: a module fingerprinted under `DERIVATION_VERSION` is guarded, just
+    at the cheaper granularity. Changing it forces a re-derive over records rather
+    than a fleet rescan, which is the distinction
+    docs/plans/observe-then-classify.md exists to make.
+    """
+    record = json.loads(
         (_ROOT / "scripts" / "detection-fingerprint.json").read_text(encoding="utf-8")
-    )["files"]
+    )
+    files = {**record["files"], **(record.get("derivation_files") or {})}
     return {f.replace("/", ".").removesuffix(".py") for f in files}
 
 

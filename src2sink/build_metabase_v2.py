@@ -57,7 +57,19 @@ from .repo_utils import (
 )
 from .safe_paths import is_escaping_symlink
 from .sanitize import redact_literals
-from .schema import DETECTION_VERSION, SCHEMA_VERSION, FlowEdge, FlowNode, RepoSummaryV2
+from .derive import (
+    DERIVATION_VERSION,
+    OBSERVATION_FAMILIES,
+    derive_from_observations,
+    is_derived,
+)
+from .schema import (
+    DETECTION_VERSION,
+    SCHEMA_VERSION,
+    FlowEdge,
+    FlowNode,
+    RepoSummaryV2,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -358,6 +370,7 @@ def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> Re
         path=path_rel,
         schema_version=SCHEMA_VERSION,
         detection_version=DETECTION_VERSION,
+        derivation_version=DERIVATION_VERSION,
     )
     summary.git_sha = detect_git_sha(repo_root)
     summary.analysed_at = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -402,6 +415,20 @@ def summary_to_dict(summary: RepoSummaryV2) -> dict[str, Any]:
     return d
 
 
+# The evidence string raw-code-payload edges carry, so a re-derive can drop the
+# previous ones without touching edges from other passes.
+_RAW_PAYLOAD_EVIDENCE = "endpoint accepts a raw SQL-shaped field executed in this file"
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    """Read a JSON record, returning an empty mapping if it cannot be read."""
+    try:
+        result: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return result
+
+
 def _existing_record_is_current(json_path: Path, current_sha: str) -> bool:
     """True if a prior run's record was built from this source *by this detector*.
 
@@ -427,6 +454,51 @@ def _existing_record_is_current(json_path: Path, current_sha: str) -> bool:
     )
 
 
+def _observed_nodes(data: dict[str, Any]) -> list[FlowNode] | None:
+    """Return a record's observation nodes, or None if it predates the layer.
+
+    A record with no observations cannot be re-derived — there is nothing to
+    derive *from* — so the caller must fall back to a full re-analysis.
+    """
+    nodes = [FlowNode(**n) for n in (data.get("nodes") or [])]
+    if not any(n.family in OBSERVATION_FAMILIES for n in nodes):
+        return None
+    return [n for n in nodes if not is_derived(n)]
+
+
+def _rederive_record(json_path: Path) -> bool:
+    """Recompute a record's derived nodes from its own observations, in place.
+
+    The observations are still good — only the rules that interpret them changed —
+    so this rewrites the findings without re-reading a single source file. That is
+    the point of separating observation from derivation: correcting a
+    classification costs a pass over records rather than a fleet rescan.
+
+    Returns False if the record cannot be read or predates the observation layer,
+    in which case the caller must fall back to a full re-analysis.
+    """
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    observed = _observed_nodes(data)
+    if observed is None:
+        return False
+
+    derived_nodes, derived_edges = derive_from_observations(observed)
+    kept_edges = [
+        e for e in (data.get("edges") or [])
+        if e.get("evidence") != _RAW_PAYLOAD_EVIDENCE
+    ]
+    data["nodes"] = [dataclasses.asdict(n) for n in [*observed, *derived_nodes]]
+    data["edges"] = kept_edges + [dataclasses.asdict(e) for e in derived_edges]
+    data["derivation_version"] = DERIVATION_VERSION
+    json_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return True
+
+
 def process_one_v2(args: tuple[Path, str, str, Path, bool]) -> dict[str, Any] | None:
     """Worker unit of work: analyse one repo (unless unchanged) and write its JSON/Markdown."""
     repo_root, group, name, metabase_root, force = args
@@ -435,7 +507,13 @@ def process_one_v2(args: tuple[Path, str, str, Path, bool]) -> dict[str, Any] | 
     if not force:
         current_sha = detect_git_sha(repo_root)
         if current_sha and _existing_record_is_current(json_path, current_sha):
-            return {"_skipped": True, "group": group, "name": name}
+            existing = _read_json(json_path)
+            if existing.get("derivation_version") == DERIVATION_VERSION:
+                return {"_skipped": True, "group": group, "name": name}
+            # Source and detector both match; only the interpretation moved. Redo
+            # the findings from the observations already recorded — no parsing.
+            if _rederive_record(json_path):
+                return {"_rederived": True, "group": group, "name": name}
 
     try:
         path_rel = str(repo_root.relative_to(repo_root.parent.parent))
