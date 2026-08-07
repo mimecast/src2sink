@@ -29,7 +29,7 @@ import pytest
 from src2sink.aggregators import fleet_pass as fp
 from src2sink.aggregators.data_stores import StoreCollector, _collect_stores
 from src2sink.aggregators.queues import QueueCollector, compute_queue_graph
-from src2sink.graph_common import load_v2_repo_records
+from src2sink import graph_common as gc
 
 
 def _record(group: str, name: str, nodes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -73,7 +73,7 @@ def test_streaming_and_loading_agree(metabase):
     queues, stores = QueueCollector(), StoreCollector()
     fp.run_fleet_pass(metabase, (queues, stores))
 
-    records = load_v2_repo_records(metabase)
+    records = gc.load_v2_repo_records(metabase)
     assert queues.result() == compute_queue_graph(records)
     assert stores.result() == _collect_stores(records)
 
@@ -136,7 +136,7 @@ def test_record_order_is_the_loading_order(metabase):
         def result(self): return order
 
     fp.run_fleet_pass(metabase, (Spy(),))
-    assert order == [f"{r['group']}/{r['name']}" for r in load_v2_repo_records(metabase)]
+    assert order == [f"{r['group']}/{r['name']}" for r in gc.load_v2_repo_records(metabase)]
 
 
 def test_no_collectors_reads_nothing(metabase, monkeypatch):
@@ -161,7 +161,6 @@ def test_an_empty_metabase_is_not_an_error(tmp_path):
 def _count_fleet_work(tmp_path, monkeypatch) -> tuple[int, int]:
     """Return (full parses, service-edge builds) for one aggregation."""
     import src2sink.aggregators.service_call_collect as scc
-    import src2sink.graph_common as gc
 
     parses, edges = [0], [0]
     real_load, real_edges = gc.load_v2_repo_records, scc.collect_service_edges
