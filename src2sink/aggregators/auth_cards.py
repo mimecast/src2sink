@@ -7,7 +7,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from ..graph_common import iter_nodes, load_v2_repo_records, repo_id
+from .fleet_pass import records_or_load
+from ..graph_common import iter_nodes, repo_id
 from ..renderers.markdown import md_table
 from ..sanitize import UNTRUSTED_CONTENT_NOTICE
 
@@ -60,10 +61,12 @@ def _collect_repo_auth(data: dict[str, Any]) -> dict[str, Any]:
 def write_auth_models_catalog(
     metabase_root: Path,
     repo_jsons: list[Path] | None = None,
+    *,
+    cards: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Write auth-model cards (JSONL + markdown) to conventions/ and return them."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    cards = [_collect_repo_auth(data) for data in records]
+    if cards is None:
+        cards = [_collect_repo_auth(d) for d in records_or_load(None, metabase_root, repo_jsons)]
 
     conv_dir = metabase_root / "conventions"
     conv_dir.mkdir(parents=True, exist_ok=True)

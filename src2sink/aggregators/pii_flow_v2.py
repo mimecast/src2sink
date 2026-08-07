@@ -27,10 +27,20 @@ class _PiiFlowCounts:
     queue_by_repo: Counter[str] = field(default_factory=Counter)
 
 
-def _collect_pii_flow(records: list[dict[str, Any]]) -> _PiiFlowCounts:
-    """Tally PII, HTTP, and queue nodes per classification and per repo."""
-    c = _PiiFlowCounts()
-    for data in records:
+class PiiFlowCollector:
+    """PII, HTTP and queue tallies, reduced one record at a time.
+
+    The streaming form of `_collect_pii_flow`, so a shared fleet pass can drive
+    it alongside the others (`OI-41`). It keeps counters, never records.
+    """
+
+    def __init__(self) -> None:
+        """Start an empty tally."""
+        self.counts = _PiiFlowCounts()
+
+    def consume(self, data: dict[str, Any]) -> None:
+        """Fold one repo record in."""
+        c = self.counts
         rid = f"{data['group']}/{data['name']}"
         for node in iter_nodes(data):
             family = node.get("family")
@@ -49,13 +59,34 @@ def _collect_pii_flow(records: list[dict[str, Any]]) -> _PiiFlowCounts:
                 c.http_out_by_repo[rid] += 1
             elif family in ("queue-in", "queue-out"):
                 c.queue_by_repo[rid] += 1
-    return c
+
+    def result(self) -> _PiiFlowCounts:
+        """The finished tally."""
+        return self.counts
 
 
-def write_pii_flow_v2(metabase_root: Path, repo_jsons: list[Path]) -> None:
-    """Write the v2 PII flow roll-up markdown (graphs/pii-flow.md)."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    c = _collect_pii_flow(records)
+def _collect_pii_flow(records: list[dict[str, Any]]) -> _PiiFlowCounts:
+    """Tally PII, HTTP, and queue nodes per classification and per repo."""
+    collector = PiiFlowCollector()
+    for data in records:
+        collector.consume(data)
+    return collector.result()
+
+
+def write_pii_flow_v2(
+    metabase_root: Path,
+    repo_jsons: list[Path],
+    *,
+    counts: _PiiFlowCounts | None = None,
+) -> None:
+    """Write the v2 PII flow roll-up markdown (graphs/pii-flow.md).
+
+    ``counts`` lets a caller that has already streamed the fleet hand the tally
+    in, rather than this parsing the metabase again (`OI-41`).
+    """
+    c = counts if counts is not None else _collect_pii_flow(
+        load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    )
     by_class = c.by_class
     by_repo = c.by_repo
     field_counts = c.field_counts

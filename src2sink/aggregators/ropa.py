@@ -97,9 +97,11 @@ def write_ropa_view(
     repo_jsons: list[Path] | None = None,
     *,
     touches: list[Any] | None = None,
+    records: list[dict[str, Any]] | None = None,
 ) -> list[RopaProcessingActivity]:
     """Write the ROPA Article 30 markdown + jsonl view and return the activities."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    if records is None:
+        records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
     if touches is None:
         touches = collect_pii_touchpoints(records)
     activities = build_ropa_activities(touches)

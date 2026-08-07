@@ -329,6 +329,7 @@ def build_producer_indices(
     *,
     repos_root: Path | None = None,
     json_paths: list[Path] | None = None,
+    records: list[dict[str, Any]] | None = None,
 ) -> list[ProducerIndex]:
     """Build a producer index per known API-client binding.
 
@@ -343,7 +344,8 @@ def build_producer_indices(
     Returns:
         One ProducerIndex per binding, hits sorted by (source_repo, kind).
     """
-    records = load_v2_repo_records(metabase_root, json_paths=json_paths)
+    if records is None:
+        records = load_v2_repo_records(metabase_root, json_paths=json_paths)
     bindings = list(get_bindings())
 
     # One walk of the fleet for every binding, rather than one walk each. The
@@ -403,6 +405,7 @@ def write_payload_producer_index(
     repo_jsons: list[Path],
     *,
     repos_root: Path | None = None,
+    records: list[dict[str, Any]] | None = None,
 ) -> list[ProducerIndex]:
     """Write the payload-endpoint-producers markdown + jsonl catalogue.
 
@@ -419,6 +422,7 @@ def write_payload_producer_index(
         metabase_root,
         repos_root=root,
         json_paths=repo_jsons,
+        records=records,
     )
 
     out_dir = metabase_root / "graphs"

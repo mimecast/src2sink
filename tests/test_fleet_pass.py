@@ -154,3 +154,71 @@ def test_an_empty_metabase_is_not_an_error(tmp_path):
     queues = QueueCollector()
     run_fleet_pass(tmp_path, (queues,))
     assert queues.result().topics == ()
+
+
+# --- the regression guard -----------------------------------------------------
+
+
+def _count_fleet_work(tmp_path, monkeypatch) -> tuple[int, int]:
+    """Return (full parses, service-edge builds) for one aggregation."""
+    import src2sink.aggregators.service_call_collect as scc
+    import src2sink.graph_common as gc
+
+    parses, edges = [0], [0]
+    real_load, real_edges = gc.load_v2_repo_records, scc.collect_service_edges
+
+    def counted_load(root, **kw):
+        parses[0] += 1
+        return real_load(root, **kw)
+
+    def counted_edges(records, *a, **kw):
+        edges[0] += 1
+        return real_edges(records, *a, **kw)
+
+    monkeypatch.setattr(gc, "load_v2_repo_records", counted_load)
+    monkeypatch.setattr(scc, "collect_service_edges", counted_edges)
+    for name in (
+        "service_call_report", "queues", "data_stores", "index_v2", "pii_flow_v2",
+        "payload_producers", "pii_cross_repo", "pii_lifecycle_report", "ropa",
+        "auth_cards", "crypto_cards", "graphs", "service_calls", "phase3",
+    ):
+        mod = __import__(f"src2sink.aggregators.{name}", fromlist=["x"])
+        if hasattr(mod, "load_v2_repo_records"):
+            monkeypatch.setattr(mod, "load_v2_repo_records", counted_load)
+        if hasattr(mod, "collect_service_edges"):
+            monkeypatch.setattr(mod, "collect_service_edges", counted_edges)
+
+    from src2sink.aggregators.graphs import aggregate_graphs_v2
+
+    for rec in _FLEET:
+        d = tmp_path / "repos" / rec["group"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{rec['name']}.json").write_text(json.dumps(rec), encoding="utf-8")
+    aggregate_graphs_v2(tmp_path, sorted(tmp_path.glob("repos/*/*.json")), phase3=True)
+    return parses[0], edges[0]
+
+
+def test_aggregation_does_not_reparse_the_fleet(tmp_path, monkeypatch):
+    """A ratchet on the cost `OI-41` is about.
+
+    Fourteen full parses when this was filed. Three remain, and they are three
+    genuinely separate phases with a data dependency: the shared load feeding the
+    service-call report and producer index, the PII lifecycle pass that *produces*
+    the touchpoints, and phase 3 which consumes them. Collapsing those would mean
+    holding records across the whole aggregation, which is the memory cost this
+    exists to avoid.
+
+    The bound is what matters, not the exact number — a new aggregator that loads
+    for itself pushes it up and fails here.
+    """
+    parses, edges = _count_fleet_work(tmp_path, monkeypatch)
+    assert parses <= 3, (
+        f"aggregation parsed the metabase {parses} times; it was 14 when OI-41 "
+        "was filed and 3 after. A new aggregator should take the shared records "
+        "or a collector on the streamed pass, not load for itself."
+    )
+    assert edges <= 1, (
+        f"collect_service_edges ran {edges} times. It is fleet-wide and "
+        "target-independent — the derivation OI-14 identified as dominating "
+        "cost — so it is built once and passed on."
+    )

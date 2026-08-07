@@ -6,8 +6,9 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
-from ..graph_common import load_v2_repo_records
+from .fleet_pass import records_or_load
 from ..known_api_clients import get_bindings
 from ..renderers.markdown import md_table
 from ..sanitize import UNTRUSTED_CONTENT_NOTICE, for_mermaid_label
@@ -126,9 +127,15 @@ def write_service_call_graph(
     repo_jsons: list[Path],
     *,
     repos_root: Path | None = None,
-) -> None:
-    """Write the service-call graph markdown report and edges JSONL to graphs/."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    records: list[dict[str, Any]] | None = None,
+) -> tuple[list[CallEdge], list[dict[str, Any]]]:
+    """Write the service-call graph markdown report and edges JSONL to graphs/.
+
+    Returns the edges and unmatched call sites it computed. Both are fleet-wide
+    and target-independent, and three separate consumers were each recomputing
+    them — the derivation `OI-14` identified as dominating cost (`OI-41`).
+    """
+    records = records_or_load(records, metabase_root, repo_jsons)
     edges, broken = collect_service_edges(records)
     if repos_root:
         merge_openapi_edges(edges, records, repos_root)
@@ -218,3 +225,4 @@ def write_service_call_graph(
                 "evidence": e.evidence,
                 "refs": e.refs,
             }, ensure_ascii=False) + "\n")
+    return edges, broken

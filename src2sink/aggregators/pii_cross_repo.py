@@ -154,10 +154,17 @@ def _build_http_flows(
     *,
     field_key: str,
     strong_repos: set[str],
+    edges: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Link high/openapi service-call edges where both repos strongly touch the field."""
+    """Link high/openapi service-call edges where both repos strongly touch the field.
+
+    ``edges`` is fleet-wide and field-independent, so a caller running this per
+    PII field passes it in rather than rebuilding the whole graph each time —
+    the derivation `OI-14` identified as dominating cost (`OI-41`).
+    """
     flows: list[dict[str, Any]] = []
-    edges, _ = collect_service_edges(records)
+    if edges is None:
+        edges, _ = collect_service_edges(records)
     for edge in edges:
         if edge.confidence not in ("high", "openapi"):
             continue
@@ -182,6 +189,7 @@ def build_cross_repo_flows(
     touches: list[PiiTouchpoint],
     *,
     field_key: str = "phone",
+    edges: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build queue + HTTP cross-repo flows for a field between repos that touch it."""
     material_repos = _material_repos_with_field(touches, field_key)
@@ -190,7 +198,9 @@ def build_cross_repo_flows(
     strong_repos = _strong_material_repos_with_field(touches, field_key)
     return (
         _build_queue_flows(records, field_key=field_key, material_repos=material_repos)
-        + _build_http_flows(records, field_key=field_key, strong_repos=strong_repos)
+        + _build_http_flows(
+            records, field_key=field_key, strong_repos=strong_repos, edges=edges,
+        )
     )
 
 
@@ -201,6 +211,7 @@ def write_pii_cross_repo_graph(
     *,
     field_key: str = "phone",
     records: list[dict[str, Any]] | None = None,
+    edges: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Write the cross-repo field-flow markdown + jsonl and return the flows.
 
@@ -212,7 +223,7 @@ def write_pii_cross_repo_graph(
         records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
     phone_repos = _material_repos_with_field(touches, field_key)
     strong_repos = _strong_material_repos_with_field(touches, field_key)
-    flows = build_cross_repo_flows(records, touches, field_key=field_key)
+    flows = build_cross_repo_flows(records, touches, field_key=field_key, edges=edges)
 
     graphs_dir = metabase_root / "graphs"
     graphs_dir.mkdir(parents=True, exist_ok=True)

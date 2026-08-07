@@ -30,11 +30,11 @@ one that changes any output fails immediately.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
-from ..graph_common import iter_v2_repo_records
+from ..graph_common import iter_v2_repo_records, load_v2_repo_records
 
 # Covariant: a collector only ever *produces* its result type, so a
 # `RecordCollector[QueueGraph]` is usable wherever a `RecordCollector[object]`
@@ -77,3 +77,42 @@ def run_fleet_pass(
     for record in iter_v2_repo_records(metabase_root, json_paths=json_paths):
         for collector in live:
             collector.consume(record)
+
+
+class MapCollector(Generic[T_co]):
+    """Applies a per-record function and keeps the results, in record order.
+
+    Several aggregators reduce with a plain `[fn(data) for data in records]` —
+    one card per repo. They share this rather than each restating the loop, and
+    it keeps the derived cards while the records that produced them are released.
+    """
+
+    def __init__(self, fn: Callable[[dict[str, Any]], T_co]) -> None:
+        """Collect ``fn`` applied to every record."""
+        self._fn = fn
+        self._results: list[T_co] = []
+
+    def consume(self, record: dict[str, Any]) -> None:
+        """Map one record and keep only what came back."""
+        self._results.append(self._fn(record))
+
+    def result(self) -> list[T_co]:
+        """The mapped results, in the order the records arrived."""
+        return self._results
+
+
+def records_or_load(
+    records: list[dict[str, Any]] | None,
+    metabase_root: Path,
+    json_paths: list[Path] | None = None,
+) -> list[dict[str, Any]]:
+    """Return the caller's records, loading the fleet only if it supplied none.
+
+    Every converted aggregator keeps a non-streaming entry point so it still
+    works when called directly. Writing that fallback as a guard clause inside
+    each `write_*` added a branch to functions already at the complexity limit,
+    for no reader benefit — the interesting code is below it.
+    """
+    if records is not None:
+        return records
+    return load_v2_repo_records(metabase_root, json_paths=json_paths)

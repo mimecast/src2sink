@@ -8,7 +8,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from ..graph_common import iter_nodes, load_v2_repo_records
+from .fleet_pass import records_or_load
+from ..graph_common import iter_nodes
 from ..renderers.markdown import md_table
 
 
@@ -43,10 +44,19 @@ def _row_from_record(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def write_index_v2(metabase_root: Path, repo_jsons: list[Path]) -> None:
-    """Write the v2 repo index JSON and the all/by-group/by-language markdown pages."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    rows = [_row_from_record(data) for data in records]
+def write_index_v2(
+    metabase_root: Path,
+    repo_jsons: list[Path],
+    *,
+    rows: list[dict[str, Any]] | None = None,
+) -> None:
+    """Write the v2 repo index JSON and the all/by-group/by-language markdown pages.
+
+    ``rows`` lets a caller that has already streamed the fleet hand the mapped
+    rows in, rather than this parsing the metabase again (`OI-41`).
+    """
+    if rows is None:
+        rows = [_row_from_record(d) for d in records_or_load(None, metabase_root, repo_jsons)]
     index_dir = metabase_root / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
