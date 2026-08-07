@@ -67,6 +67,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Needs a product decision first** | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 | OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | cross-cutting: 12 whole-function silent failures found; the pattern behind `OI-18`, `OI-31`, `OI-13` and three Kotlin gaps | **P0** |
+| OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering

@@ -56,12 +56,13 @@ _MUTANT_TIMEOUT_S = 120
 # away — but it has to be visible rather than creeping, so slow mutants are named
 # on every run.
 #
-# Raised 120 -> 130 for the OI-31 entries. Measured at that point: 122 mutants
-# in 1m37s, of which **48s is two entries** (LIM-M3, LIM-M4) that can only be
-# killed by waiting for a timeout. The marginal cost of an ordinary mutant is
-# ~1s, so the budget is about the slow tail, not the count — which is what the
-# paragraph above says and what this raise respects.
-_MAX_CATALOGUE_SIZE = 130
+# Raised 120 -> 130 -> 140 as the fleet-run issues landed. Measured at 122
+# mutants: 1m37s, of which **48s is two entries** (LIM-M3, LIM-M4) that can
+# only be killed by waiting for a timeout. The marginal cost of an ordinary
+# mutant is ~1s, so the budget is about the slow tail, not the count — which
+# is what the paragraph above says and what these raises respect. Revisit by
+# measuring the wall clock, not by counting entries.
+_MAX_CATALOGUE_SIZE = 140
 _SLOW_MUTANT_S = 5.0
 
 
@@ -1080,6 +1081,32 @@ CATALOGUE: tuple[Mutant, ...] = (
             "Kotlin call arguments stop being read, so no Kotlin hop can carry "
             "taint. The same defect as OI17-M16 from the other end, and the same "
             "consequence: a clean-looking result across half the JVM fleet."
+        ),
+    ),
+    Mutant(
+        id="OI39-M1",
+        file="src2sink/constants.py",
+        old='_CAMEL_TEST = r"(?-i:[a-zA-Z][a-zA-Z0-9]*Tests?)"',
+        new='_CAMEL_TEST = r"[a-zA-Z][a-zA-Z0-9]*Tests?"',
+        selector="tests/test_oi39_test_path_classification.py",
+        note=(
+            "The camelCase branch goes back under IGNORECASE, so any segment "
+            "ending in 'test' is a test directory again — `api/latest/`, "
+            "`protest/`, `contest/` excluded from *all* extraction, producing "
+            "nothing with no note and no count."
+        ),
+    ),
+    Mutant(
+        id="OI39-M2",
+        file="src2sink/constants.py",
+        old='    r"(?:^|/)(?:" + _TEST_FILE_NAMES + r")$",',
+        new='    r"(?!x)x",',
+        selector="tests/test_oi39_test_path_classification.py",
+        note=(
+            "Test files living beside their code stop being recognised — "
+            "`routes.spec.ts`, `handler_test.go`, `test_views.py` — so a route "
+            "declared only in a mock server counts as a door into the deployed "
+            "service. 64% of OI-37's false endpoints were in files like these."
         ),
     ),
     Mutant(
