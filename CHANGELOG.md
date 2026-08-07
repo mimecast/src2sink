@@ -89,6 +89,16 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **Discovered bindings named the client library instead of the service
+  (`OI-40`).** When a client library is published from its own repository, the
+  repo declaring the coordinate *is* the library — so 42 of 191 candidates
+  pointed at a library rather than the service it calls, while 0 of 99
+  hand-authored bindings do. The records looked entirely correct, which is why
+  nothing rejected them. A target with no inbound endpoints is now corrected to
+  the single sibling service that has them, the substitution is shown to the
+  reviewer, and a target that cannot be corrected is flagged rather than dropped
+  — because "no endpoints" is also what a detection gap looks like.
+
 - **A gate against silent detection failures (`OI-36`).** The principle that a
   detection path must not fail to empty without saying so has been written down
   since 1.1.0 — and was then violated in every release since, including three

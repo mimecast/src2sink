@@ -26,6 +26,7 @@ unverified binding poisons the taint graph with phantom cross-service edges.
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,49 @@ def _http_in_paths_by_repo(records: list[dict[str, Any]]) -> dict[str, set[str]]
             if isinstance(path, str) and path:
                 out[rid].add(path)
     return out
+
+
+# Suffixes a client library's repo conventionally carries. Used only to derive
+# the *stem to search for* — never as the test itself. The test is whether the
+# repo declares inbound endpoints, which is name-independent and catches estates
+# that name their libraries differently (`OI-40`).
+_CLIENT_SUFFIX_RX = re.compile(r"[-_](?:clients?|sdk)$", re.IGNORECASE)
+
+
+def _service_for_client_repo(
+    declaring_repo: str, endpoints: dict[str, set[str]]
+) -> str | None:
+    """Map a client-library repo to the service repo it fronts, or None.
+
+    `resolve(coord)` names the repo that *declares* the artifact, and
+    `_canonical_repo_id` maps that to the repo owning it. Both are correct. But
+    when a client library is published from **its own repository** rather than as
+    a submodule of the service, the repo owning the declaration *is* the library
+    — so the binding points at the client instead of the service it calls
+    (`OI-40`).
+
+    `OI-33` fixed the *shape* of the identity; this is the *referent* being
+    wrong, and no amount of path normalisation reaches it. The service is not
+    named anywhere in the consumer's dependency declaration.
+
+    A service has inbound endpoints; a client library does not. So the test is
+    the endpoint count, and the name only supplies the stem to search for.
+    Returns None rather than guessing — 31 of 42 in the observed fleet had no
+    sibling because the service is not in the scanned set at all, and inventing
+    one would manufacture the broken edges `OI-33` was about.
+    """
+    if "/" not in declaring_repo:
+        return None
+    if endpoints.get(declaring_repo):
+        return None  # it receives calls, so it is a service; leave it alone
+    stem = _CLIENT_SUFFIX_RX.sub("", declaring_repo.split("/")[-1])
+    if not stem:
+        return None
+    hits = sorted(
+        repo for repo, paths in endpoints.items()
+        if paths and repo.split("/")[-1] in (stem, f"{stem}-service")
+    )
+    return hits[0] if len(hits) == 1 else None
 
 
 def _key(target_repo: str, artifact: str) -> str:
@@ -155,6 +199,27 @@ def _confidence(target_repo: str, scanned: set[str], has_paths: bool) -> str:
     return "low"  # artifact looks like a client but coordinate did not resolve
 
 
+def _resolve_target(
+    resolve: Any, coord: str, known: frozenset[str], endpoints: dict[str, set[str]],
+) -> tuple[str, str, str]:
+    """Resolve a coordinate to (declaring path, service repo, client repo if corrected).
+
+    Two corrections in sequence, both needed and neither sufficient alone:
+    `_canonical_repo_id` fixes the identity's *shape* (`OI-33`), and
+    `_service_for_client_repo` fixes its *referent* when the declaring repo turns
+    out to be the client library rather than the service (`OI-40`).
+
+    The client repo is returned rather than discarded, because a substitution a
+    reviewer cannot see is one they cannot check.
+    """
+    resolved = resolve(coord) or ""
+    target = _canonical_repo_id(resolved, known) or ""
+    corrected = _service_for_client_repo(target, endpoints)
+    if corrected:
+        return resolved, corrected, target
+    return resolved, target, ""
+
+
 def _collect_candidates(
     records: list[dict[str, Any]],
     resolve: Any,
@@ -179,14 +244,16 @@ def _collect_candidates(
             coord = f"{gid}:{aid}" if gid else aid
             # The declaring directory, then the repo that owns it. Both are kept:
             # the module path is strictly more information and `OI-34` may want it.
-            resolved = resolve(coord) or ""
-            target = _canonical_repo_id(resolved, known) or ""
+            resolved, target, client_repo = _resolve_target(
+                resolve, coord, known, paths_by_repo,
+            )
             key = _key(target, aid)
             cand = cands.setdefault(
                 key,
                 {
                     "target_repo": target,
                     "target_module": resolved,
+                    "client_repo": client_repo,
                     "maven_artifact": aid,
                     "import_prefix": gid,  # best-effort; reviewer tightens
                     "paths": sorted(paths_by_repo.get(target, ())),
@@ -314,6 +381,62 @@ def _unresolved_warning(target_repo: str, coordinate: str, module: str) -> str |
     )
 
 
+def _target_warnings(
+    target_repo: str, coordinate: str, module: str, client_repo: str,
+) -> list[str]:
+    """Everything worth saying about how this candidate's target was arrived at."""
+    out: list[str] = []
+    unresolved = _unresolved_warning(target_repo, coordinate, module)
+    if unresolved:
+        out.append(unresolved)
+    if client_repo:
+        out.append(
+            f"target corrected from {client_repo!r}, which declares the client "
+            "library and no inbound endpoints, to the service it appears to "
+            "front — check the substitution before accepting (OI-40)"
+        )
+    return out
+
+
+def _endpointless_warning(target_repo: str, has_paths: bool, scanned: set[str]) -> str | None:
+    """Flag a target that receives no calls, without dropping it.
+
+    A binding's target is by definition a service that receives calls, so a
+    target with no detected inbound endpoint cannot fulfil that. But **zero
+    endpoints is also what a detection gap looks like** — `OI-17` left an entire
+    language half of a fleet returning none — and the two causes are
+    indistinguishable from the outside.
+
+    So this warns and never filters. Dropping these would turn `OI-17`-class
+    blindness into an invisible data-quality filter, which is `OI-36` with the
+    tool doing it to itself.
+    """
+    if not target_repo or has_paths or target_repo not in scanned:
+        return None
+    return (
+        f"{target_repo} declares no inbound endpoints: it may be a client "
+        "library whose service is outside the scanned fleet, or a service whose "
+        "endpoints were not detected — the two look identical from here"
+    )
+
+
+def _entry_fields(
+    cand: dict[str, Any], prev: dict[str, Any] | None
+) -> dict[str, Any]:
+    """The tunable fields and status, preserving a reviewer's decision.
+
+    A reviewer who set accepted/rejected has tuned the binding, so their edits
+    and status are kept and only evidence and confidence are refreshed.
+    """
+    if prev and prev.get("status") in (STATUS_ACCEPTED, STATUS_REJECTED):
+        entry = {k: prev.get(k, cand.get(k)) for k in _TUNABLE_FIELDS}
+        entry["status"] = prev["status"]
+        return entry
+    entry = {k: cand[k] for k in _TUNABLE_FIELDS}
+    entry["status"] = STATUS_PENDING
+    return entry
+
+
 def _build_entry(
     cand: dict[str, Any],
     scanned: set[str],
@@ -324,25 +447,20 @@ def _build_entry(
     coordinate = cand.pop("coordinate")
     warnings = list(cand.pop("warnings", []))
     module = cand.pop("target_module", "")
-    unresolved = _unresolved_warning(cand.get("target_repo", ""), coordinate, module)
-    if unresolved:
-        warnings.append(unresolved)
+    client_repo = cand.pop("client_repo", "")
+    warnings += _target_warnings(
+        str(cand.get("target_repo", "")), coordinate, module, client_repo,
+    )
     has_paths = bool(cand["paths"])
     evidence = {
         "coordinate": coordinate,
         "consumers": consumers,
         "resolved": bool(cand["target_repo"]),
         "declared_at": module,
+        "client_repo": client_repo,
         "paths_from_target_scan": has_paths and cand["target_repo"] in scanned,
     }
-    # A reviewer who set status to accepted/rejected has tuned the binding; keep
-    # their edits and status, only refreshing evidence + confidence.
-    if prev and prev.get("status") in (STATUS_ACCEPTED, STATUS_REJECTED):
-        entry = {k: prev.get(k, cand.get(k)) for k in _TUNABLE_FIELDS}
-        entry["status"] = prev["status"]
-    else:
-        entry = {k: cand[k] for k in _TUNABLE_FIELDS}
-        entry["status"] = STATUS_PENDING
+    entry = _entry_fields(cand, prev)
     # How the candidate was found. `both` is materially stronger than either
     # alone: a declared dependency and an observed call site are independent
     # lines of evidence. `call-site` sorts lowest, since it rests on the path
@@ -350,6 +468,12 @@ def _build_entry(
     entry["discovery_method"] = cand.get("discovery_method", "dependency")
     if warnings:
         entry["warnings"] = warnings
+    endpointless = _endpointless_warning(
+        str(entry["target_repo"] or ""), bool(entry["paths"]), scanned,
+    )
+    if endpointless:
+        existing: list[str] = list(entry.get("warnings") or [])
+        entry["warnings"] = [*existing, endpointless]
     entry["confidence"] = _confidence(
         str(entry["target_repo"] or ""), scanned, bool(entry["paths"])
     )
