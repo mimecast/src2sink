@@ -2576,7 +2576,7 @@ clear cost for an unclear one.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `4789405` — PR #45  
 **Tests:** `tests/test_oi33_canonical_repo_id.py` — 15 cases: the normalisation across module paths, nested repos and unresolvable inputs; `both` reachable end to end; the defect reproduced so that test cannot pass vacuously; the recovered paths, confidence and alias; and reviewer state surviving the key change. Mutants `OI33-M1`…`OI33-M3`.
 
 ### Symptom
