@@ -461,6 +461,51 @@ Across the fleet, **15 records have three or more build-bearing subdirectories a
 **Answered by the fleet owner: option 2.** Nested-subgroup projects get their own
 nodes, and the two-level walk is under-counting the fleet.
 
+**And the stated reason changes the fix.** The question above argued from GitLab
+nested subgroups, which points at splitting on an external manifest. The owner's
+reason is different and sharper:
+
+> a repo can contain both a service and its client
+
+That is the `warehouse-service` / `warehouse-service-client` shape, and it is not
+a nesting problem — it is a **multi-module** problem, in a single repo at a single
+depth. Its consequences are worse than under-counting:
+
+* A consumer depending on the client resolves to the repo. The service lives in
+  the same repo. So *"who depends on the client"* and *"who calls the service"*
+  collapse into one node, and the two cannot be told apart.
+* A call **from the client to the service** — the entire point of a client
+  library — is a call within one repo id, so `_append_path_edge` drops it as a
+  self-edge. The hop the client exists to make is the hop that disappears.
+* It is the other half of `OI-33`. The resolver returns
+  `group/repo/warehouse-client` because that module *is* a distinct publishable
+  thing; `OI-33` normalises it back to `group/repo` because the metabase has no
+  node for it. Under this decision the resolver was right and the metabase was
+  wrong.
+
+**This makes the build module the project boundary**, at least for JVM
+multi-module repos — which the original analysis explicitly set aside:
+
+> A build file at the sub-directory is weak on its own: multi-module builds put
+> one in every module.
+
+That reasoning was correct for *"is this a nested repo?"* and is exactly backwards
+for *"is this a separate project?"*. If a module publishes its own artefact, it is
+a thing consumers depend on by name, and that is the definition being adopted.
+
+**Consequence for the fix.** The manifest remains useful — it is authoritative
+for what the estate contains — but it is no longer sufficient on its own, because
+a service and its client inside one manifest-listed project still need splitting.
+The discriminator becomes *"does this directory publish its own artefact"*, which
+the identity index already answers: `_build_component_identity_index` maps
+coordinates to declaring directories, and that is precisely the set of publishable
+modules.
+
+**Consequence for `OI-33`.** No conflict, and no rework. `_canonical_repo_id`
+matches the longest *known* id, so the moment the metabase knows
+`group/repo/warehouse-client` as a project, the same function stops collapsing it.
+It degrades correctly under both models, which is what longest-match bought.
+
 That settles the question and turns this into an implementation task with a known
 shape — and a known cost. Repo identity is the most expensive thing in this
 system to change, because it keys the metabase layout, every edge, every trace
