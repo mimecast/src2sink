@@ -90,16 +90,59 @@ def _key(target_repo: str, artifact: str) -> str:
     return f"{target_repo}\t{artifact}"
 
 
-def _load_discovered(path: Path) -> dict[str, dict[str, Any]]:
-    """Return prior candidates keyed by (target_repo, artifact), or {} if absent."""
+def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
+    """Map a resolved coordinate path to the repo id that owns it.
+
+    The identity index resolves a coordinate to the directory that *declares* it,
+    which may be a build module inside a repo — `group/repo/some-client`. The
+    demand-side pass names its target `group/repo`, from `repo_id()`. The two
+    never met, so `discovery_method: "both"` — the strongest signal the design
+    produces — could not occur even once (`OI-33`).
+
+    Truncating to two segments would be wrong: `group/subgroup/repo` is a valid
+    GitLab path and this estate contains them (`OI-34`). So match the longest
+    known repo id instead. That handles in-repo modules and nested repos alike,
+    and depends on neither path depth nor on `.git` being present — 65 of 746
+    repos in the observed fleet have no `.git` at all.
+
+    Returns None when nothing matches, which is a resolver failure worth
+    surfacing rather than a repo id worth guessing.
+    """
+    if not resolved:
+        return None
+    parts = resolved.split("/")
+    for n in range(len(parts), 0, -1):
+        candidate = "/".join(parts[:n])
+        if candidate in known:
+            return candidate
+    return None
+
+
+def _load_discovered(
+    path: Path, known: frozenset[str] | None = None
+) -> dict[str, dict[str, Any]]:
+    """Return prior candidates keyed by (target_repo, artifact), or {} if absent.
+
+    ``known`` lets a candidate stored under a pre-`OI-33` module path also be
+    found under its canonical repo id, so reviewer decisions survive the fix.
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     out: dict[str, dict[str, Any]] = {}
     for c in data.get("candidates", []):
-        if isinstance(c, dict) and "maven_artifact" in c:
-            out[_key(c.get("target_repo", ""), c["maven_artifact"])] = c
+        if not isinstance(c, dict) or "maven_artifact" not in c:
+            continue
+        stored = str(c.get("target_repo", ""))
+        artifact = c["maven_artifact"]
+        out[_key(stored, artifact)] = c
+        # A candidate reviewed before `OI-33` was keyed on the *module* path.
+        # Index it under its canonical repo id too, or the fix would silently
+        # discard every accept/reject a reviewer has already made.
+        canonical = _canonical_repo_id(stored, known) if known else None
+        if canonical and canonical != stored:
+            out.setdefault(_key(canonical, artifact), c)
     return out
 
 
@@ -116,8 +159,15 @@ def _collect_candidates(
     records: list[dict[str, Any]],
     resolve: Any,
 ) -> dict[str, dict[str, Any]]:
-    """Mine consumer ``dependencies_internal`` into per-(target, artifact) candidates."""
+    """Mine consumer ``dependencies_internal`` into per-(target, artifact) candidates.
+
+    ``target_repo`` is normalised to a repo id the metabase knows (`OI-33`). The
+    resolver returns the directory that *declares* a coordinate, which for a
+    multi-module build is deeper than the repo — and the demand-side pass names
+    the same service by its repo id, so without this the two can never agree.
+    """
     paths_by_repo = _http_in_paths_by_repo(records)
+    known = frozenset(repo_id(d) for d in records)
     cands: dict[str, dict[str, Any]] = {}
     for data in records:
         consumer = repo_id(data)
@@ -127,12 +177,16 @@ def _collect_candidates(
             if not _looks_like_client_artifact(aid):
                 continue
             coord = f"{gid}:{aid}" if gid else aid
-            target = resolve(coord) or ""
+            # The declaring directory, then the repo that owns it. Both are kept:
+            # the module path is strictly more information and `OI-34` may want it.
+            resolved = resolve(coord) or ""
+            target = _canonical_repo_id(resolved, known) or ""
             key = _key(target, aid)
             cand = cands.setdefault(
                 key,
                 {
                     "target_repo": target,
+                    "target_module": resolved,
                     "maven_artifact": aid,
                     "import_prefix": gid,  # best-effort; reviewer tightens
                     "paths": sorted(paths_by_repo.get(target, ())),
@@ -242,6 +296,24 @@ def _demand_side_observations(
     return observed
 
 
+def _unresolved_warning(target_repo: str, coordinate: str, module: str) -> str | None:
+    """Explain an unresolvable coordinate, or None when it resolved.
+
+    An empty `target_repo` used to arrive as an ordinary candidate with nothing
+    saying why — 8 of them in the first fleet run. Promoting one creates an edge
+    pointing at nothing, so it must not read like a merely weak candidate
+    (`OI-33`, and the class in `OI-36`).
+    """
+    if target_repo:
+        return None
+    where = f"; declared at {module!r}" if module else "; not found in the checkout"
+    return (
+        f"coordinate {coordinate or '(none)'} did not resolve to a known repo"
+        f"{where} — the target cannot be trusted, and promoting this would "
+        "create an edge to nothing"
+    )
+
+
 def _build_entry(
     cand: dict[str, Any],
     scanned: set[str],
@@ -250,12 +322,17 @@ def _build_entry(
     """Assemble a candidate entry, preserving a reviewer's non-pending decision."""
     consumers = sorted(cand.pop("consumers"))
     coordinate = cand.pop("coordinate")
-    warnings = cand.pop("warnings", [])
+    warnings = list(cand.pop("warnings", []))
+    module = cand.pop("target_module", "")
+    unresolved = _unresolved_warning(cand.get("target_repo", ""), coordinate, module)
+    if unresolved:
+        warnings.append(unresolved)
     has_paths = bool(cand["paths"])
     evidence = {
         "coordinate": coordinate,
         "consumers": consumers,
         "resolved": bool(cand["target_repo"]),
+        "declared_at": module,
         "paths_from_target_scan": has_paths and cand["target_repo"] in scanned,
     }
     # A reviewer who set status to accepted/rejected has tuned the binding; keep
@@ -353,7 +430,7 @@ def discover_api_clients_from_records(
     for cand in cands.values():
         cand.setdefault("discovery_method", "dependency")
     _apply_demand_side(cands, records)
-    prev = _load_discovered(metabase_root / DISCOVERED_FILE)
+    prev = _load_discovered(metabase_root / DISCOVERED_FILE, frozenset(scanned))
 
     entries = [
         _build_entry(cand, scanned, prev.get(key))
@@ -379,7 +456,13 @@ def discover_api_clients(
     by_coord, by_name, by_full = _build_component_identity_index(repos_root)
 
     def resolve(coord: str) -> str | None:
-        """Resolve a maven coordinate to the repo id that publishes it, or None."""
+        """Resolve a coordinate to the clone path that *declares* it, or None.
+
+        Not the repo id — this docstring used to claim it was, and that claim is
+        how `OI-33` went unnoticed: `_resolve_clone_path` returns the declaring
+        directory, which for a multi-module build sits inside the repo. The
+        caller normalises via `_canonical_repo_id`.
+        """
         return _resolve_clone_path(coord, by_coord, by_name, by_full)
 
     return discover_api_clients_from_records(metabase_root, records, resolve)
