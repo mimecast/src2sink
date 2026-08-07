@@ -66,7 +66,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
 | OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Decided: the project is the unit.** Changes repo identity fleet-wide — a major | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
-| OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | cross-cutting: 12 whole-function silent failures found; the pattern behind `OI-18`, `OI-31`, `OI-13` and three Kotlin gaps | **P0** |
+| OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | **gate shipped in 3.0.0**; 44 handlers frozen as debt and ratcheted down. The remaining work is the sweep | **P1** |
 | OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
 | OI-40 | 40 | A candidate's `target_repo` names the client library when the library is its own repo | small | 42 of 191 candidates name the wrong node and would misattribute every edge; the correction is derivable and agrees with the human answer 11/11 | **P1** |
 
@@ -678,7 +678,38 @@ That is the whole issue, already understood and already acted on — for one fil
 once. `_load_bindings` in the promote path still returns `[]` silently, so even
 the fix is not applied consistently to its own subject.
 
-### Proposed fix
+### The gate shipped in 3.0.0
+
+`tests/test_silent_failure_gate.py`. An exception handler whose body discards the
+error must emit a signal — a note, a warning, a counter, a re-raise — or be
+listed with a reason.
+
+**The real surface is 59, not 12.** The earlier count was only handlers that
+empty a *whole function's* result; walking every handler found 59. They split:
+
+| | count | |
+|---|---|---|
+| `_SIGNAL_NOT_NEEDED` | 15 | predicates and path arithmetic where the fallback **is** the answer, plus three documented designs (`open_index`'s cache miss, the `TA-001` bulkhead). Each carries a written reason. |
+| `_KNOWN_SILENT` | 44 | frozen debt. A baseline, not an endorsement. |
+
+**What the gate buys today is that the list cannot grow.** A new silent handler
+fails the build. A companion test ratchets `_KNOWN_SILENT` downward, so it cannot
+become a parking space — which is the failure mode §6 itself demonstrates.
+
+Two entries in the debt list are worth naming, because they are the issue in its
+purest form:
+
+* the **four dependency parsers** are `OI-18` in four more places — a malformed
+  `pyproject.toml`, `package.json` or lockfile yields zero dependencies;
+* the **three `ts_extractors` handlers** are the `OI-17` foundation — a parse
+  failure means that file contributes no calls, no methods and no types, so it
+  takes part in no path and the answer is *"nothing reaches a sink here"*, stated
+  at full confidence.
+
+The gate is also tested against a handler it must catch, because an enforcement
+that cannot fire would be this same mistake one level up.
+
+### Remaining: the sweep
 
 Not "raise everywhere" — the bulkhead exists for good reasons and a hostile repo
 must not stop a run. The rule is **degrade loudly, never silently**:
