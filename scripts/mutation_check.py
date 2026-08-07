@@ -1083,6 +1083,48 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI33-M1",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="            target = _canonical_repo_id(resolved, known) or \"\"",
+        new="            target = resolved",
+        selector="tests/test_oi33_canonical_repo_id.py",
+        note=(
+            "The supply-side target goes back to the declaring module path, so it "
+            "can never match the demand-side repo id and `discovery_method: both` "
+            "becomes unreachable again — the strongest signal the design produces, "
+            "silently absent."
+        ),
+    ),
+    Mutant(
+        id="OI33-M2",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    parts = resolved.split(\"/\")\n"
+            "    for n in range(len(parts), 0, -1):",
+        new="    parts = resolved.split(\"/\")\n"
+            "    for n in range(1, len(parts) + 1):",
+        selector="tests/test_oi33_canonical_repo_id.py",
+        note=(
+            "Shortest match instead of longest, so `group/subgroup/nested` is "
+            "truncated to `group/subgroup` — a nested repo absorbed into its "
+            "parent, which is the corruption a segment-count rule would cause and "
+            "the reason longest-match was chosen (OI-34)."
+        ),
+    ),
+    Mutant(
+        id="OI33-M3",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="        canonical = _canonical_repo_id(stored, known) if known else None\n"
+            "        if canonical and canonical != stored:\n"
+            "            out.setdefault(_key(canonical, artifact), c)",
+        new="        pass",
+        selector="tests/test_oi33_canonical_repo_id.py",
+        note=(
+            "Candidates reviewed before the fix are keyed on the old module path, "
+            "so the new repo-id key finds nothing and every accept/reject silently "
+            "reverts to pending — human review work lost without a message."
+        ),
+    ),
+    Mutant(
         id="OI35-M1",
         file="src2sink/aggregators/api_client_discovery.py",
         old="    repos_by_class = _repos_by_class(records)\n",
