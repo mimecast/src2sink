@@ -60,7 +60,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-22 | 22 | No identity when git history is absent | medium | the incremental scan dies on stripped snapshots | **P2** |
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
-| OI-32 | 32 | The checkout scan is single-threaded and I/O-bound | medium | 14-minute fleet scan is now dominated by file I/O; gains are filesystem-dependent and must be measured first | **P2** |
+| OI-32 | 32 | The checkout scan is single-threaded and I/O-bound | medium | **Measured:** reads thread 3.0x even on local NVMe but are worth 2.4% of the run; the 78% that dominates is CPU-bound aggregation, which threads cannot touch | **P2** |
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
@@ -383,22 +383,101 @@ while looking like a performance change.
 | **Directory traversal** | Partly | sibling directories are independent, but a directory cannot be scanned before its parent is read |
 | Parsing / extraction | **No** | must stay in processes for `TA-001` |
 
-**And it is filesystem-dependent.** On a network or cloud-backed mount the win is
-large, because the cost is per-request latency and concurrency hides it. On local
-NVMe it is much smaller, because the cost is bandwidth and one thread can
-saturate it.
+~~**And it is filesystem-dependent.** On a network or cloud-backed mount the win
+is large, because the cost is per-request latency and concurrency hides it. On
+local NVMe it is much smaller, because the cost is bandwidth and one thread can
+saturate it.~~
+
+**Corrected by measurement — the discriminator is file *count*, not storage
+class.** A cold single-threaded pass over a real fleet on local NVMe ran at
+**44 MiB/s**, orders below the device's bandwidth, because the cost is
+per-file open latency (**136 µs/file** across 177,693 files averaging 6 KB) and
+not throughput. Threads hide that latency on local storage exactly as they would
+on a network mount: **3.0x at 16 workers**. The original claim would have
+predicted no win and been wrong. See the measurement below.
 
 **The risk that matters here specifically:** the fleet has been observed
 *swapping*. Concurrency raises peak resident memory, so on a memory-constrained
 host more threads can make the run slower, not faster — the opposite of the
-intended effect, and the failure mode `OI-15` was filed about.
+intended effect, and the failure mode `OI-15` was filed about. This risk is
+**real but not in the reads** — see below: the read sweep peaked at 430 MiB,
+while the phase that dominates the run holds 5.75 GiB in a single process.
+
+### Measured — step 1, on a complete 746-repo fleet
+
+Step 1 asked whether the remaining time is traversal, reads or parsing, and
+whether the checkout is local or networked. Both are now answered. Host: 12
+cores, 36 GB RAM, checkout on **local internal NVMe (APFS)**. Fleet: 36 GB on
+disk, of which the scan touches **1.07 GiB across 177,693 source files** in
+119,042 directories. Reference run: **657 s** end to end.
+
+**Where the time goes.** Aggregation timed directly with `--graphs-only`;
+extraction obtained by difference.
+
+| Phase | Wall | Nature | Threads help? |
+|---|---|---|---|
+| **Aggregation** (main process) | **510 s — 78%** | **CPU-bound Python** | **No — GIL** |
+| Extraction (746 repos) | ~150 s | already 11 processes | already parallel |
+| — directory traversal | 16 s | I/O-bound (42% CPU) | partly |
+| — every source file, read cold | 24 s | latency-bound | **yes, 3.0x** |
+
+**Reads do parallelise, on local disk.** All 177,693 files, `F_NOCACHE` to defeat
+the page cache:
+
+| workers | 1 | 2 | 4 | 8 | 12 | 16 |
+|---|---|---|---|---|---|---|
+| uncached | 24.2 s | 15.8 s | 12.5 s | 9.9 s | 8.6 s | **8.1 s** |
+| speedup | 1.00x | 1.53x | 1.94x | 2.43x | 2.81x | **3.00x** |
+
+Warm-cache figures track the same curve (17.7 s → 7.4 s, 2.38x). Peak RSS for the
+whole sweep: **430 MiB**.
+
+**But the prize is 2.4%.** Threading every read in the fleet at 16 workers saves
+**16 s of 657 s**. That is the entire upside of step 2, and it is an upper bound:
+reads inside extraction are already spread across 11 processes, so only the
+producer scan's share is actually recoverable.
+
+**The premise inverts for the phase that dominates.** This issue argues threads
+are admissible because the work is I/O-bound and CPython drops the GIL around
+blocking syscalls. That holds for the reads. It does not hold for aggregation,
+which is where the run actually goes:
+
+```
+--graphs-only:  wall 510.0s   user 422.7s   sys 45.9s
+                91.9% of one core, 90.2% of CPU time in user space
+                peak RSS 5.75 GiB
+```
+
+Only **45.9 s** is system time; **423 s** is Python bytecode. Sampling the live
+process shows a flat 97–100% of a single core. Threads cannot touch this — the
+GIL argument runs the other way — and its input is not the source tree at all but
+**2.2 GB of metabase JSON across 746 files**, roughly double the source it
+derives from.
+
+**Processes are not the escape hatch either.** The only mechanism that helps
+CPU-bound Python is multiprocessing, and aggregation holds **5.75 GiB resident**.
+Four workers would want ~23 GB on a 36 GB host — and the observed host was
+already carrying 1.4M pageouts with 2.2 GiB free on the volume. That is this
+issue's own stated risk, arriving through the fix rather than the defect.
+
+**What the measurement changes.** Step 2 is still correct and still cheap, but it
+is now known to be worth 2.4% and to leave 78% of the run untouched. Nothing here
+argues against threading the reads; it argues against expecting it to matter.
+
+**Caveat on method.** Extraction was derived by differencing `--graphs-only`
+against a full build that also ran discovery, so ~150 s is an *upper* bound and
+aggregation's share is if anything understated. `run-manifest.json` records only
+`started_at` and `finished_at`, so none of this was answerable from the tool's own
+output — every number above required external instrumentation. Phase timings in
+the manifest would make step 1 a property of every run instead of a one-off
+exercise, and would have surfaced the 78% without anyone asking.
 
 ### Proposed approach
 
-1. **Measure before building.** Is the remaining 14 minutes traversal, reads, or
-   parsing? Is the checkout on local or network storage? A run with `strace -c`
-   or a simple phase timer answers both, and decides whether this is worth doing
-   at all. Cheap, and it is the step that stops this being a guess.
+1. ~~**Measure before building.**~~ **Done — see the measurement above.** The
+   answer was not the expected one: the reads parallelise 3.0x even on local
+   NVMe, and are worth 2.4% of the run; the 78% that dominates is CPU-bound and
+   out of reach of threads entirely.
 2. **Thread the reads first**, bounded and configurable, reusing the existing
    `--workers` semantics rather than adding a second unrelated knob.
 3. **Keep output deterministic.** Results are sorted today and must stay sorted;
@@ -416,6 +495,13 @@ intended effect, and the failure mode `OI-15` was filed about.
 repos whose content-addressed version has not changed, which is `OI-15`'s
 unfinished step 4 and turns a full rescan into an incremental one. Threading
 speeds up work that versioning would let us **not do at all**.
+
+**The measurement now makes that argument quantitative rather than intuitive.**
+The dominant cost is 423 s of Python re-deriving graphs from 2.2 GB of metabase
+JSON, on every run, for 746 repos of which only a handful changed. Threading
+cannot reduce it and multiprocessing cannot afford it at 5.75 GiB resident.
+Skipping unchanged repos removes it. `OI-15` step 4 is not merely the larger
+lever — on this evidence it is the *only* one that reaches the 78%.
 
 ### Suggested tests
 

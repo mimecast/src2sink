@@ -280,6 +280,141 @@ command sequence).
 - `import_prefix` — defaulted to `groupId`, which is often too broad; tighten it.
 - False positives — a `-client` suffix is a hint, not a guarantee.
 
+## 4. Review criteria — validating discovered candidates before promotion
+
+§3 is now implemented: `--discover-api-clients` writes candidates and
+`--promote-api-clients` merges the ones whose `status` a reviewer set to
+`accepted`. This section is the **acceptance standard** applied at that review
+step. It exists because `promote` merges on trust — it performs no validation of
+its own, so every check below is the reviewer's responsibility, and anything not
+caught here reaches the taint graph.
+
+The gates are ordered cheapest-first and are **disqualifying**: a candidate
+failing any gate is rejected outright rather than weighed against its other
+evidence. Counts in brackets are from the first full review of a 746-repo fleet
+(191 candidates), given as calibration for what a normal distribution looks like.
+
+### Gate 1 — Can the binding resolve at all? *(rejected 8)*
+
+`target_repo` must be non-empty **and** exactly match a metabase repo id.
+
+An empty `target_repo` is the resolver having failed, not a service without a
+name. Per the field reference above, matching is exact-string, so such a binding
+can never match a node — it is inert at best and misleading in review at worst,
+because it still occupies a candidate slot and carries a confidence value.
+
+### Gate 2 — Does `target_repo` name the service, or the client library? *(rejected 42)*
+
+`target_repo` must be the **service that receives the calls**, never the
+repository that publishes the client library.
+
+This is the gate that rejects the most, and the one most easily missed, because
+such candidates look perfectly well-formed: real repo id, real artifact, high
+confidence. The failure is semantic. When a client library lives in its own
+repository — `commerce/warehouse-service-client` published alongside
+`commerce/warehouse-service` — coordinate resolution correctly identifies where
+the artifact is *declared*, which is the client repo. The binding then points at
+the library rather than the service it fronts, and every edge it produces is
+attributed to the wrong node.
+
+The convention is unambiguous and worth checking mechanically: **of the 99
+hand-authored bindings, zero name a `*-client` / `*-clients` / `*-sdk` repo.**
+Any candidate that does is wrong by construction.
+
+```python
+CLIENTY = re.compile(r'(-client|-clients|-sdk|-api-client)$', re.I)
+if CLIENTY.search(target_repo.split('/')[-1]):
+    reject("target_repo names the client library, not the service it fronts")
+```
+
+Do **not** repair these by guessing the sibling service. Only a third of them had
+an identifiable sibling in the fleet, and inventing a target reintroduces exactly
+the broken-edge class the resolution work removed. Reject, and report the
+pattern upstream.
+
+### Gate 3 — Is there anything to match on? *(rejected 26)*
+
+After Gate 4's tightening, a candidate must retain **at least one of** `paths` or
+`class_patterns`.
+
+These are the only two matching mechanisms: `paths` resolve route matches,
+`class_patterns` recognise a hand-rolled caller at its call site. A binding with
+neither contributes nothing and cannot be falsified by any later run — it simply
+sits in the registry looking like coverage.
+
+Note this is common and not a sign of a bad candidate generator: it usually means
+the *target's* own endpoints were never detected, so there were no paths to
+attach. The binding is still unusable.
+
+### Gate 4 — Tighten `class_patterns` *(113 patterns stripped)*
+
+`class_patterns` compile to a regex matched against call sites, so a loose
+pattern produces phantom edges. Strip any pattern that is:
+
+| Reject | Why | Examples |
+|---|---|---|
+| Test artefacts | Not shipped; matches test scaffolding across unrelated repos | `test_*`, `conftest`, `probe_*`, `trigger_*`, `load_test*` |
+| `snake_case` identifiers | A Python function name, not a client class | `lambda_function`, `nim_client` |
+| Anything with non-identifier characters | Cannot be a class name | `Some-Hyphenated-Name`, `Product2.0` |
+| Flagged by the tool's own warning | Appears in more than `MAX_PATTERN_REPOS` repos | `DefaultApi` (10 repos), `HealthCheckService` (4) |
+
+The `DefaultApi` case is worth calling out: it is the default class name emitted
+by OpenAPI generators, so it is simultaneously a *genuine* client class and
+useless as a discriminator. Generic-but-real is still a reject.
+
+Calibration: **0 suspect patterns across all 99 hand-authored bindings**, versus
+27 of 101 distinct patterns in the discovered set. If a review is stripping
+nothing, the filter is probably not running.
+
+### Gate 5 — Rank the surviving evidence
+
+Everything reaching this point is acceptable. `discovery_method` orders how much
+independent support it has:
+
+| method | strength | why |
+|---|---|---|
+| `both` | strongest | a declared dependency **and** an observed call site resolved to the same service — two independent paths agreeing |
+| `dependency` | medium | a declared coordinate; says the consumer *links* the client, not that it calls it |
+| `call-site` | weakest | rests on path matching, which `OI-1` showed can be wrong |
+
+**`paths` is not independent evidence.** It is populated from the target's own
+scanned endpoints, keyed on `target_repo` — so a candidate whose paths are all
+real tells you the target resolved to a scanned repo, and nothing whatever about
+whether the consumer calls those paths. Treating path agreement as corroboration
+double-counts a single fact. In the reviewed set every candidate with paths had
+100% real paths, which measures the keying, not the finding.
+
+### Post-conditions — assert these after `--promote-api-clients`
+
+`promote` validates nothing, so verify the merged file directly:
+
+```
+empty target_repo        == 0
+client-library targets   == 0
+suspect class_patterns   == 0
+original bindings intact == all pre-existing (target_repo, maven_artifact) keys present
+duplicate keys           == unchanged from before the merge
+```
+
+Two known behaviours of `promote` to account for:
+
+* **It rewrites the file as `{"bindings": [...]}` and drops every other
+  top-level key**, including the `_comment` that carries this file's handling
+  notice. Restore it after promoting, or the "never commit" marker silently
+  disappears from a gitignored, sensitivity-marked file.
+* **It indexes by `(target_repo, maven_artifact)`**, so if the authoritative file
+  already contains duplicate keys, only the last copy of each is updated and the
+  earlier ones go stale. Deduplicate before promoting, not after.
+
+### Handling note
+
+`api-clients.json` is gitignored as internal topology. `--discover-api-clients`
+writes `metabase/api-clients.discovered.json`, whose own header declares **"same
+sensitivity as that file"** — it contains the same service names, artifacts and
+endpoint paths, plus consumer lists. Confirm it, and the `metabase/repos/` tree,
+are covered by `.gitignore` before any commit; matching the authoritative file's
+protection is not automatic.
+
 ---
 
 ## References
