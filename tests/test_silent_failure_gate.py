@@ -109,7 +109,6 @@ _SIGNAL_NOT_NEEDED: dict[str, str] = {
 # emits a signal or argues for an addition. The ratchet below then requires it to
 # shrink over time.
 _KNOWN_SILENT: frozenset[str] = frozenset({
-    "src2sink.aggregators.api_client_discovery:_load_bindings",
     "src2sink.aggregators.api_client_discovery:_load_discovered",
     "src2sink.aggregators.library_source_map:fix_flagged_mappings",
     "src2sink.aggregators.library_source_map:generate_library_source_map",
@@ -279,7 +278,7 @@ def test_the_debt_only_shrinks() -> None:
         "an entry left _KNOWN_SILENT without the list being updated — good news, "
         "but shrink the frozen set so the ratchet holds the gain"
     )
-    assert len(_KNOWN_SILENT) <= 44, (
+    assert len(_KNOWN_SILENT) <= 43, (
         f"the OI-36 debt grew to {len(_KNOWN_SILENT)}; it is a ratchet and only "
         "goes down"
     )

@@ -62,14 +62,33 @@ class QueueGraph:
         return sorted(self.topics, key=lambda t: t.topic)
 
 
-def _collect_queue_topics(records: list[dict[str, Any]]) -> dict[str, dict[str, set[str]]]:
-    """Map each topic to producing/consuming repos and messaging systems."""
-    topics: dict[str, dict[str, set[str]]] = defaultdict(
-        lambda: {"produce": set(), "consume": set(), "systems": set()},
-    )
-    for data in records:
-        rid = repo_id(data)
-        for node in iter_nodes(data):
+def _new_topic() -> dict[str, set[str]]:
+    """An empty topic entry: the two directions and the systems seen on it.
+
+    A named factory rather than a `lambda` in `__init__`. Opengrep's
+    `return-in-init` rule matches a lambda's implicit return there and reports a
+    runtime error that cannot happen — a false positive, and one that would
+    otherwise need a `# nosemgrep` suppression. A named function is clearer and
+    needs no annotation.
+    """
+    return {"produce": set(), "consume": set(), "systems": set()}
+
+
+class QueueCollector:
+    """Topics and the repos on each side of them, reduced one record at a time.
+
+    The streaming form of `_collect_queue_topics`, so a shared fleet pass can
+    drive it alongside the other aggregators (`OI-41`).
+    """
+
+    def __init__(self) -> None:
+        """Start an empty reduction."""
+        self.topics: dict[str, dict[str, set[str]]] = defaultdict(_new_topic)
+
+    def consume(self, record: dict[str, Any]) -> None:
+        """Fold one repo record in."""
+        rid = repo_id(record)
+        for node in iter_nodes(record):
             family = node.get("family", "")
             detail = node.get("detail") or {}
             topic = detail.get("topic", "")
@@ -78,11 +97,30 @@ def _collect_queue_topics(records: list[dict[str, Any]]) -> dict[str, dict[str, 
             role = {"queue-pub": "produce", "queue-sub": "consume"}.get(family)
             if not role:
                 continue
-            topics[topic][role].add(rid)
+            self.topics[topic][role].add(rid)
             system = detail.get("system") or ""
             if system:
-                topics[topic]["systems"].add(system)
-    return topics
+                self.topics[topic]["systems"].add(system)
+
+    def result(self) -> QueueGraph:
+        """The finished graph, in discovery order — see `QueueGraph.topics`."""
+        return QueueGraph(topics=tuple(
+            QueueTopic(
+                topic=topic,
+                systems=tuple(sorted(dirs["systems"])),
+                producers=tuple(sorted(dirs["produce"])),
+                consumers=tuple(sorted(dirs["consume"])),
+            )
+            for topic, dirs in self.topics.items()
+        ))
+
+
+def _collect_queue_topics(records: list[dict[str, Any]]) -> dict[str, dict[str, set[str]]]:
+    """Map each topic to producing/consuming repos and messaging systems."""
+    collector = QueueCollector()
+    for data in records:
+        collector.consume(data)
+    return collector.topics
 
 
 def compute_queue_graph(records: list[dict[str, Any]]) -> QueueGraph:
@@ -204,10 +242,21 @@ def _write_queue_jsonl(path: Path, graph: QueueGraph) -> None:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def write_queue_graph(metabase_root: Path, repo_jsons: list[Path]) -> None:
-    """Write the queue/messaging graph markdown + jsonl from v2 queue nodes."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    graph = compute_queue_graph(records)
+def write_queue_graph(
+    metabase_root: Path,
+    repo_jsons: list[Path],
+    *,
+    graph: QueueGraph | None = None,
+) -> None:
+    """Write the queue/messaging graph markdown + jsonl from v2 queue nodes.
+
+    ``graph`` lets a caller that has already streamed the fleet hand the computed
+    result in, rather than this parsing the metabase again (`OI-41`).
+    """
+    if graph is None:
+        graph = compute_queue_graph(
+            load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+        )
 
     out_dir = metabase_root / "graphs"
     out_dir.mkdir(parents=True, exist_ok=True)

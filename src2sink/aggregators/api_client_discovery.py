@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -609,13 +610,36 @@ def _write_discovered(metabase_root: Path, entries: list[dict[str, Any]]) -> Non
     )
 
 
-def _load_bindings(path: Path) -> list[dict[str, Any]]:
-    """Return the authoritative bindings list, or [] if the file is missing/invalid."""
+def _load_bindings_file(path: Path) -> dict[str, Any]:
+    """Return the whole authoritative file, or an empty document if unreadable.
+
+    The *whole* document, not just its bindings. `promote` used to rewrite the
+    file as `{"bindings": [...]}` and drop every other top-level key — including
+    the `_comment` carrying the "never commit — internal topology" handling
+    notice on a gitignored, sensitivity-marked file. The marker disappeared
+    silently and the file still looked correct (`OI-42`).
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    bindings = data.get("bindings")
+    except OSError:
+        # Absent is ordinary — the first promote creates it.
+        if path.exists():
+            print(f"WARNING: could not read {path}; promoting into an empty file",
+                  file=sys.stderr)
+        return {}
+    except json.JSONDecodeError as exc:
+        # Malformed is not ordinary. Silently treating it as empty would discard
+        # every existing binding on the next write, which is exactly why
+        # `--allow-empty-api-clients` exists for the *load* path (`OI-36`).
+        print(f"WARNING: {path} is not valid JSON ({exc}); its existing bindings "
+              "will not be preserved by this promote", file=sys.stderr)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load_bindings(path: Path) -> list[dict[str, Any]]:
+    """Return the authoritative bindings list, or [] if the file is missing/invalid."""
+    bindings = _load_bindings_file(path).get("bindings")
     return [b for b in bindings if isinstance(b, dict)] if isinstance(bindings, list) else []
 
 

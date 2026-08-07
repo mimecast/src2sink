@@ -12,31 +12,56 @@ from ..sanitize import UNTRUSTED_CONTENT_NOTICE, for_markdown
 from ..renderers.markdown import md_table
 
 
-def _collect_stores(
-    records: list[dict[str, Any]],
-) -> tuple[dict[str, set[str]], dict[str, dict[str, Any]], "Counter[str]"]:
-    """Collect store->repos, store metadata, and per-repo SQL execution sink counts."""
-    store_repos: dict[str, set[str]] = defaultdict(set)
-    store_meta: dict[str, dict[str, Any]] = {}
-    sql_execution_by_repo: Counter[str] = Counter()
-    for data in records:
-        rid = repo_id(data)
-        for node in iter_nodes(data):
+class StoreCollector:
+    """Store->repos, store metadata, and per-repo SQL execution sink counts.
+
+    The reduction `_collect_stores` performed, turned inside out so it can run
+    inside a shared streamed pass (`OI-41`). It retains only what it derives —
+    a few thousand store keys — never the records it derived them from.
+    """
+
+    def __init__(self) -> None:
+        """Start an empty reduction."""
+        self.store_repos: dict[str, set[str]] = defaultdict(set)
+        self.store_meta: dict[str, dict[str, Any]] = {}
+        self.sql_execution_by_repo: Counter[str] = Counter()
+
+    def consume(self, record: dict[str, Any]) -> None:
+        """Fold one repo record in."""
+        rid = repo_id(record)
+        for node in iter_nodes(record):
             family = node.get("family", "")
             kind = node.get("kind")
             if family == "data-store" and kind == "store":
                 key = store_key_from_node(node)
                 if not key:
                     continue
-                store_repos[key].add(rid)
+                self.store_repos[key].add(rid)
                 detail = node.get("detail") or {}
-                store_meta.setdefault(key, {
+                self.store_meta.setdefault(key, {
                     "vendor": detail.get("vendor", "?"),
                     "sample_file": f"{node.get('file')}:{node.get('line')}",
                 })
             elif family == "sql" and kind == "sink" and (node.get("detail") or {}).get("execution", True):
-                sql_execution_by_repo[rid] += 1
-    return store_repos, store_meta, sql_execution_by_repo
+                self.sql_execution_by_repo[rid] += 1
+
+    def result(self) -> tuple[dict[str, set[str]], dict[str, dict[str, Any]], "Counter[str]"]:
+        """The finished reduction, in the shape the renderer expects."""
+        return self.store_repos, self.store_meta, self.sql_execution_by_repo
+
+
+def _collect_stores(
+    records: list[dict[str, Any]],
+) -> tuple[dict[str, set[str]], dict[str, dict[str, Any]], "Counter[str]"]:
+    """Collect store->repos, store metadata, and per-repo SQL execution sink counts.
+
+    Retained as the non-streaming entry point; the reduction itself lives in
+    :class:`StoreCollector` so one pass can drive it alongside the others.
+    """
+    collector = StoreCollector()
+    for data in records:
+        collector.consume(data)
+    return collector.result()
 
 
 def _stores_by_vendor(
@@ -65,10 +90,22 @@ def _write_data_store_jsonl(
             }, ensure_ascii=False) + "\n")
 
 
-def write_data_store_graph(metabase_root: Path, repo_jsons: list[Path]) -> None:
-    """Write the bipartite data-store graph markdown + jsonl from v2 store nodes."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    store_repos, store_meta, sql_execution_by_repo = _collect_stores(records)
+def write_data_store_graph(
+    metabase_root: Path,
+    repo_jsons: list[Path],
+    *,
+    collected: tuple[dict[str, set[str]], dict[str, dict[str, Any]], "Counter[str]"] | None = None,
+) -> None:
+    """Write the bipartite data-store graph markdown + jsonl from v2 store nodes.
+
+    ``collected`` lets a caller that has already streamed the fleet hand the
+    reduction in, rather than this parsing the metabase again (`OI-41`).
+    """
+    if collected is None:
+        collected = _collect_stores(
+            load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+        )
+    store_repos, store_meta, sql_execution_by_repo = collected
 
     out_dir = metabase_root / "graphs"
     out_dir.mkdir(parents=True, exist_ok=True)

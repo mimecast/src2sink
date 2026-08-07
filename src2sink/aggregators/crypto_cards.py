@@ -68,10 +68,15 @@ def _collect_repo_crypto(data: dict[str, Any]) -> dict[str, Any]:
 def write_crypto_agility_catalog(
     metabase_root: Path,
     repo_jsons: list[Path] | None = None,
+    *,
+    cards: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Write crypto-agility cards (JSONL + markdown) to conventions/ and return them."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    cards = [_collect_repo_crypto(data) for data in records]
+    if cards is None:
+        cards = [
+            _collect_repo_crypto(data)
+            for data in load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+        ]
 
     conv_dir = metabase_root / "conventions"
     conv_dir.mkdir(parents=True, exist_ok=True)

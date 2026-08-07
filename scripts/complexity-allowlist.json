@@ -11,17 +11,21 @@
       "cyclomatic": 11,
       "cognitive": 15
     },
+    "src2sink/aggregators/auth_cards.py:write_auth_models_catalog": {
+      "cyclomatic": 11,
+      "cognitive": 6
+    },
     "src2sink/aggregators/crypto_cards.py:_collect_repo_crypto": {
       "cyclomatic": 12,
       "cognitive": 17
     },
     "src2sink/aggregators/crypto_cards.py:write_crypto_agility_catalog": {
-      "cyclomatic": 12,
-      "cognitive": 9
+      "cyclomatic": 13,
+      "cognitive": 10
     },
-    "src2sink/aggregators/data_stores.py:_collect_stores": {
+    "src2sink/aggregators/index_v2.py:write_index_v2": {
       "cyclomatic": 11,
-      "cognitive": 18
+      "cognitive": 6
     },
     "src2sink/aggregators/library_source_map.py:generate_library_source_map": {
       "cyclomatic": 12,
@@ -52,12 +56,12 @@
       "cognitive": 20
     },
     "src2sink/aggregators/pii_cross_repo.py:write_pii_cross_repo_graph": {
-      "cyclomatic": 12,
-      "cognitive": 5
+      "cyclomatic": 13,
+      "cognitive": 6
     },
-    "src2sink/aggregators/pii_flow_v2.py:_collect_pii_flow": {
-      "cyclomatic": 11,
-      "cognitive": 31
+    "src2sink/aggregators/pii_flow_v2.py:consume": {
+      "cyclomatic": 10,
+      "cognitive": 23
     },
     "src2sink/aggregators/pii_touchpoint_collect.py:_collect_delete_hints": {
       "cyclomatic": 11,
@@ -68,8 +72,8 @@
       "cognitive": 26
     },
     "src2sink/aggregators/ropa.py:write_ropa_view": {
-      "cyclomatic": 15,
-      "cognitive": 11
+      "cyclomatic": 16,
+      "cognitive": 12
     },
     "src2sink/aggregators/service_call_collect.py:_collect_api_client_edges": {
       "cyclomatic": 12,

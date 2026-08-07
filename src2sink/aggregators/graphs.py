@@ -11,13 +11,14 @@ from ..graph_common import (
     v2_record_paths,
 )
 from ..index_store import build_index
-from .data_stores import write_data_store_graph
-from .index_v2 import write_index_v2
+from .data_stores import StoreCollector, write_data_store_graph
+from .index_v2 import _row_from_record, write_index_v2
 from .openapi_edges import write_openapi_artifacts
 from .payload_producers import build_producer_indices, write_payload_producer_index
 from .phase3 import aggregate_phase3_v2
-from .pii_flow_v2 import write_pii_flow_v2
-from .queues import write_queue_graph
+from .pii_flow_v2 import PiiFlowCollector, write_pii_flow_v2
+from .fleet_pass import MapCollector, run_fleet_pass
+from .queues import QueueCollector, write_queue_graph
 from .service_calls import collect_service_edges, write_service_call_graph
 from .traces_index import write_traces_index
 
@@ -28,6 +29,7 @@ def write_fleet_index(
     *,
     repos_root: Path | None = None,
     producer_indices: list[Any] | None = None,
+    call_edges: list[Any] | None = None,
 ) -> Path:
     """Persist the four things a trace consults, keyed by target repo (`OI-15`).
 
@@ -43,8 +45,12 @@ def write_fleet_index(
     second time, which doubled the slowest step of the whole run (`OI-30`).
     """
     paths = v2_record_paths(metabase_root, json_paths=repo_jsons)
-    records = load_v2_repo_records(metabase_root, json_paths=paths)
-    call_edges, _unmatched = collect_service_edges(records)
+    records: list[dict[str, Any]] | None = None
+    if call_edges is None:
+        # Fleet-wide and target-independent, and three consumers each recomputed
+        # it — the derivation `OI-14` identified as dominating cost (`OI-41`).
+        records = load_v2_repo_records(metabase_root, json_paths=paths)
+        call_edges, _unmatched = collect_service_edges(records)
     if producer_indices is None:
         producer_indices = build_producer_indices(
             metabase_root, repos_root=repos_root, json_paths=paths,
@@ -69,21 +75,37 @@ def aggregate_graphs_v2(
     fleet_index: bool = True,
 ) -> None:
     """Run all v2 cross-repo graph writers (service, queue, data-store, PII, phase 3)."""
-    write_service_call_graph(metabase_root, repo_jsons, repos_root=repos_root)
+    # One load serves the report and the index, and the edges it computes are
+    # handed on rather than recomputed (`OI-41`).
+    shared = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    call_edges, _unmatched = write_service_call_graph(
+        metabase_root, repo_jsons, repos_root=repos_root, records=shared,
+    )
     if repos_root:
         write_openapi_artifacts(metabase_root, repos_root, repo_jsons)
-    write_queue_graph(metabase_root, repo_jsons)
-    write_data_store_graph(metabase_root, repo_jsons)
-    producer_indices = write_payload_producer_index(
-        metabase_root, repo_jsons, repos_root=repos_root,
+    # One streamed pass drives every converted aggregator, instead of each
+    # parsing the whole metabase for itself (`OI-41`). Collectors retain their
+    # reductions, never the records — so this buys the time without the resident
+    # copy that memoising would cost (`OI-15`).
+    queues, stores = QueueCollector(), StoreCollector()
+    index_rows = MapCollector(_row_from_record)
+    pii_flow = PiiFlowCollector()
+    run_fleet_pass(
+        metabase_root, (queues, stores, index_rows, pii_flow), json_paths=repo_jsons,
     )
-    write_index_v2(metabase_root, repo_jsons)
-    write_pii_flow_v2(metabase_root, repo_jsons)
+    write_queue_graph(metabase_root, repo_jsons, graph=queues.result())
+    write_data_store_graph(metabase_root, repo_jsons, collected=stores.result())
+    producer_indices = write_payload_producer_index(
+        metabase_root, repo_jsons, repos_root=repos_root, records=shared,
+    )
+    del shared   # released before the streamed pass below
+    write_index_v2(metabase_root, repo_jsons, rows=index_rows.result())
+    write_pii_flow_v2(metabase_root, repo_jsons, counts=pii_flow.result())
     write_traces_index(metabase_root)
     if phase3:
-        aggregate_phase3_v2(metabase_root, repo_jsons)
+        aggregate_phase3_v2(metabase_root, repo_jsons, edges=call_edges)
     if fleet_index:
         write_fleet_index(
             metabase_root, repo_jsons, repos_root=repos_root,
-            producer_indices=producer_indices,
+            producer_indices=producer_indices, call_edges=call_edges,
         )

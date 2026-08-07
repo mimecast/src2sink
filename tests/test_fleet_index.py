@@ -176,7 +176,9 @@ def test_a_stale_index_is_not_used(tmp_path, monkeypatch):
     """
     paths = _seed(tmp_path)
     write_fleet_index(tmp_path, paths)
-    assert store.open_index(tmp_path, paths) is not None, "index should start fresh"
+    fresh = store.open_index(tmp_path, paths)
+    assert fresh is not None, "index should start fresh"
+    fresh.close()   # or the connection outlives the test and warns
 
     changed = dict(_SECOND_CONSUMER)
     changed["nodes"] = [
