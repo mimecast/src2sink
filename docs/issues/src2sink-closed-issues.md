@@ -2857,7 +2857,7 @@ pattern, and it is left open rather than guessed at.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `2861396` — PR #49  
 **Tests:** `tests/test_oi40_client_repo_target.py` — 14 cases. The two that matter are `test_a_real_service_is_never_rewritten` and `test_an_endpointless_target_is_flagged_not_dropped`. Mutants `OI40-M1`…`OI40-M4`.
 
 ### Symptom
