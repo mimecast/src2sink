@@ -2477,7 +2477,18 @@ trading this fix for the one `OI-15` exists to prevent.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `a5a75ed` — PR #44  
+
+> **Note on the id.** This was filed and fixed as `OI-33`, and renumbered to
+> `OI-35` when two issues taking ids 33 and 34 landed on `main` first. Theirs
+> were published and cited; this one was still on a branch, so this one moved.
+>
+> **The squash-merge commit title still reads `OI-33`**, because it predates the
+> renumbering and a merged commit message on `main` is not worth a force-push to
+> correct. So `git log --grep OI-33` finds this commit, which is *not* the
+> identity-mismatch issue that now holds that number. Recorded here because this
+> is where someone chasing the discrepancy will look.
+
 **Tests:** `tests/test_discovery_scan_cost.py` — 11 cases: equivalence against the replaced implementation kept as an oracle, one-pass node-visit counts, the growth curve across two fleet sizes, and the over-generic warning the scan exists to produce. Mutants `OI35-M1`, `OI35-M2`.
 
 ### Symptom
