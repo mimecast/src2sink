@@ -61,6 +61,8 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-23 | 23 | A repo's own declared version is never recorded | small | half of every version comparison is missing | **P2** |
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
 | OI-32 | 32 | The checkout scan is single-threaded and I/O-bound | medium | **Measured:** reads thread 3.0x even on local NVMe but are worth 2.4% of the run; the 78% that dominates is CPU-bound aggregation, which threads cannot touch | **P2** |
+| OI-41 | 41 | Aggregation parses the whole metabase 14 times per run | medium | **67% of aggregation time**, and aggregation is 78% of the run. The target `OI-32` was looking for | **P1** |
+| OI-42 | 42 | `--promote-api-clients` validates nothing and silently drops file keys | small | two of the five review gates are mechanically checkable with code that already exists; promote also discards the sensitivity notice | **P1** |
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
@@ -856,3 +858,178 @@ no evidence. Every other issue here is about finding more; this one is about
 knowing when we have found nothing because we broke.
 
 ---
+
+---
+
+## 41. Aggregation parses the whole metabase 14 times per run  `OI-41`
+
+**Severity:** High — it is the single largest cost in a scan, and it is pure
+repetition.
+**Status:** open. Found by following `OI-32`'s measurement to the phase it
+identified.
+
+### How this was found
+
+`OI-32`'s instrumentation established that **aggregation is 510 s of a 657 s run
+— 78% — and is CPU-bound Python**: 423 s of the 510 s is user-space bytecode at
+91.9% of one core. Threads cannot touch it, and its input is 2.2 GB of metabase
+JSON.
+
+The obvious next question is what those 423 s are doing. Counting
+`load_v2_repo_records` calls across one aggregation:
+
+```
+TOTAL full parses of the metabase per aggregation: 14
+
+   3x  pii_cross_repo.py:write_pii_cross_repo_graph
+   1x  service_call_report.py:write_service_call_graph
+   1x  queues.py:write_queue_graph
+   1x  data_stores.py:write_data_store_graph
+   1x  payload_producers.py:build_producer_indices
+   1x  index_v2.py:write_index_v2
+   1x  pii_flow_v2.py:write_pii_flow_v2
+   1x  pii_lifecycle_report.py:write_pii_lifecycle_graph
+   1x  ropa.py:write_ropa_view
+   1x  auth_cards.py:write_auth_models_catalog
+   1x  crypto_cards.py:write_crypto_agility_catalog
+   1x  graphs.py:write_fleet_index
+```
+
+At 2.2 GB per parse that is **~31 GB of JSON decoded per run**, to read the same
+bytes fourteen times.
+
+### Measured
+
+A/B on a synthetic metabase, aggregation as-is against the identical work with
+the parse memoised:
+
+```
+aggregation, 14 parses  : 2.12s
+aggregation, 1 parse    : 0.71s
+saved                   : 1.41s  (67% of aggregation)
+```
+
+Applied to the observed fleet — 67% of 510 s ≈ **340 s of a 657 s run**, taking
+it to roughly 315 s. For comparison, `OI-32`'s threading work is worth 16 s.
+
+### The naive fix trades this for `OI-15`'s ceiling
+
+Memoising is one line and it is the wrong line. Same A/B, peak RSS:
+
+```
+peak after 14 parses    : 146 MB
+peak after 1 parse+memo : 265 MB
+```
+
+Parsing once costs one *held* copy of the fleet where re-parsing created and
+discarded. On a 2.2 GB metabase at the measured ~6.5x expansion that is several
+more GB resident, on a host whose aggregation already peaks at 5.75 GiB and which
+has been observed swapping. **That is `OI-15`'s ceiling, reached through the
+fix.**
+
+### The right fix is one already designed and then abandoned
+
+The 3.0 plan's Phase 1 — split each aggregator into a pure `compute_*` over
+records and a thin `write_*` at the edge — is exactly the shape that makes **one
+streamed pass** serve every aggregator, rather than fourteen independent loads.
+
+I withdrew that phase in §2a of `src2sink-3.0-plan.md`, having found that `trace`
+reads none of the rendered artefacts and so did not need it. **That finding was
+right and the conclusion drawn from it was wrong.** Phase 1 was not on the
+critical path for `trace`; it is squarely on the critical path for *aggregation*,
+which is 78% of the run. The withdrawal reasoned from one consumer and
+generalised to the whole plan.
+
+`queues.py` was split as the reference implementation and still stands as the
+pattern.
+
+### Proposed approach
+
+1. **One pass, not fourteen.** Stream records once and hand each aggregator what
+   it needs, rather than each re-reading the fleet. The `compute_*`/`write_*`
+   split is the enabling change; `queues.py` is the worked example.
+2. **Do not simply memoise.** It buys the time at the cost of the memory `OI-15`
+   exists to protect. The point of streaming is to get the time *without* the
+   resident copy.
+3. **`pii_cross_repo` loads three times by itself** and is the cheapest single
+   win — worth doing first as a proof, independently of the wider split.
+4. **Record phase timings in the run manifest.** `OI-32` notes that
+   `run-manifest.json` carries only `started_at` and `finished_at`, so none of
+   this was answerable from the tool's own output. Every number here required
+   external instrumentation, and this defect had been in place for every release.
+
+### Why P1
+
+It is the largest single cost in the product, it is repetition rather than work,
+and the measurement that exposed it also shows the alternative everyone reaches
+for first — threading — is worth 2.4%.
+
+---
+
+## 42. `--promote-api-clients` validates nothing and silently drops file keys  `OI-42`
+
+**Severity:** Medium — one half is a silent data loss on a sensitivity-marked
+file; the other is review burden the tool could carry itself.
+**Status:** open. Found reviewing `docs/api-clients-json.md` §4, which documents
+all three behaviours as things the *reviewer* must handle.
+
+### Three defects, one of them the tool asking a human to do its job
+
+**1. Two of the five review gates are mechanically checkable, with code that
+already exists.**
+
+The acceptance standard lists five disqualifying gates. Two are pure computation:
+
+| gate | rejected | already computable by |
+|---|---|---|
+| Gate 1 — `target_repo` non-empty and matching a metabase repo id | 8 | `_canonical_repo_id` (`OI-33`) |
+| Gate 2 — `target_repo` names the service, not the client library | 42 | `_service_for_client_repo` (`OI-40`) |
+
+**50 of 191 candidates** were rejected by hand for conditions the tool can
+already detect and, since `OI-40`, already does detect at discovery time.
+`promote` merges on trust and re-checks nothing, so a candidate accepted in error
+reaches the taint graph with no further barrier. It should refuse — or at minimum
+warn loudly — on a candidate failing either gate, rather than documenting the
+check as the reviewer's problem.
+
+**2. `promote` discards every top-level key but `bindings`.**
+
+```python
+target_path.write_text(json.dumps({"bindings": bindings}, ...))
+```
+
+Including `_comment`, which carries the *"never commit — internal topology"*
+handling notice on a gitignored, sensitivity-marked file. The marker disappears
+silently and the file still looks correct. `OI-36` in a place with a
+confidentiality consequence.
+
+**3. Duplicate keys in the authoritative file go stale silently.**
+
+```python
+index = {(b.get("target_repo"), b.get("maven_artifact")): b for b in bindings}
+```
+
+A dict comprehension over a list that may contain duplicate keys: only the last
+copy is indexed, so `index[key].update(...)` refreshes that one and every earlier
+duplicate is left at its old values — still present, still loaded, now
+inconsistent with its twin.
+
+### A latent trap worth recording while it is visible
+
+`promote` calls `_load_discovered(path)` **without** `known`, so the
+`OI-33`/`OI-40` alternate-key indexing does not run. That is correct today and
+must stay deliberate: with `known` supplied, a candidate is indexed under two
+keys pointing at *the same object*, so `.values()` would yield it twice and
+`len(accepted)` would over-report. Harmless for the merge itself, which is
+dict-keyed, but the count is user-facing.
+
+### Proposed fix
+
+1. Re-run Gates 1 and 2 inside `promote` and refuse the candidates that fail,
+   naming them. The reviewer keeps judgement; the tool keeps arithmetic.
+2. Preserve unknown top-level keys when rewriting, so `_comment` survives.
+3. Deduplicate `bindings` on load, or update every copy of a key rather than the
+   last.
+4. Assert the documented post-conditions in code rather than in prose — they are
+   already written as a checklist, and a checklist a tool can run should not be
+   a checklist a person runs.

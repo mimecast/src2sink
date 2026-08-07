@@ -97,6 +97,14 @@ byte for byte and is what makes any later split safe; and `queues.py`, split as
 the reference for the pattern (`compute_queue_graph` → `QueueGraph` →
 `render_queue_graph`).
 
+**Corrected again by measurement (`OI-41`).** Withdrawing Phase 1 from `OI-15`'s
+critical path was right; concluding it could be deferred indefinitely was not.
+Aggregation turns out to be **78% of a run** and to spend **67% of that
+re-parsing the same metabase fourteen times** — which is precisely what a single
+streamed pass behind `compute_*` would remove. The withdrawal reasoned from one
+consumer, `trace`, and generalised to the whole plan. Phase 1 is back on the
+critical path, for a different phase than it was first proposed for.
+
 **The lesson worth keeping:** Finding A was derived from an inventory — counting
 which modules import `renderers.markdown` — and never checked against the code
 path the slow command actually executes. An inventory says what the code looks
