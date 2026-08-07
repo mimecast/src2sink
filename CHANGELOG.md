@@ -89,6 +89,22 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **Any `.get("…")` in JavaScript was an inbound HTTP endpoint (`OI-37`).** The
+  Express pattern began at the dot, so it matched a verb-named call on any
+  receiver — and JavaScript is the language where `.get(key)` is ubiquitous for
+  reasons unrelated to HTTP. Over a 746-repo estate that produced **10,245
+  inbound endpoints of which 20 were real**, all at `confidence: "high"`:
+  reactive-form field access, Cypress selectors, cache writes, and 605 *outbound*
+  client calls recorded as doors into the service. The receiver is now required.
+  Confidence is derived from how anchored a pattern is rather than hardcoded, and
+  `raw` now contains the receiver so a reviewer can audit a match without
+  re-reading the source. **`DETECTION_VERSION` 11 → 12.**
+
+- **The trace index never described the batch that had just run (`OI-38`).** Only
+  the build wrote it, and the build runs before any trace exists — so its
+  catalogue-coverage figure was always one run stale, and on a first run no index
+  appeared at all. The batch now writes it too.
+
 - **Discovery's two passes could never agree, so `discovery_method: "both"` was
   unreachable (`OI-33`).** The supply-side pass named a target by the directory
   that *declares* the client coordinate — inside the repo for a multi-module

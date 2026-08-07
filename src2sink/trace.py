@@ -20,6 +20,7 @@ from typing import Any
 
 from .aggregators.payload_producers import build_producer_indices
 from .aggregators.service_calls import CallEdge, collect_service_edges
+from .aggregators.traces_index import write_traces_index
 from .graph_common import (
     confidence_rank,
     extract_urls_and_paths,
@@ -727,6 +728,15 @@ def render_trace_markdown(report: TraceReport) -> str:
     return "\n".join(lines)
 
 
+def _is_in_traces_dir(output: Path, metabase_root: Path) -> bool:
+    """Whether an output path lands in the metabase's indexed traces directory."""
+    try:
+        output.resolve().relative_to((metabase_root / "graphs" / "traces").resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
 def main() -> int:
     """CLI entry point: parse args, run the trace, and print or write the markdown report."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -793,6 +803,13 @@ def main() -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md, encoding="utf-8")
         print(f"Wrote {out}")
+        # Refresh the index only when this trace joined the indexed set. The
+        # index states catalogue coverage, so a re-traced endpoint must not leave
+        # a figure describing a set it is no longer part of (`OI-38`) — but a
+        # trace written somewhere else has not changed that set, and rewriting
+        # the metabase would be a surprising side effect of `--output`.
+        if _is_in_traces_dir(out, metabase_root):
+            print(f"Reindexed {write_traces_index(metabase_root)} trace(s)")
     else:
         print(md)
     return 0

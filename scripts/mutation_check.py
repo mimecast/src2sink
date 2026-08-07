@@ -1083,6 +1083,45 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI37-M1",
+        file="src2sink/extractors/patterns.py",
+        old="            r'\\b(?:app|router|server|api|fastify|_router|[A-Za-z_$][\\w$]*[Rr]outer)'\n"
+            "            r'\\s*\\.\\s*(get|post|put|delete|patch)\\s*\\(\\s*[\"\\']([^\"\\']+)[\"\\']'",
+        new="            r'\\.(get|post|put|delete|patch)\\s*\\(\\s*[\"\\']([^\"\\']+)[\"\\']'",
+        selector="tests/test_oi37_express_anchor.py",
+        note=(
+            "The receiver anchor is removed, so any verb-named call on any object "
+            "is an inbound HTTP route again: reactive-form access, Cypress "
+            "selectors, cache writes, and outbound client calls recorded as doors "
+            "into the service. 10,225 of 10,245 fleet matches were this."
+        ),
+    ),
+    Mutant(
+        id="OI37-M2",
+        file="src2sink/extractors/patterns.py",
+        old='    return "medium" if framework in UNANCHORED_HTTP_IN else "high"',
+        new='    return "high"',
+        selector="tests/test_oi37_express_anchor.py",
+        note=(
+            "Confidence goes back to one hardcoded literal, so an unanchored "
+            "pattern claims exactly what an annotation earns and the two are "
+            "indistinguishable downstream — the property that let OI-37 survive "
+            "until a fleet run."
+        ),
+    ),
+    Mutant(
+        id="OI38-M1",
+        file="src2sink/trace_batch.py",
+        old="    indexed = write_traces_index(metabase_root)",
+        new="    indexed = 0",
+        selector="tests/test_oi38_trace_index_freshness.py",
+        note=(
+            "The batch stops indexing, so the coverage figure is written only by "
+            "the build — which runs before any trace exists, and so always "
+            "describes the previous batch. On a first run no index appears at all."
+        ),
+    ),
+    Mutant(
         id="OI33-M1",
         file="src2sink/aggregators/api_client_discovery.py",
         old="            target = _canonical_repo_id(resolved, known) or \"\"",

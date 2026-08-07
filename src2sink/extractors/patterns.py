@@ -366,6 +366,28 @@ HTTP_OUT_RX: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"http\.NewRequest\s*\("), "go", "client-call"),
 ]
 
+# Frameworks whose inbound pattern is *not* anchored to a route-declaration
+# marker — an annotation, or a required router receiver. A match from one of
+# these is a weaker claim, and saying so is the change that would have surfaced
+# `OI-37` without a fleet run: the JavaScript pattern reported `high` while
+# 10,225 of its 10,245 fleet matches were reactive-form access, Cypress
+# selectors, cache writes and outbound calls.
+#
+# `gin` relies on Go's uppercase-verb convention rather than on an anchor. Only
+# 8 nodes in the observed fleet, so there is no evidence either way — but it
+# should not claim the confidence an annotation earns.
+UNANCHORED_HTTP_IN = frozenset({"gin"})
+
+
+def http_in_confidence(framework: str) -> str:
+    """How much a match by this framework's pattern is worth.
+
+    Derived from the pattern's anchoring rather than hardcoded, so a new
+    unanchored pattern has to declare itself instead of inheriting `high`.
+    """
+    return "medium" if framework in UNANCHORED_HTTP_IN else "high"
+
+
 HTTP_IN_RX: dict[str, list[tuple[re.Pattern[str], str]]] = {
     "java-kotlin": [
         (re.compile(
@@ -379,7 +401,21 @@ HTTP_IN_RX: dict[str, list[tuple[re.Pattern[str], str]]] = {
         (re.compile(r'@router\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'), "fastapi"),
     ],
     "javascript": [
-        (re.compile(r'\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'), "express"),
+        # The receiver is required. Every sibling here is anchored to something
+        # meaning "route declaration" — Flask to `@app.route`, FastAPI to
+        # `@router.`, JAX-RS and Spring to an annotation. This one began at the
+        # dot, so it matched a verb-named call on *any* receiver, in a language
+        # where `.get(key)` is ubiquitous for reasons unrelated to HTTP.
+        #
+        # Measured over a 746-repo fleet: 10,245 matches, of which **20** were
+        # routes. The rest were Angular reactive-form field access (4,391),
+        # Cypress selectors (1,104), header and cache lookups (646) and — worst —
+        # 605 *outbound* client calls recorded as doors into the service. See
+        # `OI-37`.
+        (re.compile(
+            r'\b(?:app|router|server|api|fastify|_router|[A-Za-z_$][\w$]*[Rr]outer)'
+            r'\s*\.\s*(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'
+        ), "express"),
     ],
     "go": [
         (re.compile(r'\.(GET|POST|PUT|DELETE|PATCH)\s*\(\s*"([^"]+)"'), "gin"),

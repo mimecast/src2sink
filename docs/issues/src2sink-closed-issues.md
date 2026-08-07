@@ -2658,3 +2658,114 @@ mismatch was invisible because both are strings, both look like `a/b`, and the
 consumer that could not match simply produced fewer merges. Nothing failed. That
 is `OI-36` again, in its purest form: **the wrong answer, with no signal.**
 
+---
+
+## OI-37 — The Express inbound-endpoint pattern has no receiver, so any `.get("…")` is an HTTP route
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_oi37_express_anchor.py` — 23 cases: the direction test first, then each false population from the report's breakdown, the eight router shapes that must survive, the worked template-cache example, confidence by anchoring, `raw` auditability, and a mixed-file ratio guard. Mutants `OI37-M1`, `OI37-M2`.
+
+### Symptom
+
+Two thirds of every inbound endpoint in a 746-repo, predominantly JVM estate
+attributed to Express. Resolving each against its source line: **20 were routes,
+10,225 were not** — all at `confidence: "high"`.
+
+### Root cause
+
+The pattern began at the dot, so it matched a verb-named call on *any* receiver,
+in the one language where `.get(key)` is ubiquitous for reasons unrelated to
+HTTP. Every sibling in `HTTP_IN_RX` is anchored to a route-declaration marker —
+Flask to `@app.route`, FastAPI to `@router.`, Spring and JAX-RS to an annotation.
+This was the only one with no anchor.
+
+### The fix
+
+Require the receiver, from the small closed set of router idioms. Verified
+against the report's own cases: the 20 genuine routes survive, and every false
+population disappears — there is no middle band to tune.
+
+Two changes alongside, both from the report:
+
+* **`confidence` is derived from anchoring**, not hardcoded. `UNANCHORED_HTTP_IN`
+  names the patterns that have no anchor, and `gin` is in it. This is the change
+  that would have surfaced the defect without a fleet run, and it forces the next
+  unanchored pattern to declare itself rather than inherit `high`.
+* **`raw` now contains the receiver**, which falls out of the anchoring for free.
+  It previously began at the dot, so all 10,245 nodes looked identical in the
+  output and the distinction was recoverable only by re-reading the source.
+
+`DETECTION_VERSION` 11 → 12: records built by the previous detector carry the
+false endpoints and must not be reused.
+
+### What made this worse than a noisy pattern
+
+`http-in` is the entry-point set. `OI-21` derives entry points from these nodes,
+so everything reachability-related inherited 10,225 fictitious front doors — and
+**605 of them were outbound client calls**, recorded as doors *into* the service.
+Direction-inverted, not merely spurious.
+
+### Not fixed
+
+Test, spec, Cypress and e2e trees are still not excluded from inbound-endpoint
+extraction — 64% of the original matches were in them. With the anchor in place
+the population is far smaller, but a route declared only in a test is still not
+an entry point of the deployed service. Worth a provenance marker so reachability
+can exclude them; filed thinking rather than code.
+
+The report's fleet-level guard — flag it in the run manifest when one framework
+dominates the inbound endpoints of an estate whose primary languages are
+something else — is not implemented either. It belongs with `OI-36`, and it is
+the cheap check that would have caught this on any run: the ratio was the symptom
+long before anyone read a node.
+
+---
+
+## OI-38 — Only the build indexes traces, so the trace index never describes the batch that just ran
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_oi38_trace_index_freshness.py` — 8 cases: the first-run failure reproduced, the batch writing its own index, the coverage figure tracking the traces that exist, the build's call still working, and `--output` outside the traces directory not rewriting the metabase. Mutant `OI38-M1`.
+
+### Symptom
+
+94 reports written by the first completed fleet-wide batch, and **no index**.
+
+### Root cause
+
+`write_traces_index` had exactly one caller — the build's aggregation phase.
+Neither entry point that produces traces called it. Under the normal build-then-
+trace workflow the index was generated before any trace from this cycle existed,
+so it always described the previous batch; on a clean metabase the traces
+directory does not exist during aggregation, so no index was written at all.
+
+### Why it was more than cosmetic
+
+The index states catalogue coverage — *"N / M endpoints have traces"* — with a
+Missing traces table and the instruction to re-run with `--skip-existing`. That
+is the operational signal saying how complete the work is, and it was stale in
+the direction that matters: immediately after a batch, when someone is checking
+whether the batch covered everything.
+
+### The fix
+
+`trace_batch` writes the index after its run, and reports the count. `trace`
+does the same **only when its `--output` lands inside the traces directory** — a
+trace written elsewhere has not changed the indexed set, and rewriting the
+metabase as a side effect of `--output` would be surprising.
+
+The build's call is kept. The two are complements: the build refreshes coverage
+when the *catalogue* moves, the batch when the *traces* move.
+
+### A note on the tests
+
+The index recovers `(repo, endpoint)` from each report's **content**, not its
+filename. A stub report without the `# Flow trace:` header counts as untraced, so
+every coverage assertion would have passed vacuously against one — which the
+first draft of these tests did, and the failure caught.
+
