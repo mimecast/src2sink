@@ -2665,7 +2665,7 @@ is `OI-36` again, in its purest form: **the wrong answer, with no signal.**
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `9f7300b` — PR #46  
 **Tests:** `tests/test_oi37_express_anchor.py` — 23 cases: the direction test first, then each false population from the report's breakdown, the eight router shapes that must survive, the worked template-cache example, confidence by anchoring, `raw` auditability, and a mixed-file ratio guard. Mutants `OI37-M1`, `OI37-M2`.
 
 ### Symptom
@@ -2729,7 +2729,7 @@ long before anyone read a node.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `9f7300b` — PR #46  
 **Tests:** `tests/test_oi38_trace_index_freshness.py` — 8 cases: the first-run failure reproduced, the batch writing its own index, the coverage figure tracking the traces that exist, the build's call still working, and `--output` outside the traces directory not rewriting the metabase. Mutant `OI38-M1`.
 
 ### Symptom
