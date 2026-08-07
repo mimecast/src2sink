@@ -89,6 +89,16 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **A versioned `api/latest/` directory contributed nothing to the metabase
+  (`OI-39`).** The test-path predicate's camelCase branch ran under
+  `IGNORECASE`, so *any* path segment ending in "test" was treated as a test
+  directory — `latest`, `protest`, `contest`, `attest`, `greatest`. Extraction
+  returns nothing for a test path, so a repository laid out that way produced no
+  endpoints, no sinks and no dependencies, with no note and no count. The same
+  predicate was too narrow in the other direction: test files living beside
+  their code (`routes.spec.ts`, `handler_test.go`, `test_views.py`) were
+  extracted as though they shipped. Both fixed; **`DETECTION_VERSION` 12 → 13.**
+
 - **Any `.get("…")` in JavaScript was an inbound HTTP endpoint (`OI-37`).** The
   Express pattern began at the dot, so it matched a verb-named call on any
   receiver — and JavaScript is the language where `.get(key)` is ubiquitous for

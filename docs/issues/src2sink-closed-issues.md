@@ -2769,3 +2769,84 @@ filename. A stub report without the `# Flow trace:` header counts as untraced, s
 every coverage assertion would have passed vacuously against one — which the
 first draft of these tests did, and the failure caught.
 
+---
+
+## OI-39 — The test-path predicate excluded production code and admitted test code
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_oi39_test_path_classification.py` — 32 cases across both directions, plus the boundary cases that keep each half honest. Mutants `OI39-M1`, `OI39-M2`.
+
+### How it was found
+
+Chasing down `OI-37`'s deferred item — *"exclude test and vendored trees from
+inbound-endpoint extraction"* — which had been recorded under **Not fixed** in a
+closed issue rather than filed as open. It surfaced only because someone read
+that entry.
+
+That is worth recording as its own small lesson: a deferral written into a closed
+issue has nothing carrying it forward. `OI-36`'s argument applies to the issue
+tracker as well as to the code.
+
+### Two defects in one predicate, in opposite directions
+
+`TEST_PATH_RX` gates **all** extraction — `extract_from_file` returns `[], []` on
+a match — so it decides what the tool can see at all. It matched whole path
+*segments*.
+
+**Too wide, and this is the serious half.** The camelCase branch
+`[a-z][a-zA-Z0-9]*Tests?` sat under `re.IGNORECASE`, so it read as *any segment
+ending in "test"*:
+
+```
+SKIP  api/latest/handler.go      <-- a versioned API directory
+SKIP  src/protest/handler.go
+SKIP  src/contest/service.js
+SKIP  src/attest/signer.py
+SKIP  src/greatest/hits.ts
+```
+
+A repository laid out under `api/latest/` contributed **nothing** to the
+metabase — no endpoints, no sinks, no PII, no dependencies — with no note, no
+count and no warning. Indistinguishable from a repository that is genuinely
+clean.
+
+**Too narrow.** A test file beside the code it tests is invisible to segment
+matching: `routes.spec.ts`, `handler_test.go`, `test_views.py`,
+`StockControllerTest.java`, and anything under `cypress/` that is not also under
+`e2e/`. **64% of `OI-37`'s 10,225 false endpoints were in files shaped like
+these**, and a route declared only in a mock server is not a door into the
+deployed service.
+
+### The fix
+
+* The camelCase branch is **case-sensitive** — `(?-i:...)`. A literal capital `T`
+  separates `FooTest` from `latest`.
+* Lowercase compound conventions (`loadtest`, `smoke-test`, `perf_test`,
+  `acceptance-tests`) are **named explicitly**, because a rule broad enough to
+  catch them by shape is precisely the rule that caused the defect above. Four
+  alternations is a cheap price for not swallowing English.
+* Filename conventions are matched separately and **anchored to source
+  extensions**, so `api/openapi.spec.yaml` — a document describing the service's
+  real endpoints — is not mistaken for a test.
+
+`DETECTION_VERSION` 12 → 13.
+
+### Why the boundary tests are the load-bearing ones
+
+Both halves are one predicate, and a change to either can reopen the other. The
+suite asserts in both directions on purpose — `openapi.spec.yaml` kept and
+`routes.spec.ts` dropped; `latest/` kept and `loadtest/` dropped — because the
+obvious fix for each half is the thing that breaks the other.
+
+### Residual not covered
+
+Vendored and minified trees are still not excluded. `SKIP_DIRS` covers `vendor`,
+but a bundled `framework.js` under `src/assets/` is not caught by anything, and
+5% of `OI-37`'s matches were in files like that. There is no reliable syntactic
+signal for "this is third-party code we do not own" — line length and lack of
+newlines are heuristics, not facts — so this needs a decision rather than a
+pattern, and it is left open rather than guessed at.
+
