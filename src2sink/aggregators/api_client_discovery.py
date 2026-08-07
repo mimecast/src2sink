@@ -176,16 +176,29 @@ def _enclosing_class(file_path: str) -> str:
     return Path(file_path).stem if file_path else ""
 
 
-def _repos_containing_class(records: list[dict[str, Any]], class_name: str) -> set[str]:
-    """Repos with a file of this name, as a proxy for corpus-wide occurrence."""
-    hits: set[str] = set()
+def _repos_by_class(records: list[dict[str, Any]]) -> dict[str, set[str]]:
+    """Map each class name to the repos containing a file of that name.
+
+    Built in **one** pass and queried by key. It replaces a per-class rescan of
+    the whole fleet: the caller iterates targets, and each target's classes, and
+    asked the corpus about every one — so the cost was
+    ``targets x classes x records x nodes``, and on a synthetic fleet where all
+    four scale together the node visits grew ~15x for every doubling of the
+    repository count.
+
+    Nothing about the answer needed that. The question is corpus-wide and
+    target-independent: which repos hold a file called `StockClient`. Asked once
+    per class instead of once per (target, class), and answered from an index
+    instead of a scan.
+    """
+    by_class: dict[str, set[str]] = defaultdict(set)
     for data in records:
         rid = repo_id(data)
         for node in data.get("nodes", []):
-            if _enclosing_class(str(node.get("file", ""))) == class_name:
-                hits.add(rid)
-                break
-    return hits
+            cls = _enclosing_class(str(node.get("file", "")))
+            if cls:
+                by_class[cls].add(rid)
+    return by_class
 
 
 def _demand_side_observations(
@@ -282,12 +295,14 @@ def _apply_demand_side(
     """
     observed = _demand_side_observations(records)
     by_target = {c["target_repo"]: (k, c) for k, c in cands.items() if c["target_repo"]}
+    # One pass over the fleet, before the loop rather than inside it.
+    repos_by_class = _repos_by_class(records)
 
     for target, seen in sorted(observed.items()):
         classes = sorted(seen["classes"])
         warnings = []
         for cls in classes:
-            repos = _repos_containing_class(records, cls)
+            repos = repos_by_class.get(cls, set())
             if len(repos) > MAX_PATTERN_REPOS:
                 warnings.append(
                     f"class_pattern {cls!r} appears in {len(repos)} repos; too "

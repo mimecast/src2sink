@@ -89,6 +89,14 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **Api-client discovery rescanned the whole fleet once per class (`OI-35`).**
+  The demand-side pass asked "which repos contain a file called `StockClient`"
+  by walking every node of every record, once per target *and* per class — so
+  node visits grew about 15x for every doubling of the repository count. The
+  question is corpus-wide and target-independent, so it is now answered from an
+  index built in one pass: **576x fewer node visits at 48 repos**, and the
+  saving keeps growing with the fleet.
+
 - **The checkout was walked 25 times per run to find a handful of files
   (`OI-31`).** `Path.rglob(name)` traverses the whole tree and filters by name,
   so four filenames cost four traversals — and no phase shared a walk with any

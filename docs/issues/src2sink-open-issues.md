@@ -64,6 +64,10 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
+| OI-33 | 33 | Discovery's two passes never agree, so `discovery_method: "both"` is unreachable | small | 23 candidates that two independent evidence paths corroborate are split into weaker halves; 79 would promote to broken edges | **P1** |
+| OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Needs a product decision first** | **P1** |
+| OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
+| OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | cross-cutting: 12 whole-function silent failures found; the pattern behind `OI-18`, `OI-31`, `OI-13` and three Kotlin gaps | **P0** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -127,6 +131,8 @@ Three of these four defects share one shape: **a detection path that fails to em
 - An unparsed dependency format produces `dependencies_internal: []` and no note (§3).
 
 The 1.1.0 work established the right pattern — the manifest binding count, the unconditional `service-call-unmatched.jsonl`, the recorded oversized-file skips. Extending it consistently is the durable fix: **any detection input that resolves to nothing should say so in the run manifest or the repo's notes.** A count of zero is a finding; an absent field is not.
+
+**This principle has since been violated at least six more times, and is now tracked as `OI-36`.** Writing it down was not enough: `OI-18`, `OI-13`, `OI-31` and three separate Kotlin gaps in `OI-17` are all the same shape, all shipped after this paragraph was written, and none was found by the tool. A principle with no gate behind it is a statement of intent. `OI-36` carries the measurement — 12 handlers that empty a whole function's result silently — and proposes the gate.
 
 ---
 
@@ -469,7 +475,7 @@ Two further consequences of the same malformed value:
 
 ### Proposed fix
 
-**Do not truncate to two segments.** `group/subgroup/repo` is a legitimate GitLab path and this estate contains such repos (see §11), so a segment-count rule would corrupt them. Resolve against the set of ids the metabase actually knows, longest match first:
+**Do not truncate to two segments.** `group/subgroup/repo` is a legitimate GitLab path and this estate contains such repos (see `OI-34`), so a segment-count rule would corrupt them. Resolve against the set of ids the metabase actually knows, longest match first:
 
 ```python
 def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
@@ -492,12 +498,51 @@ def _canonical_repo_id(resolved: str, known: frozenset[str]) -> str | None:
 
 Apply it where `_collect_candidates` sets `target_repo`, so both passes speak one identity from the start. Verified against the fleet: **117 of 117** supply-side targets resolve to a known repo id, none unresolvable.
 
-Keep the raw resolved path — it is strictly more information than the repo id, and §11 may want it:
+Keep the raw resolved path — it is strictly more information than the repo id, and `OI-34` may want it:
 
 ```python
 cand["target_repo"] = _canonical_repo_id(resolved, known) or ""
 cand["target_module"] = resolved      # e.g. "group/repo/some-client"
 ```
+
+### Review — confirmed, and the blast radius is larger than stated
+
+Root cause verified in the source. `_collect_candidates` sets
+`target_repo = resolve(coord) or ""` (the declaring *directory*), while the
+demand-side target comes from the inbound index, built from `repo_id(data)` —
+`f"{group}/{name}"`. The exact-string lookup in `_apply_demand_side` cannot
+bridge them. The proposed longest-known-match fix is the right shape: it needs no
+depth rule and no `.git`, both of which this estate defeats.
+
+Three further consequences of the same malformed value, none of them in the
+report:
+
+* **It suppresses `paths` too.** `paths_by_repo.get(target, ())` is keyed by repo
+  id, so a 3-segment target yields *no* paths — and a binding with no paths
+  cannot match a route. The 79 candidates are not merely unmerged, they are
+  substantively weaker.
+* **It suppresses confidence, as a direct consequence.** `_confidence` returns
+  `"high" if has_paths else "medium"`, so those candidates are capped at `medium`
+  *because* of the bad key. Fixing the identity will move a number of them to
+  `high` — expect the confidence distribution to shift, and do not read that as a
+  regression.
+* **`service_aliases` is corrupted.** It is `[target.split("/")[-1]]`, which for
+  `group/repo/some-client` yields `some-client` — the build module, not the
+  service. Alias matching is how a hand-rolled caller is recognised, so this
+  misdirects the very pass the alias exists for.
+
+**The defect was rationalised into the design.** `_confidence` already carries
+the comment `# resolved to a path not present as a scanned repo` for exactly this
+case — the code knew the state occurred and treated it as legitimate rather than
+as a symptom. Worth changing that comment when the fix lands, or the next reader
+will re-derive the same wrong conclusion.
+
+**On the tests:** `test_both_is_reachable` is the important one and should assert
+against a fixture where a supply-side and a demand-side candidate genuinely
+describe one service, not a hand-built pair — `both` has never occurred in a real
+run, so nothing has ever exercised that merge branch and a mock would only prove
+the mock. A guard that no emitted candidate carries an empty `target_repo` is
+worth adding alongside, since the 8 empties are the resolver failing silently.
 
 ### Suggested tests
 
@@ -551,13 +596,13 @@ Across the fleet, **15 records have three or more build-bearing subdirectories a
 
 - Every edge to or from any subsumed project is attributed to the aggregate, so the graph cannot say *which* service is involved.
 - A call *between* two subsumed projects becomes a self-edge, and `_append_path_edge` drops self-edges outright — so genuine cross-project calls disappear entirely.
-- It explains §10's identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
+- It explains `OI-33`'s identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
 
 ### Why this is a question, not a fix
 
 Two defensible positions, and the right answer depends on intent:
 
-1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. §10's fix is the whole answer).
+1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. `OI-33`'s fix is the whole answer).
 2. **The project is the unit of analysis.** Nested-subgroup projects deserve their own nodes, and the two-level walk is under-counting the fleet.
 
 These conflict, and the same directory layout supports both readings — an aggregate of 41 sub-projects and a monorepo with 41 modules look identical on disk.
@@ -570,6 +615,32 @@ These conflict, and the same directory layout supports both readings — an aggr
 
 The most reliable signal available is **external**: the staging manifest already enumerates true project paths (`path_with_namespace` per project). Feeding that list in — as an optional `--repo-manifest` — would let the scanner split on real project boundaries without inferring them from the filesystem at all.
 
+### Review — agreed, and it is a question rather than a defect
+
+The two-level walk is confirmed in `_discover_repos`, and framing this as needing
+a product decision is right: the same directory layout genuinely supports both
+readings, and no filesystem signal separates them. The report is also right that
+`.git` is unusable here — and that matters beyond this issue, because `OI-22` is
+filed on the same absence.
+
+Two additions:
+
+* **The self-edge consequence is the most serious part and is understated.** A
+  call between two subsumed projects becomes a self-edge and is *dropped*, so
+  this is not a loss of resolution but a loss of the finding entirely. An
+  aggregate of 41 sub-projects is exactly where intra-estate calls concentrate,
+  so the edges most likely to be lost are the ones most worth having.
+* **The `--repo-manifest` proposal is the strongest option and is also the
+  cheapest.** It sidesteps inference completely, and it composes with `OI-27`
+  (configuration that must be written by hand): both want an authoritative
+  external list of what the estate contains, and one input could serve both.
+
+**Recommendation: take the minimum change now regardless of the decision.**
+Recording the aggregation in `summary.notes` is small, unblocks nothing, and
+stops a 41-project aggregate reading as a single service in the interim. The
+product decision can then be made on evidence — the note makes the scale of the
+aggregation visible per repo, which is exactly the input needed to choose.
+
 ### Minimum change regardless of the decision
 
 Record what was aggregated, so the coarseness is visible rather than assumed:
@@ -581,5 +652,140 @@ summary.notes.append(
 )
 ```
 
-Today a 41-project aggregate and a single-service repo are indistinguishable in the output. That is §13 again.
+Today a 41-project aggregate and a single-service repo are indistinguishable in the output. That is `OI-36`
+again — a detection path resolving to a wrong answer without emitting a signal.
+
+---
+
+## 36. Detection paths fail to empty, or to a wrong answer, without emitting a signal  `OI-36`
+
+**Severity:** Critical as a *class*, even though each instance looks minor. A tool
+whose failure mode is "found nothing" is indistinguishable, on the day it breaks,
+from a tool reporting good news.
+
+**Found:** named by the fleet operator after a run, as the recurring shape behind
+several separately-filed issues.
+
+**This document already said it.** §6 has carried this principle since 1.1.0, in
+almost the same words: *"a detection path that fails to empty without emitting a
+signal"*, with the durable fix stated correctly — any detection input resolving
+to nothing should say so in the run manifest or the repo's notes.
+
+So the finding here is not the diagnosis. It is that **the principle was written
+down and then violated at least six more times**, in releases that shipped after
+it. `OI-18`, `OI-13`, `OI-31` and three separate Kotlin gaps inside `OI-17` are
+all this shape. A principle with nothing enforcing it is a statement of intent,
+and this one has been tested against reality and lost. What is new below is the
+measurement and the gate.
+
+### The shape
+
+A detection path encounters something it cannot handle, and returns an empty
+result or a wrong one. Nothing is recorded, nothing is printed, and the output is
+well-formed. The scan reports success. A reviewer sees fewer findings and has no
+way to tell whether that means the estate is clean or the parser broke.
+
+**This is worse than a crash.** A crash is loud, dated, and attributable. A silent
+empty is indistinguishable from a genuine result and survives indefinitely,
+because there is nothing to notice.
+
+### It is not hypothetical — it is the pattern behind issues already fixed
+
+| issue | what failed | what was emitted |
+|---|---|---|
+| `OI-18` | namespaced POMs — the standard shape every IDE emits — hit `except ParseError: return []` | nothing; every such repo reported **zero dependencies** |
+| `OI-31` | `SKIP_DIRS` matched the absolute path, so a checkout under `/tmp/build` excluded its own tree | nothing; **every manifest** resolved to "not found" |
+| `OI-31` | `--discover-api-clients` was unreachable outside a full scan | `Done.`, and no candidates file |
+| `OI-13` | Kotlin call sites routed to the Java walker, which needs a node Kotlin never produces | nothing; Kotlin SQL sinks simply absent |
+| `OI-17` | Kotlin `is_interface` always false; every Kotlin method's params empty; every Kotlin call's arguments empty | nothing; **no Kotlin path existed anywhere in the fleet** |
+| `OI-33` | the resolver failing outright on 8 candidates | `target_repo: ""`, emitted as a candidate |
+
+Six of these were found by accident — by building something else on top and
+noticing the foundation was empty. None was reported by the tool.
+
+### Measured: how much of the codebase has this shape
+
+53 exception handlers whose entire body is `return`/`continue`/`pass`. Most are
+legitimate — skipping one unreadable file among thousands is correct, and the
+per-repo bulkhead (`TA-001`) deliberately isolates failures.
+
+The dangerous subset is where a whole *function's* result empties. There are
+**12**:
+
+```
+_load_discovered                 (OSError, json.JSONDecodeError)   api_client_discovery.py:97
+_load_bindings                   (OSError, json.JSONDecodeError)   api_client_discovery.py:409
+load_library_source_map          (OSError, json.JSONDecodeError)   library_source_map.py:27
+_read_json                       (OSError, json.JSONDecodeError)   build_metabase_v2.py:488
+parse_python_dependencies        tomllib.TOMLDecodeError           dependencies.py:113
+_npm_lock_versions               json.JSONDecodeError              dependencies.py:142
+parse_npm_dependencies           json.JSONDecodeError              dependencies.py:172
+extract_tree_sitter_calls        (KeyError, OSError, ValueError)   ts_extractors.py:162
+extract_method_declarations      (KeyError, OSError, ValueError)   ts_extractors.py:286
+extract_type_declarations        (KeyError, OSError, ValueError)   ts_extractors.py:327
+parse_package_json_dependencies  json.JSONDecodeError              repo_utils.py:184
+_literal_hits_in_file            OSError                           trace.py:386
+```
+
+Two groups stand out:
+
+* **The three `ts_extractors` handlers are the `OI-17` foundation.** A parse
+  failure means that file contributes no calls, no method declarations and no
+  type declarations — so it takes part in no path, and the answer is "nothing
+  reaches a sink here". Stated with full confidence.
+* **The four dependency parsers are `OI-18` in four more places.** A malformed
+  `pyproject.toml`, `package.json` or lockfile yields zero dependencies, which is
+  the exact failure reported from the field against 2.0.0 for Maven.
+
+### The principle is already established in this codebase — in one place
+
+`--allow-empty-api-clients` exists precisely because of this, and its help text
+states it outright:
+
+> Without this, an empty/malformed bindings file is a hard error, **because it
+> silently disables all cross-repo API-client detection**.
+
+That is the whole issue, already understood and already acted on — for one file,
+once. `_load_bindings` in the promote path still returns `[]` silently, so even
+the fix is not applied consistently to its own subject.
+
+### Proposed fix
+
+Not "raise everywhere" — the bulkhead exists for good reasons and a hostile repo
+must not stop a run. The rule is **degrade loudly, never silently**:
+
+1. **Every silent handler either records or justifies.** A handler that empties a
+   whole function's result must append to `summary.notes` (the mechanism already
+   exists and `unparsed_ecosystem_notes` already does this) or carry a comment
+   saying why silence is right there. A gate can enforce the choice, the way
+   `test_detection_input_coverage` enforces fingerprint coverage.
+2. **Surface the count in the run manifest.** "4,318 files parsed, 11 unparsable"
+   turns an invisible failure into a number someone can watch move. A run where
+   that number jumps is a run to investigate.
+3. **Distinguish "no findings" from "no data" at the report level.** A repo whose
+   extraction produced nothing must not render identically to a repo that was
+   examined and found clean.
+4. **Apply the `--allow-empty-*` pattern to every config load**, not just
+   api-clients: a config that parses to nothing disables whatever it configures,
+   and that is a decision the operator should make explicitly.
+
+### Suggested tests
+
+* A deliberately malformed manifest of each supported ecosystem produces a
+  **note**, not merely an empty list — one test per parser, since each was
+  written separately and each forgot separately.
+* An unparsable source file is counted in the run manifest.
+* A repo with zero findings and a repo with zero *data* are distinguishable in
+  the rendered output.
+* A structural gate: every `except` whose body is a lone `return`/`continue`/`pass`
+  is either on an allowlist with a stated reason or records something. This is the
+  test that stops the class recurring, and it is the one worth writing first.
+
+### Why P0
+
+`OI-13` and `OI-17` between them meant **the entire Kotlin half of a JVM fleet
+returned clean results while detecting nothing**, across two releases, and neither
+was found by the tool. The estate's exposure was reported as low, confidently, on
+no evidence. Every other issue here is about finding more; this one is about
+knowing when we have found nothing because we broke.
 
