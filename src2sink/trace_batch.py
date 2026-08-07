@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .aggregators.payload_producers import build_producer_indices
 from .aggregators.service_calls import collect_service_edges
+from .aggregators.traces_index import write_traces_index
 from .graph_common import load_v2_repo_records
 from .internal_groups import (
     add_internal_groups_arguments,
@@ -186,8 +187,14 @@ def main() -> int:
         skip_existing=args.skip_existing,
         scan_repos=repos_root,
     )
+    # The index reports catalogue coverage, so whatever last changed the trace
+    # set must write it. Only the *build* called this, and the build runs before
+    # any trace from this cycle exists — so the figure always described the
+    # previous batch, and on a first run no index appeared at all (`OI-38`).
+    indexed = write_traces_index(metabase_root)
     print(
-        f"Batch trace done: wrote={written} skipped={skipped} errors={errors}",
+        f"Batch trace done: wrote={written} skipped={skipped} errors={errors}; "
+        f"indexed {indexed} trace(s)",
     )
     return 1 if errors and not written else 0
 

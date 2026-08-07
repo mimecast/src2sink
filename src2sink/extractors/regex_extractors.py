@@ -22,6 +22,7 @@ from .patterns import (
     FILE_SINK_RX,
     ENTRY_MARKER_RX,
     HTTP_IN_RX,
+    http_in_confidence,
     PII_LOG_RX,
     PII_STORAGE_RX,
     QUEUE_RX,
@@ -112,7 +113,9 @@ def extract_http_inbound(ctx: FileExtractionContext) -> None:
                 family="http-in",
                 framework=framework,
                 detail={"method": method, "path": path, "raw": m.group(0)[:140]},
-                confidence="high",
+                # Not a literal. An unanchored pattern cannot honestly claim
+                # what an annotation earns (`OI-37`).
+                confidence=http_in_confidence(framework),
             )
             ctx.nodes.append(node)
             ctx.http_sources.append(node)
