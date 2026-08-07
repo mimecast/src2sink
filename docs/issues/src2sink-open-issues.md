@@ -64,7 +64,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
-| OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Needs a product decision first** | **P1** |
+| OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Decided: the project is the unit.** Changes repo identity fleet-wide — a major | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 | OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | cross-cutting: 12 whole-function silent failures found; the pattern behind `OI-18`, `OI-31`, `OI-13` and three Kotlin gaps | **P0** |
 | OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
@@ -456,9 +456,34 @@ Across the fleet, **15 records have three or more build-bearing subdirectories a
 - A call *between* two subsumed projects becomes a self-edge, and `_append_path_edge` drops self-edges outright — so genuine cross-project calls disappear entirely.
 - It explains `OI-33`'s identity mismatch from the other side: the resolver produces a *finer* identity than the metabase can represent. `group/repo/some-client` is a real thing; the metabase simply has no node for it.
 
-### Why this is a question, not a fix
+### Decided: the project is the unit of analysis
 
-Two defensible positions, and the right answer depends on intent:
+**Answered by the fleet owner: option 2.** Nested-subgroup projects get their own
+nodes, and the two-level walk is under-counting the fleet.
+
+That settles the question and turns this into an implementation task with a known
+shape — and a known cost. Repo identity is the most expensive thing in this
+system to change, because it keys the metabase layout, every edge, every trace
+filename, and the persisted index:
+
+| what assumes two segments | where |
+|---|---|
+| `repo_id()` returns `f"{group}/{name}"` | `graph_common.py` |
+| the record layout is `repos/<group>/<name>.json` | `build_metabase_v2.py`, and a `repos/*/*.json` glob in three places |
+| `_discover_repos` walks exactly two levels | `build_metabase_v2.py` |
+
+Already ready for it: `_canonical_repo_id` (`OI-33`) matches the longest known id
+rather than truncating, so it handles `group/subgroup/project` correctly today;
+`_safe_slug` in `trace_batch` handles any depth; and the `OI-15` index keys on the
+id as an opaque string.
+
+**This is a major version.** It changes what `group`/`name` mean and breaks any
+consumer that splits a repo id into two parts, which is the project's own
+definition of a major bump.
+
+### Why the original question was worth asking anyway
+
+Two defensible positions, and the answer depended on intent:
 
 1. **The repo is the unit of ownership and deployment.** Monorepo sub-projects should be aggregated, and the resolver should normalise down to the repo id (i.e. `OI-33`'s fix is the whole answer).
 2. **The project is the unit of analysis.** Nested-subgroup projects deserve their own nodes, and the two-level walk is under-counting the fleet.
