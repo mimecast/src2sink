@@ -62,6 +62,18 @@ class QueueGraph:
         return sorted(self.topics, key=lambda t: t.topic)
 
 
+def _new_topic() -> dict[str, set[str]]:
+    """An empty topic entry: the two directions and the systems seen on it.
+
+    A named factory rather than a `lambda` in `__init__`. Opengrep's
+    `return-in-init` rule matches a lambda's implicit return there and reports a
+    runtime error that cannot happen — a false positive, and one that would
+    otherwise need a `# nosemgrep` suppression. A named function is clearer and
+    needs no annotation.
+    """
+    return {"produce": set(), "consume": set(), "systems": set()}
+
+
 class QueueCollector:
     """Topics and the repos on each side of them, reduced one record at a time.
 
@@ -71,9 +83,7 @@ class QueueCollector:
 
     def __init__(self) -> None:
         """Start an empty reduction."""
-        self.topics: dict[str, dict[str, set[str]]] = defaultdict(
-            lambda: {"produce": set(), "consume": set(), "systems": set()},
-        )
+        self.topics: dict[str, dict[str, set[str]]] = defaultdict(_new_topic)
 
     def consume(self, record: dict[str, Any]) -> None:
         """Fold one repo record in."""
