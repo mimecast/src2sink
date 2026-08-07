@@ -1149,6 +1149,50 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI42-M1",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="        reasons = _promotion_rejections(cand, known_repos, endpoints)",
+        new="        reasons = []",
+        selector="tests/test_oi42_promote_validation.py",
+        note=(
+            "promote goes back to merging on trust, so a candidate naming a "
+            "client library or a repo that does not exist reaches the "
+            "authoritative bindings and misdirects every edge it matches. 50 of "
+            "191 in the first fleet review would have."
+        ),
+    ),
+    Mutant(
+        id="OI42-M2",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    document[\"bindings\"] = bindings\n"
+            "    target_path.write_text(\n"
+            "        json.dumps(document, indent=2, sort_keys=False) + \"\\n\", encoding=\"utf-8\",\n"
+            "    )",
+        new="    target_path.write_text(\n"
+            "        json.dumps({\"bindings\": bindings}, indent=2, sort_keys=False) + \"\\n\",\n"
+            "        encoding=\"utf-8\",\n"
+            "    )",
+        selector="tests/test_oi42_promote_validation.py",
+        note=(
+            "The rewrite drops every top-level key but `bindings` again, "
+            "including the `_comment` carrying the 'never commit' notice on a "
+            "gitignored, sensitivity-marked file. Silent, and the file still "
+            "looks correct."
+        ),
+    ),
+    Mutant(
+        id="OI42-M3",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="            for existing in index[key]:\n                existing.update(binding)",
+        new="            index[key][-1].update(binding)",
+        selector="tests/test_oi42_promote_validation.py",
+        note=(
+            "Only the last copy of a duplicated key is refreshed, so earlier "
+            "copies stay at their old values — still present, still loaded, and "
+            "now disagreeing with their twin about the same binding."
+        ),
+    ),
+    Mutant(
         id="OI40-M1",
         file="src2sink/aggregators/api_client_discovery.py",
         old="    corrected = _service_for_client_repo(target, endpoints)",

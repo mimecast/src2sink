@@ -62,7 +62,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-27 | 27 | Internal-prefix and api-client configuration must be written by hand | medium | a first scan against an unconfigured fleet silently finds nothing internal | **P1** |
 | OI-32 | 32 | The checkout scan is single-threaded and I/O-bound | medium | **Measured:** reads thread 3.0x even on local NVMe but are worth 2.4% of the run; the 78% that dominates is CPU-bound aggregation, which threads cannot touch | **P2** |
 | OI-41 | 41 | Aggregation parses the whole metabase 14 times per run | medium | **67% of aggregation time**, and aggregation is 78% of the run. The target `OI-32` was looking for | **P1** |
-| OI-42 | 42 | `--promote-api-clients` validates nothing and silently drops file keys | small | two of the five review gates are mechanically checkable with code that already exists; promote also discards the sensitivity notice | **P1** |
+| OI-42 | 42 | `--promote-api-clients` validates nothing and silently drops file keys | small | two of five review gates now enforced in code; 50 of 191 candidates would have failed one | **closed** |
 | OI-29 | 29 | A caller's reported confidence was whichever edge came last | small | fixed in passing while building the OI-15 index; recorded because it understated real findings | **closed** |
 | OI-30 | 30 | The producer scan reads the whole fleet once per binding | small | reported from the field at 70 minutes; the slowest step of a scan bar fleet-wide traces | **closed** |
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
@@ -965,71 +965,3 @@ and the measurement that exposed it also shows the alternative everyone reaches
 for first — threading — is worth 2.4%.
 
 ---
-
-## 42. `--promote-api-clients` validates nothing and silently drops file keys  `OI-42`
-
-**Severity:** Medium — one half is a silent data loss on a sensitivity-marked
-file; the other is review burden the tool could carry itself.
-**Status:** open. Found reviewing `docs/api-clients-json.md` §4, which documents
-all three behaviours as things the *reviewer* must handle.
-
-### Three defects, one of them the tool asking a human to do its job
-
-**1. Two of the five review gates are mechanically checkable, with code that
-already exists.**
-
-The acceptance standard lists five disqualifying gates. Two are pure computation:
-
-| gate | rejected | already computable by |
-|---|---|---|
-| Gate 1 — `target_repo` non-empty and matching a metabase repo id | 8 | `_canonical_repo_id` (`OI-33`) |
-| Gate 2 — `target_repo` names the service, not the client library | 42 | `_service_for_client_repo` (`OI-40`) |
-
-**50 of 191 candidates** were rejected by hand for conditions the tool can
-already detect and, since `OI-40`, already does detect at discovery time.
-`promote` merges on trust and re-checks nothing, so a candidate accepted in error
-reaches the taint graph with no further barrier. It should refuse — or at minimum
-warn loudly — on a candidate failing either gate, rather than documenting the
-check as the reviewer's problem.
-
-**2. `promote` discards every top-level key but `bindings`.**
-
-```python
-target_path.write_text(json.dumps({"bindings": bindings}, ...))
-```
-
-Including `_comment`, which carries the *"never commit — internal topology"*
-handling notice on a gitignored, sensitivity-marked file. The marker disappears
-silently and the file still looks correct. `OI-36` in a place with a
-confidentiality consequence.
-
-**3. Duplicate keys in the authoritative file go stale silently.**
-
-```python
-index = {(b.get("target_repo"), b.get("maven_artifact")): b for b in bindings}
-```
-
-A dict comprehension over a list that may contain duplicate keys: only the last
-copy is indexed, so `index[key].update(...)` refreshes that one and every earlier
-duplicate is left at its old values — still present, still loaded, now
-inconsistent with its twin.
-
-### A latent trap worth recording while it is visible
-
-`promote` calls `_load_discovered(path)` **without** `known`, so the
-`OI-33`/`OI-40` alternate-key indexing does not run. That is correct today and
-must stay deliberate: with `known` supplied, a candidate is indexed under two
-keys pointing at *the same object*, so `.values()` would yield it twice and
-`len(accepted)` would over-report. Harmless for the merge itself, which is
-dict-keyed, but the count is user-facing.
-
-### Proposed fix
-
-1. Re-run Gates 1 and 2 inside `promote` and refuse the candidates that fail,
-   naming them. The reviewer keeps judgement; the tool keeps arithmetic.
-2. Preserve unknown top-level keys when rewriting, so `_comment` survives.
-3. Deduplicate `bindings` on load, or update every copy of a key rather than the
-   last.
-4. Assert the documented post-conditions in code rather than in prose — they are
-   already written as a checklist, and a checklist a tool can run should not be
-   a checklist a person runs.

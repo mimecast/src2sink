@@ -2916,3 +2916,65 @@ That is the second use of one mechanism, and it is worth noting for `OI-34`: the
 long → short by prefix; `OI-34` needs short → long, which is neither a prefix
 relation nor unambiguous. See the migration table in `OI-34`.
 
+---
+
+## OI-42 — `--promote-api-clients` validates nothing and silently drops file keys
+
+### Resolution
+
+**Fixed in:** 3.1.0 (unreleased)  
+**Commit:** _this PR_ (the `_load_bindings_file` half landed early in `923fe1c`, PR #51 — see below)  
+**Tests:** `tests/test_oi42_promote_validation.py` — 9 cases across both gates, the lossy rewrite, duplicate keys, idempotence, and the documented post-conditions asserted rather than checklisted. Mutants `OI42-M1`…`OI42-M3`.
+
+### The tool was asking a human to do its arithmetic
+
+`docs/api-clients-json.md` §4 lists five disqualifying gates. Two are pure
+computation the tool already performs at discovery time, using code written for
+`OI-33` and `OI-40`:
+
+| gate | rejected by hand | now enforced by |
+|---|---|---|
+| 1 — `target_repo` non-empty and a known repo id | 8 of 191 | `known_repos` from the metabase |
+| 2 — names the service, not the client library | 42 of 191 | `_service_for_client_repo` |
+
+**50 of 191 candidates** were rejected manually for conditions the tool could
+detect. `promote` merged on trust and re-checked nothing, so anything a reviewer
+missed became an authoritative binding and misdirected every edge it matched.
+
+Refusals name the candidate, the reason, and — for a client library — the service
+it should have pointed at. One refusal does not block the rest of the batch.
+
+### Two lossy behaviours, both documented as the reviewer's problem
+
+**The handling notice was dropped.** `promote` wrote `{"bindings": [...]}` and
+discarded every other top-level key, including the `_comment` carrying *"never
+commit — internal topology"* on a gitignored, sensitivity-marked file. Silent,
+and the file still looked correct. `OI-36` with a confidentiality consequence.
+
+**Duplicate keys went stale.** Bindings were indexed with a dict comprehension
+over a list that may hold duplicates, so only the last copy of a key was
+refreshed. Earlier copies stayed at their old values — still present, still
+loaded, now disagreeing with their twin about the same binding.
+
+### The post-conditions are asserted, not checklisted
+
+The document lists five post-conditions for a person to verify after promoting.
+They are now a test. A checklist a tool can run should not be a checklist a
+person runs.
+
+### A note on how half of this shipped
+
+`_load_bindings_file` and its malformed-JSON warning landed inside PR #51, the
+`OI-41` work, whose description says nothing about them. They were uncommitted on
+this branch when I switched to fix an unrelated opengrep failure, were carried
+across, and were committed with that PR.
+
+The changes are correct and tested, so reverting would be worse than recording
+it — but the history is misleading, and a reviewer of #51 had no reason to expect
+a change to `api_client_discovery.py` in a performance PR. Recorded here because
+this is where someone tracing the change will look.
+
+The half that shipped was also inert on its own: it preserved the whole document
+on *load* while the write still rebuilt `{"bindings": ...}`, so nothing was
+actually preserved until this change.
+
