@@ -2569,3 +2569,92 @@ exactly once, verified by inspection of the call sites. They are linear and are
 not worth merging: they read different fields and merging them would trade a
 clear cost for an unclear one.
 
+---
+
+## OI-33 — Discovery's two passes never agree: `discovery_method: "both"` is unreachable
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_oi33_canonical_repo_id.py` — 15 cases: the normalisation across module paths, nested repos and unresolvable inputs; `both` reachable end to end; the defect reproduced so that test cannot pass vacuously; the recovered paths, confidence and alias; and reviewer state surviving the key change. Mutants `OI33-M1`…`OI33-M3`.
+
+### Symptom
+
+Filed from the first completed discovery run over the fleet, once `OI-35` let the
+pass finish at all:
+
+```
+discovery_method: dependency  125
+discovery_method: call-site   101
+discovery_method: both          0
+```
+
+Never one, out of 226 candidates.
+
+### Root cause
+
+The two passes named the same service differently. Demand-side used
+`repo_id(data)` — `group/name`. Supply-side used the resolver's output directly,
+and the resolver returns the directory that *declares* a coordinate, which for a
+multi-module build sits inside the repo. `_apply_demand_side` then did an exact
+string lookup that could never bridge `group/repo` and `group/repo/some-client`.
+
+The merge logic was correct throughout. It was fed a key it could not match.
+
+**The last step was simply missing.** The identity index was built and wired, but
+nothing normalised its output back to a repo id — and `resolve()`'s own docstring
+claimed it returned *"the repo id that publishes it"*, which is very likely how
+it went unnoticed. A function documented as doing the thing it does not do.
+
+### The fix
+
+`_canonical_repo_id` matches the **longest known repo id** that prefixes the
+resolved path, applied where `_collect_candidates` sets `target_repo`.
+
+Longest-match rather than a segment count, because `group/subgroup/repo` is a
+valid GitLab path and this estate contains them (`OI-34`) — truncating to two
+segments would corrupt exactly those. It also needs neither a depth rule nor
+`.git`, both of which this estate defeats: 65 of 746 repos have no `.git` at all.
+
+The raw path is kept as `target_module` and surfaced as `evidence.declared_at`,
+since it is strictly more information than the repo id.
+
+### Three consequences beyond the merge
+
+None of these were in the report, and they are why this was not cosmetic:
+
+* **Paths were suppressed.** `paths_by_repo` is keyed by repo id, so a
+  module-path target matched none — and a binding with no paths cannot match a
+  route.
+* **Confidence was capped as a side effect.** `_confidence` returns
+  `"high" if has_paths else "medium"`, so the missing paths held those candidates
+  at `medium`. Expect the confidence distribution to shift upward after this
+  lands; that is the fix, not a regression.
+* **`service_aliases` was corrupted.** It is `target.split("/")[-1]`, which for
+  `group/repo/warehouse-client` yielded the build module rather than the service.
+  Alias matching is how a hand-rolled caller is recognised, so it misdirected the
+  very pass the alias exists for.
+
+### The migration hazard, handled
+
+Candidates already reviewed are stored keyed on the **old** module path. The new
+key is the repo id, so a naive fix would find nothing and silently revert every
+`accepted`/`rejected` to `pending` — losing human review work with no message.
+`_load_discovered` now indexes each stored candidate under its canonical key as
+well, and `OI33-M3` is the mutant for that exact loss.
+
+### The 8 empty targets
+
+Kept rather than dropped — dropping loses information — but now carrying a
+warning that names the coordinate and says promoting it would create an edge to
+nothing. An unresolvable target must not read like a merely weak candidate.
+That is `OI-36`'s rule applied at the point it was violated.
+
+### What this says about the class
+
+`resolve()` was documented as returning a repo id and returned a clone path. The
+mismatch was invisible because both are strings, both look like `a/b`, and the
+consumer that could not match simply produced fewer merges. Nothing failed. That
+is `OI-36` again, in its purest form: **the wrong answer, with no signal.**
+

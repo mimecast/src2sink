@@ -89,6 +89,17 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **Discovery's two passes could never agree, so `discovery_method: "both"` was
+  unreachable (`OI-33`).** The supply-side pass named a target by the directory
+  that *declares* the client coordinate — inside the repo for a multi-module
+  build — while the demand-side pass used the repo id. An exact-string lookup
+  could not bridge them, so the strongest signal the design produces occurred
+  zero times in 226 candidates. Targets are now normalised to the longest known
+  repo id, which also restores the `paths` and `service_aliases` the bad key was
+  suppressing. Reviewer decisions on already-triaged candidates are preserved
+  across the key change, and a coordinate that resolves to nothing now says so
+  instead of arriving as an ordinary weak candidate.
+
 - **Api-client discovery rescanned the whole fleet once per class (`OI-35`).**
   The demand-side pass asked "which repos contain a file called `StockClient`"
   by walking every node of every record, once per target *and* per class — so
