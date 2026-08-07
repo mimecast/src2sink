@@ -68,7 +68,7 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 | OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | **gate shipped in 3.0.0**; 44 handlers frozen as debt and ratcheted down. The remaining work is the sweep | **P1** |
 | OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
-| OI-40 | 40 | A candidate's `target_repo` names the client library when the library is its own repo | small | 42 of 191 candidates name the wrong node and would misattribute every edge; the correction is derivable and agrees with the human answer 11/11 | **P1** |
+| OI-40 | 40 | A candidate's `target_repo` names the client library when the library is its own repo | small | 42 of 191 candidates named the wrong node; the correction agrees with the hand-authored bindings 11/11 | **closed** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
