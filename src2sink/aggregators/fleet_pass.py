@@ -51,12 +51,14 @@ class RecordCollector(Protocol[T_co]):
     """
 
     def consume(self, record: dict[str, Any]) -> None:
-        """Fold one repo record into the accumulating result."""
-        ...
+        """Fold one repo record into the accumulating result.
+
+        Must not retain ``record``: holding records is the memory cost this
+        whole mechanism exists to avoid.
+        """
 
     def result(self) -> T_co:
         """The finished reduction. Called once, after the pass."""
-        ...
 
 
 def run_fleet_pass(

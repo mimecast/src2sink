@@ -23,8 +23,11 @@ from typing import Any
 
 import pytest
 
+# One import style per module: three tests monkeypatch `fleet_pass` internals
+# and need the module object, so the symbol import goes rather than mixing
+# both. Flagged by CodeQL on earlier PRs for the same reason.
+from src2sink.aggregators import fleet_pass as fp
 from src2sink.aggregators.data_stores import StoreCollector, _collect_stores
-from src2sink.aggregators.fleet_pass import run_fleet_pass
 from src2sink.aggregators.queues import QueueCollector, compute_queue_graph
 from src2sink.graph_common import load_v2_repo_records
 
@@ -68,7 +71,7 @@ def metabase(tmp_path):
 def test_streaming_and_loading_agree(metabase):
     """A faster reduction that reduces differently is not a fix."""
     queues, stores = QueueCollector(), StoreCollector()
-    run_fleet_pass(metabase, (queues, stores))
+    fp.run_fleet_pass(metabase, (queues, stores))
 
     records = load_v2_repo_records(metabase)
     assert queues.result() == compute_queue_graph(records)
@@ -84,7 +87,7 @@ def test_a_collector_does_not_retain_records(metabase):
     it silently, and nothing about its output would look wrong.
     """
     collectors = [QueueCollector(), StoreCollector()]
-    run_fleet_pass(metabase, collectors)
+    fp.run_fleet_pass(metabase, collectors)
 
     for collector in collectors:
         for value in vars(collector).values():
@@ -96,8 +99,6 @@ def test_a_collector_does_not_retain_records(metabase):
 
 def test_the_fleet_is_read_once_for_all_collectors(metabase, monkeypatch):
     """The count, which is the point but not the risk."""
-    import src2sink.aggregators.fleet_pass as fp
-
     reads = [0]
     original = fp.iter_v2_repo_records
 
@@ -106,7 +107,7 @@ def test_the_fleet_is_read_once_for_all_collectors(metabase, monkeypatch):
         yield from original(*a, **kw)
 
     monkeypatch.setattr(fp, "iter_v2_repo_records", counted)
-    run_fleet_pass(metabase, (QueueCollector(), StoreCollector(), QueueCollector()))
+    fp.run_fleet_pass(metabase, (QueueCollector(), StoreCollector(), QueueCollector()))
     assert reads[0] == 1, "three collectors must cost one pass, not three"
 
 
@@ -122,7 +123,7 @@ def test_every_collector_sees_every_record(metabase):
         def consume(self, record): seen[self.slot].append(record["name"])
         def result(self): return seen[self.slot]
 
-    run_fleet_pass(metabase, (Spy(0), Spy(1)))
+    fp.run_fleet_pass(metabase, (Spy(0), Spy(1)))
     assert seen[0] == seen[1] == ["consumer", "producer"]
 
 
@@ -134,25 +135,23 @@ def test_record_order_is_the_loading_order(metabase):
         def consume(self, record): order.append(f"{record['group']}/{record['name']}")
         def result(self): return order
 
-    run_fleet_pass(metabase, (Spy(),))
+    fp.run_fleet_pass(metabase, (Spy(),))
     assert order == [f"{r['group']}/{r['name']}" for r in load_v2_repo_records(metabase)]
 
 
 def test_no_collectors_reads_nothing(metabase, monkeypatch):
     """An empty pass must not walk the fleet to do nothing with it."""
-    import src2sink.aggregators.fleet_pass as fp
-
     def explode(*a, **kw):
         raise AssertionError("the fleet was read for zero collectors")
 
     monkeypatch.setattr(fp, "iter_v2_repo_records", explode)
-    run_fleet_pass(metabase, ())
+    fp.run_fleet_pass(metabase, ())
 
 
 def test_an_empty_metabase_is_not_an_error(tmp_path):
     """Aggregation runs before any record exists on a first build."""
     queues = QueueCollector()
-    run_fleet_pass(tmp_path, (queues,))
+    fp.run_fleet_pass(tmp_path, (queues,))
     assert queues.result().topics == ()
 
 
