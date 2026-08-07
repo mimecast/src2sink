@@ -2776,7 +2776,7 @@ first draft of these tests did, and the failure caught.
 ### Resolution
 
 **Fixed in:** 3.0.0  
-**Commit:** _this PR_  
+**Commit:** `96aff62` — PR #47  
 **Tests:** `tests/test_oi39_test_path_classification.py` — 32 cases across both directions, plus the boundary cases that keep each half honest. Mutants `OI39-M1`, `OI39-M2`.
 
 ### How it was found
