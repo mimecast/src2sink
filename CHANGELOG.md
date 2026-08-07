@@ -89,6 +89,14 @@ an intra-repo path cannot pass through by definition.
   against every binding while resident: **N× fewer file reads**, plus a further 2×
   from building the indices once per run instead of twice.
 
+- **A gate against silent detection failures (`OI-36`).** The principle that a
+  detection path must not fail to empty without saying so has been written down
+  since 1.1.0 — and was then violated in every release since, including three
+  Kotlin gaps that left a JVM fleet reporting clean while detecting nothing. It
+  is now enforced: a handler that discards an exception must emit a signal or be
+  listed with a reason. 59 were found, 15 justified, and 44 frozen as debt that
+  can only shrink. No behaviour change; what it prevents is the next one.
+
 - **A versioned `api/latest/` directory contributed nothing to the metabase
   (`OI-39`).** The test-path predicate's camelCase branch ran under
   `IGNORECASE`, so *any* path segment ending in "test" was treated as a test
