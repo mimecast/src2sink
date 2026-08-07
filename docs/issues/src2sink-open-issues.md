@@ -68,6 +68,8 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 | OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Needs a product decision first** | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 | OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | cross-cutting: 12 whole-function silent failures found; the pattern behind `OI-18`, `OI-31`, `OI-13` and three Kotlin gaps | **P0** |
+| OI-37 | 37 | The Express inbound-endpoint pattern has no receiver, so any `.get("…")` is an HTTP route | small | 10,225 of 10,245 Express endpoints are false, all at `confidence: "high"`; two thirds of every inbound endpoint in the fleet, and 43 of 94 fleet traces | **P1** |
+| OI-38 | 38 | Only the build indexes traces, so the trace index never describes the batch that just ran | small | the index and its catalogue-coverage figure are always one run stale, and absent entirely on a first run | **P2** |
 
 Every issue from the original review is fixed and recorded in
 [`src2sink-closed-issues.md`](src2sink-closed-issues.md), with the ordering
@@ -788,4 +790,346 @@ returned clean results while detecting nothing**, across two releases, and neith
 was found by the tool. The estate's exposure was reported as low, confidently, on
 no evidence. Every other issue here is about finding more; this one is about
 knowing when we have found nothing because we broke.
+
+---
+
+## 37. The Express inbound-endpoint pattern has no receiver, so any `.get("…")` is an HTTP route  `OI-37`
+
+**Severity:** High — this is a wrong answer, not a missing one, and it is emitted at `confidence: "high"`.
+**Status:** open. Found on the first completed fleet-wide trace batch (94 traces), when nearly half the corpus turned out to be drawn from one vendored JavaScript bundle.
+
+### Symptom
+
+Inbound endpoints across a 746-repo fleet, by framework:
+
+| framework | nodes | share |
+|---|---|---|
+| **express** | **10,245** | **66.5%** |
+| jax-rs | 4,671 | 30.3% |
+| spring | 456 | 3.0% |
+| flask | 14 | 0.1% |
+| gin | 8 | 0.1% |
+| fastapi | 3 | 0.0% |
+
+Two thirds of every inbound endpoint in a predominantly JVM estate is attributed
+to Express. That ratio was the tell.
+
+Resolving each of the 10,245 against its actual source line — reading the file
+at the recorded `file:line` and recovering the receiver the regex discarded:
+
+```
+express http-in nodes        : 10245
+  receiver app/router/server :    20      <-- 0.2%
+  distinct receivers         :   353
+```
+
+**20 are real routes. 10,225 are not.**
+
+### Root cause
+
+`extractors/patterns.py:382`:
+
+```python
+"javascript": [
+    (re.compile(r'\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'), "express"),
+],
+```
+
+The pattern begins at the dot. It matches a method call named after an HTTP verb
+taking a string literal — on *any* receiver, anywhere in any JavaScript or
+TypeScript file.
+
+Every sibling in `HTTP_IN_RX` is anchored to something that means "route
+declaration". Flask requires `@app.route`, FastAPI requires `@router.`, Spring
+and JAX-RS require an annotation, Gin at least requires the uppercase verb its
+router idiom uses. The JavaScript entry is the only one with no anchor at all,
+and JavaScript is the language where `.get(key)` is ubiquitous for reasons that
+have nothing to do with HTTP.
+
+What the 10,225 actually are, by receiver:
+
+| what it is | nodes | share |
+|---|---|---|
+| Angular reactive-form field access — `form.get('quantity')` | 4,391 | 42.9% |
+| other non-router receivers | 1,942 | 19.0% |
+| unresolved — match spans lines, or the file is minified | 1,537 | 15.0% |
+| Cypress selectors — `cy.get('[data-test="…"]')` | 1,104 | 10.8% |
+| map / cache / header lookups — `headers.get('…')`, `$templateCache.put('…')` | 646 | 6.3% |
+| **outbound** HTTP client calls — `$http.post('/orders')`, `httpClient.get(…)` | 605 | 5.9% |
+| genuine Express router | 20 | 0.2% |
+
+Two properties of that table matter more than the headline:
+
+* **The 605 outbound calls are direction-inverted, not merely spurious.** A call
+  the service *makes* is recorded as a door into it. That is a wrong edge, and
+  it points the wrong way.
+* **64% of all matches (6,575) are in test, spec, Cypress or e2e files**, and 5%
+  are in vendored, bundled or minified assets. Neither is excluded from inbound
+  endpoint extraction.
+
+The worked example is the clearest single case. A vendored copy of a
+client-side framework contains its own template cache:
+
+```js
+$templateCache.put("template/banner/banner.html", "<div …>");
+```
+
+recorded as:
+
+```json
+{"family": "http-in", "framework": "express", "confidence": "high",
+ "detail": {"method": "PUT", "path": "template/banner/banner.html",
+            "raw": ".put(\"template/banner/banner.html\""},
+ "file": "…/framework.js", "line": 30444}
+```
+
+An inbound `PUT` endpoint, at high confidence, from a cache write in a
+third-party library the team does not own.
+
+### Why the confidence is `high`
+
+`extractors/regex_extractors.py:112` hardcodes it:
+
+```python
+node = make_node(
+    ...
+    family="http-in",
+    framework=framework,
+    detail={"method": method, "path": path, "raw": m.group(0)[:140]},
+    confidence="high",
+)
+```
+
+Every `http-in` node from every language shares one literal. An annotation-anchored
+Spring route and a bare `.get("key")` in a minified bundle are indistinguishable
+downstream. This is worth fixing independently of the regex: a pattern with no
+anchor cannot honestly report `high`, and the value is not derived from anything.
+
+### Impact
+
+`http-in` is not a leaf. It is the entry-point set:
+
+* **It is the trace corpus.** 43 of the 94 traces in the first completed
+  fleet-wide batch derive from Express endpoints. A reviewer opening the output
+  finds most of it is template-cache keys, Cypress fixtures and form field names.
+  The genuine findings are outnumbered roughly two to one, which is the failure
+  mode that gets a tool switched off.
+* **It is what reachability is computed from.** `OI-21` derives entry points from
+  these nodes; anything built on "is this sink reachable from outside" inherits
+  10,225 fictitious front doors, 6,575 of them in test code that does not ship.
+* **`raw` cannot be used to audit it.** The stored `raw` starts at the dot, so it
+  never contains the receiver — all 10,245 look identical in the output. The
+  distinction is only recoverable by re-reading the original source, which is
+  how the numbers above were obtained. Worth widening `raw` to include the
+  receiver regardless of the fix, since it is the field a reviewer would reach
+  for first.
+
+This is the `OI-36` shape with the sign flipped: not a path that fails to empty
+without a signal, but one that fails to a **confident wrong answer** without a
+signal. Nothing in the run manifest suggests that two thirds of the fleet's
+inbound endpoints came from one unanchored pattern.
+
+### Proposed fix
+
+Anchor the receiver. The routers are a small, closed, conventional set, and
+everything else is noise:
+
+```python
+"javascript": [
+    # Express/Koa/Fastify route declarations only. The receiver is required:
+    # `.get("…")` with no receiver constraint matches reactive-form field
+    # access, Cypress selectors, header and cache lookups, and outbound client
+    # calls — 10,225 of 10,245 matches in the observed 746-repo fleet.
+    (re.compile(
+        r'\b(?:app|router|server|api|fastify|_router|[A-Za-z_$][\w$]*[Rr]outer)'
+        r'\s*\.\s*(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'
+    ), "express"),
+],
+```
+
+Verified against the fleet: this keeps the 20 genuine routes and drops the
+10,225. That is the whole population — there is no middle band to tune.
+
+Two changes worth making alongside, neither of which the regex covers:
+
+1. **Exclude test and vendored trees from inbound-endpoint extraction**, or mark
+   the nodes with their provenance. 64% of current matches are in `*.spec.*`,
+   `*.test.*`, `*.cy.*`, `__tests__/`, `cypress/` or `e2e/`, and a route declared
+   only in a test is not an entry point of the deployed service. If they are kept,
+   they should be distinguishable — reachability must be able to exclude them.
+2. **Derive `confidence` from how anchored the match was**, rather than hardcoding
+   `high`. An annotation or a required receiver earns `high`; a bare pattern
+   earns `medium` at best. This is the change that would have surfaced the defect
+   without a fleet run.
+
+**Residual, not fixed by the above.** The Gin pattern (`\.(GET|POST|…)\(`) is
+unanchored in the same way and relies on Go's uppercase-verb convention to stay
+honest. Only 8 nodes in this fleet, so there is no evidence either way — worth a
+look when someone is next in that file, not worth a change on its own.
+
+### Suggested tests
+
+```python
+def test_express_route_is_detected():
+    assert _paths("router.get('/stock', handler)") == ["/stock"]
+    assert _paths("app.post('/stock/adjust', handler)") == ["/stock/adjust"]
+
+def test_reactive_form_field_is_not_an_endpoint():
+    assert _paths("this.stockAdjustmentForm.get('quantity').setValue(0)") == []
+
+def test_cypress_selector_is_not_an_endpoint():
+    assert _paths("cy.get('[data-test=\"stock-total\"]')") == []
+
+def test_template_cache_write_is_not_an_endpoint():
+    assert _paths('$templateCache.put("template/banner/banner.html", tpl)') == []
+
+def test_outbound_client_call_is_not_an_inbound_endpoint():
+    # direction matters: a call the service makes is not a door into it
+    assert _paths("$http.post('/orders', body)") == []
+
+def test_header_and_map_lookups_are_not_endpoints():
+    assert _paths("req.headers.get('x-request-id')") == []
+
+def test_confidence_reflects_the_anchor():
+    # a bare pattern must not claim the confidence an annotation earns
+    assert _node("router.get('/stock', h)").confidence == "high"
+```
+
+The direction test is the one to write first. The other cases are noise a
+reviewer learns to skip; an outbound call recorded as an inbound endpoint is a
+wrong edge that survives into whatever is built on the entry-point set.
+
+A fleet-level guard is also cheap and would have caught this on any run: if one
+framework accounts for the overwhelming majority of inbound endpoints in an
+estate whose primary languages are something else, say so in the run manifest.
+The ratio was the symptom long before anyone read a single node.
+
+---
+
+## 38. Only the build indexes traces, so the trace index never describes the batch that just ran  `OI-38`
+
+**Severity:** Low as a defect, higher as a reporting error — the index states a
+coverage figure, and the figure is wrong whenever it is most likely to be read.
+**Status:** open. Found on the first completed fleet-wide trace batch: 94 reports
+written, no index produced.
+
+### Symptom
+
+`write_traces_index()` is called from exactly one place, `aggregators/graphs.py:82`,
+inside `aggregate_graphs_v2()` — the **build's** aggregation phase:
+
+```python
+write_index_v2(metabase_root, repo_jsons)
+write_pii_flow_v2(metabase_root, repo_jsons)
+write_traces_index(metabase_root)          # <-- the only caller
+```
+
+Neither entry point that produces traces calls it. `trace_batch.py` ends its run
+at `return written, skipped, errors`, and `trace.py` never references the index at
+all. So the index is written by the one command that does not create traces, and
+not written by the two that do.
+
+The normal workflow is build, then trace. Under that order the index is generated
+in the middle — before any trace from this cycle exists — and therefore always
+describes the **previous** batch.
+
+Two consequences, in increasing order of how much they matter:
+
+* **After a rebuild-and-retrace, the index is one run stale.** It lists the prior
+  set of reports and links to filenames that may no longer exist.
+* **On a first run the index never appears at all.** `write_traces_index` opens
+  with `if not traces_dir.is_dir(): return 0`, and on a clean metabase the traces
+  directory does not exist when aggregation runs. The batch then creates it and
+  writes every report. Observed exactly this: a batch wrote 94 reports and left no
+  `INDEX.md` behind. Running `write_traces_index()` by hand afterwards indexed all
+  94, in under a second.
+
+### Why this is more than cosmetic
+
+The index is not only a list of links. It computes and states catalogue coverage:
+
+```python
+md.append(
+    f"\n**Catalogue coverage:** {len(traced & catalogue)} / "
+    f"{len(catalogue)} endpoints have traces.\n",
+)
+```
+
+followed by a **Missing traces** table and the instruction to run
+`trace_batch.py --skip-existing`. That is the operational signal telling an
+operator what is left to do — and it is computed from whichever traces happened to
+be on disk during the last aggregation, not from the batch that just finished.
+
+So the one number in the output that says *how complete this is* is stale by
+construction, and it is stale in the direction that matters: immediately after a
+batch, when someone is checking whether the batch covered everything. An operator
+following the file's own advice would re-run `--skip-existing` against a coverage
+figure describing a different set of traces.
+
+This is the `OI-36` shape once more, in a milder form: not silence, but a
+confident figure derived from inputs that were not the ones the reader believes
+they were.
+
+### Proposed fix
+
+Call it where the traces are written. It is idempotent, it takes a single
+argument the batch already has, and it globs a directory that has just been
+written — sub-second on 94 reports:
+
+```python
+    written, skipped, errors = batch_trace(
+        metabase_root,
+        limit=args.limit,
+        skip_existing=args.skip_existing,
+        scan_repos=repos_root,
+    )
+    # The index reports catalogue coverage, so it must be written by whatever
+    # last changed the trace set — not by the build, which runs before any
+    # trace exists and therefore always describes the previous batch (OI-38).
+    write_traces_index(metabase_root)
+    print(
+        f"Batch trace done: wrote={written} skipped={skipped} errors={errors}",
+    )
+    return 1 if errors and not written else 0
+```
+
+Do the same in `trace.py`, so a single re-traced endpoint does not leave the
+coverage figure describing a set it is no longer part of.
+
+**Keep the call in `aggregate_graphs_v2` as well.** It costs nothing when the
+directory is absent — the early `return 0` handles that — and it keeps the index
+consistent when a rebuild changes the catalogue without any trace being re-run.
+The two calls are complements, not duplicates: the build call refreshes coverage
+when the *catalogue* moves, the batch call refreshes it when the *traces* move.
+Today only the first exists, which is why the figure drifts.
+
+### Suggested tests
+
+```python
+def test_batch_writes_its_own_index(tmp_metabase):
+    # a batch run on a metabase with no traces directory must leave an index
+    run_batch(tmp_metabase, limit=2)
+    index = tmp_metabase / "graphs" / "traces" / "INDEX.md"
+    assert index.is_file()
+    assert "2 reports" in index.read_text()
+
+def test_index_counts_the_batch_that_just_ran(tmp_metabase):
+    run_batch(tmp_metabase, limit=1)
+    run_batch(tmp_metabase, limit=3)          # index must not still say 1
+    assert "3 reports" in (tmp_metabase / "graphs" / "traces" / "INDEX.md").read_text()
+
+def test_coverage_figure_matches_traces_on_disk(tmp_metabase):
+    # the stated coverage must be derived from the current trace set
+    run_batch(tmp_metabase, limit=0)
+    text = (tmp_metabase / "graphs" / "traces" / "INDEX.md").read_text()
+    traced = len(list((tmp_metabase / "graphs" / "traces").glob("*.md"))) - 1  # minus INDEX
+    assert f"{traced} / " in text
+
+def test_single_trace_refreshes_the_index(tmp_metabase):
+    ...
+```
+
+The second is the one that fails today and the one worth writing first: it
+reproduces the drift without needing a clean metabase, and it fails for the right
+reason rather than on the absence of a file.
 
