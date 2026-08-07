@@ -53,7 +53,8 @@ def test_pii_sources_md_under_byte_cap() -> None:
 
         jsonl = root / "taint" / "pii-sources.jsonl"
         assert jsonl.is_file()
-        line_count = sum(1 for _ in jsonl.open(encoding="utf-8"))
+        with jsonl.open(encoding="utf-8") as fh:
+            line_count = sum(1 for _ in fh)
         assert line_count == 8000
 
 

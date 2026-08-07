@@ -200,9 +200,16 @@ def write_pii_cross_repo_graph(
     repo_jsons: list[Path] | None = None,
     *,
     field_key: str = "phone",
+    records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Write the cross-repo field-flow markdown + jsonl and return the flows."""
-    records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    """Write the cross-repo field-flow markdown + jsonl and return the flows.
+
+    ``records`` lets a caller running this per PII field parse the fleet once
+    rather than once per field. Three fields meant three full parses of a 2.2 GB
+    metabase for identical input (`OI-41`).
+    """
+    if records is None:
+        records = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
     phone_repos = _material_repos_with_field(touches, field_key)
     strong_repos = _strong_material_repos_with_field(touches, field_key)
     flows = build_cross_repo_flows(records, touches, field_key=field_key)

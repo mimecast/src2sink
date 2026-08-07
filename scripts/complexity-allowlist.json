@@ -19,10 +19,6 @@
       "cyclomatic": 12,
       "cognitive": 9
     },
-    "src2sink/aggregators/data_stores.py:_collect_stores": {
-      "cyclomatic": 11,
-      "cognitive": 18
-    },
     "src2sink/aggregators/library_source_map.py:generate_library_source_map": {
       "cyclomatic": 12,
       "cognitive": 21
@@ -52,8 +48,8 @@
       "cognitive": 20
     },
     "src2sink/aggregators/pii_cross_repo.py:write_pii_cross_repo_graph": {
-      "cyclomatic": 12,
-      "cognitive": 5
+      "cyclomatic": 13,
+      "cognitive": 6
     },
     "src2sink/aggregators/pii_flow_v2.py:_collect_pii_flow": {
       "cyclomatic": 11,
