@@ -2850,3 +2850,69 @@ signal for "this is third-party code we do not own" — line length and lack of
 newlines are heuristics, not facts — so this needs a decision rather than a
 pattern, and it is left open rather than guessed at.
 
+---
+
+## OI-40 — A candidate's `target_repo` names the client library when the library is its own repo
+
+### Resolution
+
+**Fixed in:** 3.0.0  
+**Commit:** _this PR_  
+**Tests:** `tests/test_oi40_client_repo_target.py` — 14 cases. The two that matter are `test_a_real_service_is_never_rewritten` and `test_an_endpointless_target_is_flagged_not_dropped`. Mutants `OI40-M1`…`OI40-M4`.
+
+### Symptom
+
+42 of 191 candidates named a client library as `target_repo`; 0 of the 99
+hand-authored bindings do. The record looks entirely correct — real repo, real
+artifact, real consumers, unaffected confidence — and only the semantics are
+wrong, which is why it survives every existing check.
+
+### Root cause
+
+`OI-33`'s fix behaving exactly as designed, meeting a case its design did not
+consider. When a client library is published from **its own repository**, the
+repo that declares the coordinate *is* the library. The pipeline faithfully
+answers *"which repo declares this artifact"* while the binding needs *"which
+service does this artifact call"* — a question coordinate resolution cannot
+reach, because the service is not named anywhere in the consumer's dependency
+declaration.
+
+`OI-33` fixed the identity's **shape**. This is its **referent**.
+
+### The fix, and why the discriminator is not the name
+
+A service has inbound endpoints; a client library does not. So the test is the
+endpoint count, and the name supplies only the stem to search for. The reporter's
+own measurement is why: the name rule caught all 42 with no false positives *on
+this fleet*, but the endpoint rule catches those 42 **plus 26 more across 19
+repos** that no naming convention would find.
+
+Validated against bindings written independently and long before discovery
+existed: of 11 derivable corrections, **11 agree with the human-chosen target and
+0 disagree**.
+
+### Three outcomes, all recorded
+
+1. **Corrected** — `target_repo` becomes the service, the library is kept as
+   `client_repo`, and a warning names the substitution. A rewrite a reviewer
+   cannot see is one they cannot check.
+2. **No endpoints and no sibling** — emitted with a warning naming *both*
+   possibilities. **Never dropped.** Zero endpoints is also what an `OI-17`-class
+   detection gap looks like, and the two are indistinguishable from outside;
+   filtering them would hide our own blind spot behind what reads as a
+   data-quality rule. That is `OI-36` with the tool doing it to itself.
+3. **Unchanged** — the common case, no annotation, so the warnings stay worth
+   reading.
+
+### On the migration mechanism
+
+`_load_discovered`'s `known`-based indexing — written for `OI-33` so a target
+reshaping would not discard reviewer accepts — carried this change with **no
+modification at all**. The candidate key changes, and previously-accepted
+candidates are still found.
+
+That is the second use of one mechanism, and it is worth noting for `OI-34`: the
+*structure* generalises, but the *derivation* does not. `_canonical_repo_id` maps
+long → short by prefix; `OI-34` needs short → long, which is neither a prefix
+relation nor unambiguous. See the migration table in `OI-34`.
+

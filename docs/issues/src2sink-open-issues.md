@@ -502,6 +502,26 @@ the identity index already answers: `_build_component_identity_index` maps
 coordinates to declaring directories, and that is precisely the set of publishable
 modules.
 
+**Migration is already solved in shape, but not in direction.** `_load_discovered`
+indexes a stored candidate under its canonical key as well as its stored one, so
+a reviewer's accepts survive a target reshaping — written for `OI-33`, and reused
+unchanged for `OI-40`.
+
+The *structure* carries to `OI-34`; the *derivation* does not. `_canonical_repo_id`
+maps long → short by prefix:
+
+| change | direction | works today |
+|---|---|---|
+| `OI-33` | `group/repo/module` → `group/repo` | ✅ prefix match |
+| `OI-40` | client repo → the service it fronts | ✅ separate derivation, same indexing |
+| `OI-34` | `group/repo` → `group/repo/project` | ❌ **not a prefix relation, and ambiguous** |
+
+Under `OI-34` a stored `group/repo` must resolve to one of several children, and
+nothing in the path says which. The disambiguator is already in the key:
+`_key(target, artifact)` carries the artifact, and the identity index knows which
+project publishes it. So the work is a third derivation plugged into the same
+indexing, not a new mechanism.
+
 **Consequence for `OI-33`.** No conflict, and no rework. `_canonical_repo_id`
 matches the longest *known* id, so the moment the metabase knows
 `group/repo/warehouse-client` as a project, the same function stops collapsing it.
@@ -750,175 +770,3 @@ no evidence. Every other issue here is about finding more; this one is about
 knowing when we have found nothing because we broke.
 
 ---
-
-## 40. A candidate's `target_repo` names the client library when the library is its own repo  `OI-40`
-
-**Severity:** High — the candidate is well-formed, plausible and wrong. It names
-a real repo, so nothing downstream rejects it, and every edge it produces is
-attributed to the wrong node.
-**Status:** open. Found while reviewing the 191 candidates from the first
-trustworthy discovery run, against the 99 hand-authored bindings as ground truth.
-
-### Symptom
-
-**42 of 191 candidates give a `target_repo` that is a client library, not a
-service.** For comparison, **0 of the 99 hand-authored bindings do** — the
-convention is not ambiguous, and the discovered set breaks it in 22% of cases.
-
-A binding's contract, from the authoring guide: `target_repo` is *"the **service**
-that receives the calls"* and `maven_artifact` is the library. These 42 invert it:
-
-```
-target_repo    : commerce/warehouse-service-client      <-- the library's own repo
-maven_artifact : warehouse-service-client
-                 (the service, commerce/warehouse-service, is not referenced)
-```
-
-Nothing about the record looks wrong. The repo id is real, the artifact is real,
-the consumers are real, and `confidence` is unaffected. Only the semantics are
-wrong, which is why this survives every existing check.
-
-### Root cause
-
-This is `OI-33`'s fix behaving exactly as designed, meeting a case its design did
-not consider. `resolve(coord)` yields the directory declaring the coordinate;
-`_canonical_repo_id` maps that to the repo owning the directory. Both steps are
-correct. But when a client library is published from **its own repository**
-rather than as a submodule of the service, the repo owning the declaration *is*
-the client library. The pipeline faithfully answers "which repo declares this
-artifact" when the binding needs the answer to "which service does this artifact
-call" — a different question that coordinate resolution cannot reach, because the
-service is not mentioned anywhere in the consumer's dependency declaration.
-
-`OI-33` fixed the *shape* of the identity. This is the *referent* being wrong,
-and no amount of path normalisation reaches it.
-
-### A discriminator exists, and it is not the name
-
-The obvious rule — reject a `target_repo` ending in `-client` — works on this
-fleet but is the weaker test. Measured over all 191 candidates:
-
-| | candidates | targets with **zero** inbound endpoints |
-|---|---|---|
-| target named `*-client` / `*-clients` / `*-sdk` | 42 | **42 (all)** |
-| every other target | 141 | 26 |
-
-* **No repo named like a client library was a service.** All 42 have zero inbound
-  endpoints, so the name rule produced no false positives here — but it is
-  string-matching a convention, and it fails silently on any estate that names
-  its libraries differently.
-* **Zero inbound endpoints is the stronger, name-independent test.** It catches
-  all 42, plus 26 further candidates across 19 repos that the name rule misses
-  entirely. A binding's target is by definition a service that receives calls; a
-  target with no detected inbound endpoint cannot fulfil that, and its `paths`
-  will be empty for the same reason.
-
-**The caution that must ship with it:** zero inbound endpoints is *also* what a
-detection gap looks like. `OI-17` left an entire language half of a fleet
-returning no endpoints. So this must not silently drop candidates — the two
-causes are indistinguishable from the outside, and one of them is the tool's own
-blind spot.
-
-### The correction is derivable, and it agrees with the human answer
-
-Strip the client suffix from the library repo's name and look for a fleet repo
-with that stem that *does* declare inbound endpoints:
-
-| outcome | count |
-|---|---|
-| exactly one sibling service, with endpoints | **11** |
-| ambiguous (more than one candidate) | **0** |
-| no sibling service anywhere in the fleet | 31 |
-
-Validated against the hand-authored bindings, which were written independently
-and long before discovery existed: of the 11 corrections, **11 agree with the
-human-chosen `target_repo` and 0 disagree.** The rule reproduces the curated
-answer exactly, including cases where the stem needed a `-service` suffix and
-cases where the artifact id and the repo name differ.
-
-The 31 without a sibling are not failures of the rule — the service genuinely is
-not in the scanned fleet. Guessing a target for those would manufacture the
-broken edges `OI-33` was about.
-
-### Proposed fix
-
-```python
-def _service_for_client_repo(
-    declaring_repo: str, endpoints: Mapping[str, int]
-) -> str | None:
-    """Map a client-library repo to the service repo it fronts, or None.
-
-    `resolve(coord)` names the repo that *declares* the artifact. When the client
-    library is its own repo, that is the library, not the service the binding is
-    supposed to point at (`OI-40`). A service has inbound endpoints; a client
-    library does not — so look for a single sibling with the same stem that does.
-    Returns None rather than guessing: 31 of 42 in the observed fleet had no
-    sibling because the service is not in the scanned set at all.
-    """
-    group, name = declaring_repo.split("/", 1)
-    stem = _CLIENT_SUFFIX_RX.sub("", name)
-    hits = [
-        r for r, n in endpoints.items()
-        if n > 0 and r.split("/")[-1] in (stem, f"{stem}-service")
-    ]
-    return hits[0] if len(hits) == 1 else None
-```
-
-Apply it after `_canonical_repo_id`, and in all three outcomes record what
-happened rather than silently substituting:
-
-1. **Corrected** — set `target_repo` to the service, and keep the library repo as
-   `client_repo`. A reviewer needs to see the substitution to check it.
-2. **Target has no inbound endpoints and no sibling resolves** — emit with a
-   warning naming both possibilities: *"target declares no inbound endpoints; it
-   may be a client library whose service is outside the scanned fleet, or a
-   service whose endpoints were not detected"*. Do not drop it — the second case
-   is `OI-17`, and silently discarding it would hide a detection gap behind what
-   looks like a data-quality filter.
-3. **Unchanged** — the common case, no annotation.
-
-**Do not gate this on the repo name.** The name is corroboration, not the test;
-`_CLIENT_SUFFIX_RX` above is used only to derive the *stem to search for*, after
-the endpoint count has already established that the target is not a service.
-
-### Suggested tests
-
-```python
-FLEET = {"commerce/warehouse-service": 12, "commerce/warehouse-service-client": 0}
-
-def test_client_repo_resolves_to_the_service_it_fronts():
-    assert _service_for_client_repo("commerce/warehouse-service-client", FLEET) \
-        == "commerce/warehouse-service"
-
-def test_service_suffix_variant_resolves():
-    fleet = {"commerce/warehouse-service": 12, "commerce/warehouse-client": 0}
-    assert _service_for_client_repo("commerce/warehouse-client", fleet) \
-        == "commerce/warehouse-service"
-
-def test_absent_service_is_not_guessed():
-    assert _service_for_client_repo("commerce/warehouse-client", {"other/thing": 3}) is None
-
-def test_a_service_is_left_alone():
-    # a real service must never be rewritten, whatever it is called
-    assert _service_for_client_repo("commerce/warehouse-service", FLEET) is None
-
-def test_endpointless_target_is_flagged_not_dropped():
-    # OI-17 makes "no endpoints" ambiguous; the candidate must survive with a warning
-    cand = _build_candidate(target="commerce/warehouse-service", fleet={"commerce/warehouse-service": 0})
-    assert cand is not None and cand["warnings"]
-```
-
-The last two matter most. A rule that rewrites targets can do more damage than
-the defect if it fires on a genuine service, and one that drops endpointless
-targets would turn `OI-17`-class blindness into an invisible filter.
-
-### Why this is P1 rather than P2
-
-It is small to fix and the correction is already validated, but the reason to do
-it soon is that these candidates **pass review by looking correct**. Every other
-defect in the discovery path announces itself — a malformed id, an empty field, a
-count that is obviously wrong. This one produces a well-formed binding naming a
-real repository, and the only way to catch it is to know the convention and check
-each target by hand against the fleet. Whatever is promoted becomes authoritative
-and silently misdirects every edge it matches.
-

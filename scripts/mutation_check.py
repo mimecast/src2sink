@@ -1149,10 +1149,64 @@ CATALOGUE: tuple[Mutant, ...] = (
         ),
     ),
     Mutant(
+        id="OI40-M1",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    corrected = _service_for_client_repo(target, endpoints)",
+        new="    corrected = None",
+        selector="tests/test_oi40_client_repo_target.py",
+        note=(
+            "The target goes back to naming the client library rather than the "
+            "service it calls. 42 of 191 candidates in the observed fleet, all "
+            "well-formed and naming a real repo — they pass review by looking "
+            "correct, and every edge they produce is attributed to the wrong node."
+        ),
+    ),
+    Mutant(
+        id="OI40-M2",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    if endpoints.get(declaring_repo):\n"
+            "        return None  # it receives calls, so it is a service; leave it alone",
+        new="    if False:\n        return None",
+        selector="tests/test_oi40_client_repo_target.py",
+        note=(
+            "A repo that *does* declare inbound endpoints is rewritten anyway, so "
+            "a real service named `*-client` is redirected to a different repo. A "
+            "rule that rewrites targets can do more damage than the defect it "
+            "fixes, and this is that damage."
+        ),
+    ),
+    Mutant(
+        id="OI40-M3",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    return hits[0] if len(hits) == 1 else None",
+        new="    return hits[0] if hits else None",
+        selector="tests/test_oi40_client_repo_target.py",
+        note=(
+            "An ambiguous stem resolves to whichever sibling sorts first, so two "
+            "possible services become one confident wrong answer instead of no "
+            "answer."
+        ),
+    ),
+    Mutant(
+        id="OI40-M4",
+        file="src2sink/aggregators/api_client_discovery.py",
+        old="    if endpointless:\n"
+            "        existing: list[str] = list(entry.get(\"warnings\") or [])\n"
+            "        entry[\"warnings\"] = [*existing, endpointless]",
+        new="    if False:\n        pass",
+        selector="tests/test_oi40_client_repo_target.py",
+        note=(
+            "A target with no inbound endpoints stops saying so. Zero endpoints "
+            "is also what an OI-17-class detection gap looks like, and the two "
+            "are indistinguishable from outside — so losing the warning hides our "
+            "own blind spot behind a clean-looking candidate."
+        ),
+    ),
+    Mutant(
         id="OI33-M1",
         file="src2sink/aggregators/api_client_discovery.py",
-        old="            target = _canonical_repo_id(resolved, known) or \"\"",
-        new="            target = resolved",
+        old="    target = _canonical_repo_id(resolved, known) or \"\"",
+        new="    target = resolved",
         selector="tests/test_oi33_canonical_repo_id.py",
         note=(
             "The supply-side target goes back to the declaring module path, so it "

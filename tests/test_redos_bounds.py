@@ -38,6 +38,7 @@ from src2sink import (
     vocabulary,
 )
 from src2sink.aggregators import (
+    api_client_discovery,
     openapi_discovery,
     payload_producers,
     pii_touchpoint_utils,
@@ -124,6 +125,7 @@ _HARVESTED_MODULES = (
     config_extractor,
     internal_groups_mod,
     openapi_discovery,
+    api_client_discovery,
     payload_producers,
     pii_touchpoint_utils,
     repo_utils,
