@@ -54,6 +54,18 @@ exposes `POST /stock`. It is consumed by a fictitious repo
 
 ## 5. Priority
 
+Every issue below is scheduled in
+[`src2sink-4.0-plan.md`](../plans/src2sink-4.0-plan.md):
+
+| issue | 4.0 phase |
+|---|---|
+| `OI-36` sweep | Phase 1 — before `OI-34`, so identity work cannot add silent paths |
+| `OI-27`, `OI-34` | Phase 2 — one piece of work; both want an authoritative statement of the estate |
+| `OI-20` | Phase 3 |
+| `OI-22`, `OI-23` | Phase 4 — `OI-22` is load-bearing for `OI-34`, since `.git` cannot discriminate when a fifth of the fleet lacks it |
+| `OI-32` | outside the sequence — measured at 2.4%, do it when someone is already in that code |
+| — | §3.5 carries the larger performance lever `OI-32` surfaced: the metabase is **roughly twice the source it describes** |
+
 | id | # | Issue | Effort | Value | Priority |
 |---|---|---|---|---|---|
 | OI-20 | 20 | Only SQL has a library evidence catalogue | large | deserialization has no family at all; every other sink type is pattern-only | **P1** |

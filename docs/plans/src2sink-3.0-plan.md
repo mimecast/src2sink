@@ -1,5 +1,11 @@
 # src2sink 3.0 — unified plan
 
+> **Complete.** 3.0.0 shipped `OI-13`, `OI-15`, `OI-17`, `OI-29` and `OI-30`
+> through `OI-40`; the 3.1.0 cycle added `OI-41` and `OI-42`. Phase 4 and the
+> remaining open issues moved to [`src2sink-4.0-plan.md`](src2sink-4.0-plan.md).
+> Kept because the decision records and the two corrections in §2a are the useful
+> part of it.
+
 > **Amended.** [`observe-then-classify.md`](observe-then-classify.md) revises
 > Phase 1 (observation is separated from classification, not just computation
 > from rendering), rescopes Phase 2 (`OI-17` is bipartite reachability at
@@ -214,15 +220,13 @@ controller→service→DAO chain at high confidence and pruned a decoy.
 appear in none, Java and Kotlin agree, and a four-hop `medium` chain does not
 report as `medium`.
 
-### Phase 4 — retention, privacy, and drift reporting
+### Phase 4 — ~~retention, privacy, and drift reporting~~
 
-`R4` from the design: a stated maximum retention with a privacy rationale, merged
-into the threat model. Then the drift queries the versioning exists for — Q2
-("what changed"), Q4 ("is this trace still true"), Q5 ("callers of an endpoint
-that no longer exists").
-
-**Exit:** retention is bounded by policy, not by disk; the threat model records
-it as a control.
+**Moved to [`src2sink-4.0-plan.md`](src2sink-4.0-plan.md), Phase 5**, unstarted
+and unchanged. It was always the phase with no dependency on the rest of this
+plan, and 4.0's identity work (`OI-34`) has to land before the drift queries mean
+anything — *"callers of an endpoint that no longer exists"* is a different
+question once a project rather than a directory is the unit.
 
 ---
 
