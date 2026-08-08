@@ -643,6 +643,75 @@ def _load_bindings(path: Path) -> list[dict[str, Any]]:
     return [b for b in bindings if isinstance(b, dict)] if isinstance(bindings, list) else []
 
 
+def _promotion_rejections(
+    candidate: dict[str, Any],
+    known_repos: frozenset[str],
+    endpoints: dict[str, set[str]],
+) -> list[str]:
+    """Why this candidate must not be promoted, or an empty list.
+
+    `promote` merged on trust and validated nothing, so every check was the
+    reviewer's to perform by hand. Two of the five documented gates are pure
+    computation the tool already does at discovery time — 50 of 191 candidates
+    in the first fleet review failed one of them (`OI-42`).
+
+    The reviewer keeps the judgement calls. This takes the arithmetic.
+    """
+    target = str(candidate.get("target_repo") or "")
+    artifact = candidate.get("maven_artifact") or "(none)"
+
+    if not target:
+        return [f"{artifact}: target_repo is empty — it resolved to no repo at all"]
+    if target not in known_repos:
+        return [
+            f"{artifact}: target_repo {target!r} is not a repo in this metabase; "
+            "promoting it would create an edge to a node that does not exist"
+        ]
+    service = _service_for_client_repo(target, endpoints)
+    if service:
+        return [
+            f"{artifact}: target_repo {target!r} declares no inbound endpoints and "
+            f"looks like a client library fronting {service!r} — a binding's "
+            "target is the service that receives the calls, not the library"
+        ]
+    return []
+
+
+def _screen_for_promotion(
+    metabase_root: Path, accepted: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return the candidates that pass the mechanical gates, naming the rest."""
+    records = load_v2_repo_records(metabase_root)
+    known_repos = frozenset(repo_id(d) for d in records)
+    endpoints = _http_in_paths_by_repo(records)
+
+    mergeable: list[dict[str, Any]] = []
+    for cand in accepted:
+        reasons = _promotion_rejections(cand, known_repos, endpoints)
+        for reason in reasons:
+            print(f"REFUSED: {reason}", file=sys.stderr)
+        if not reasons:
+            mergeable.append(cand)
+    return mergeable
+
+
+def _merge_bindings(
+    bindings: list[dict[str, Any]],
+    index: dict[tuple[Any, Any], list[dict[str, Any]]],
+    mergeable: list[dict[str, Any]],
+) -> None:
+    """Merge candidates into ``bindings`` in place, refreshing every duplicate."""
+    for c in mergeable:
+        binding = {k: c[k] for k in _TUNABLE_FIELDS if k in c}
+        key = (binding.get("target_repo"), binding.get("maven_artifact"))
+        if key in index:
+            for existing in index[key]:
+                existing.update(binding)
+        else:
+            bindings.append(binding)
+            index[key].append(binding)
+
+
 def promote_api_clients(metabase_root: Path, target_path: Path) -> int:
     """Merge ``accepted`` candidates into the authoritative ``api-clients.json``.
 
@@ -650,25 +719,32 @@ def promote_api_clients(metabase_root: Path, target_path: Path) -> int:
     (by ``(target_repo, maven_artifact)``): a new coordinate is appended, an
     existing one is updated in place. Idempotent — re-running merges the same set
     without creating duplicates. Returns the number of accepted candidates merged.
+
+    Candidates failing a mechanically-checkable gate are **refused and named**
+    rather than merged, and the file's other top-level keys survive the rewrite
+    (`OI-42`).
     """
     candidates = _load_discovered(metabase_root / DISCOVERED_FILE).values()
     accepted = [c for c in candidates if c.get("status") == STATUS_ACCEPTED]
     if not accepted:
         return 0
 
-    bindings = _load_bindings(target_path)
-    index = {(b.get("target_repo"), b.get("maven_artifact")): b for b in bindings}
-    for c in accepted:
-        binding = {k: c[k] for k in _TUNABLE_FIELDS if k in c}
-        key = (binding.get("target_repo"), binding.get("maven_artifact"))
-        if key in index:
-            index[key].update(binding)
-        else:
-            bindings.append(binding)
-            index[key] = binding
+    mergeable = _screen_for_promotion(metabase_root, accepted)
 
+    document = _load_bindings_file(target_path)
+    bindings = _load_bindings(target_path)
+    # Every copy of a key, not just the last. Indexing a list that may hold
+    # duplicates into a dict keeps only the final one, so earlier copies were
+    # left at their old values — still present, still loaded, now inconsistent.
+    index: dict[tuple[Any, Any], list[dict[str, Any]]] = defaultdict(list)
+    for b in bindings:
+        index[(b.get("target_repo"), b.get("maven_artifact"))].append(b)
+    _merge_bindings(bindings, index, mergeable)
+
+    # The whole document, so `_comment` — which carries the "never commit"
+    # handling notice on a gitignored, sensitivity-marked file — survives.
+    document["bindings"] = bindings
     target_path.write_text(
-        json.dumps({"bindings": bindings}, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
+        json.dumps(document, indent=2, sort_keys=False) + "\n", encoding="utf-8",
     )
-    return len(accepted)
+    return len(mergeable)
