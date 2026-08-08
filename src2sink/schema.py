@@ -42,7 +42,12 @@ SCHEMA_VERSION = 2
 # language whose extraction is limited. 3.1.0 shipped detection 13, so 14
 # through 17 all land in the same unreleased window — one rescan covers the
 # lot.
-DETECTION_VERSION = 17
+#
+# 18 is `OI-43` step 3: declared field types and supertypes for TypeScript,
+# Go and Python, plus TypeScript interfaces, which were never recorded as
+# types at all. Every `type-decl` in those languages gains content it never
+# carried, and TypeScript and Python calls resolve at a stronger tier.
+DETECTION_VERSION = 18
 
 
 

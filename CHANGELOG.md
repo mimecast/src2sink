@@ -9,7 +9,7 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### ⚠️ Upgrading
 
-**A full rescan is required.** `DETECTION_VERSION` moves 13 → 17, so records
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 18, so records
 built by an earlier version are not reused and the next run rebuilds every repo.
 `SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
 metabase still parses and no consumer needs changing.
@@ -18,13 +18,37 @@ Two bumps, one rescan. **14** was a *deliberate false positive* of the detection
 gate: the phase-timing change touches no record-producing code — records built by
 13 and 14 are byte-identical — but the file it edits is fingerprinted, and the
 gate was allowed to be literal rather than accumulate another judgement call.
-**15**, **16** and **17** are real detection changes: the `OI-36` sweep makes a
+**15** through **18** are real detection changes: the `OI-36` sweep makes a
 record say when a file or manifest could not be parsed, `OI-43` step 2 gives Go
-repos the type declarations they were never emitting, and `OI-43` step 4 adds the
-per-language coverage note. All of them land in the same unreleased window, so
-**a single rescan covers the lot.**
+repos the type declarations they were never emitting, `OI-43` step 4 adds the
+per-language coverage note, and `OI-43` step 3 gives TypeScript, Go and Python
+the field and supertype facts they never carried. All of them land in the same
+unreleased window, so **a single rescan covers the lot.**
 
 ### Added
+
+- **Call resolution outside the JVM (`OI-43`, step 3).** Declared field types
+  and supertypes are now read for TypeScript, TSX, Go and Python, and
+  TypeScript interfaces are recorded as types at all — they were not, so T2 had
+  nothing to expand. On the canonical shape (an interface-typed field, called,
+  resolving to the implementation with a body):
+
+  | language | before | after |
+  |---|---|---|
+  | TypeScript / TSX | T3 `low` | **T2 `medium`** |
+  | Python | T3 `low` | **T1 `high`** |
+  | JavaScript | T3 `low` | supertypes read; T1 impossible — it declares no types |
+  | Go | T3 `low` | T3 `low` — the facts are there, the receiver is not |
+
+  TypeScript reads `constructor(private dao: Dao)` as well as explicit members,
+  because that one line both declares a member and injects it — the Angular and
+  NestJS shape. Python counts only *annotated* attributes.
+
+  **Go is deliberately unfinished and says so.** Its type and field facts are now
+  correct, but `s.repo` is discarded because the receiver name is whatever the
+  author chose and nothing carries it from the declaration to the call. Separately,
+  Go interface satisfaction is *structural*, so T2 can never fire through a Go
+  interface at all. Both are recorded in `OI-43`.
 
 - **A repo says which of its languages it could only partly read (`OI-43`,
   step 4).** One note per repo per language whose extraction is limited — never

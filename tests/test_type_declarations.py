@@ -293,3 +293,120 @@ def test_a_package_level_go_function_has_no_owner():
         for n in nodes if n.family == "method-decl"
     }
     assert owners["Free"] is None
+
+
+# --- TypeScript, Python, Go fields and supertypes (`OI-43` step 3) ------------
+
+_TS = """
+interface Repo extends Base { find(): void }
+class JdbcRepo implements Repo { find(): void { db.query("SELECT 1") } }
+class Svc extends Mid implements Repo {
+  private repo: Repo;
+  public label: string = "x";
+  constructor(private dao: Dao, plain: string) {}
+  go() { this.repo.find() }
+}
+"""
+
+
+def test_a_typescript_interface_is_a_type_declaration():
+    """Without this, T2 had nothing to expand even once supertypes existed.
+
+    `interface_declaration` was absent from `CLASS_NODE_TYPES`, so the
+    declaration a call resolves *to* was missing — not merely the edge to it.
+    """
+    types = _types(_TS, "typescript", "src/svc.ts")
+    assert "Repo" in types
+    assert types["Repo"]["is_interface"] is True
+
+
+def test_typescript_reads_both_field_forms():
+    """`private dao: Dao` in a constructor declares a member and injects it.
+
+    That is the Angular/NestJS shape, so reading only explicit members would
+    leave TypeScript resolvable by accident — the trap `class_parameter` was for
+    Kotlin.
+    """
+    fields = _types(_TS, "typescript", "src/svc.ts")["Svc"]["fields"]
+    assert fields == {"repo": "Repo", "label": "string", "dao": "Dao"}
+
+
+def test_a_plain_constructor_parameter_is_not_a_field():
+    """`plain: string` has no accessibility modifier, so it declares nothing.
+
+    Without that check every method's arguments would be recorded as fields of
+    its class.
+    """
+    assert "plain" not in _types(_TS, "typescript", "src/svc.ts")["Svc"]["fields"]
+
+
+def test_typescript_supertypes_cover_extends_and_implements():
+    """One list, as for Java and Kotlin: both answer "where else might this be"."""
+    assert sorted(_types(_TS, "typescript", "src/svc.ts")["Svc"]["supertypes"]) == [
+        "Mid", "Repo",
+    ]
+
+
+_PY = """
+class Repo: ...
+class Svc(Repo, Base):
+    repo: Repo
+    plain = 1
+    def go(self): helper(alpha, beta)
+"""
+
+
+def test_python_records_only_annotated_attributes():
+    """`plain = 1` states no type, so it says nothing a call resolves against.
+
+    Recording it with an empty type would be worse than omitting it: the caller
+    could not tell "untyped" from "typed as nothing".
+    """
+    assert _types(_PY, "python", "src/svc.py")["Svc"]["fields"] == {"repo": "Repo"}
+
+
+def test_python_bases_do_not_collect_call_arguments():
+    """`class Svc(Repo, Base)` is an `argument_list` — and so is `helper(1, 2)`.
+
+    Walking for the node type would have recorded every call's arguments as
+    supertypes, which is why the bases are read from the `superclasses` field.
+    """
+    assert sorted(_types(_PY, "python", "src/svc.py")["Svc"]["supertypes"]) == [
+        "Base", "Repo",
+    ]
+
+
+_GO_EMBED = """
+type Base interface { Ping() }
+type Repo interface {
+	Base
+	Find()
+}
+type Svc struct {
+	repo Repo
+	name string
+	Embedded
+}
+"""
+
+
+def test_go_struct_fields_are_recorded():
+    """A named `field_declaration` is a field; an unnamed one is embedding."""
+    assert _types(_GO_EMBED, "go", "src/svc.go")["Svc"]["fields"] == {
+        "repo": "Repo", "name": "string",
+    }
+
+
+def test_go_embedding_is_a_supertype():
+    """Embedding promotes the embedded type's methods, which is T2's question.
+
+    Both forms: an unnamed struct field, and a bare `type_elem` in an interface.
+    """
+    types = _types(_GO_EMBED, "go", "src/svc.go")
+    assert types["Svc"]["supertypes"] == ["Embedded"]
+    assert types["Repo"]["supertypes"] == ["Base"]
+
+
+def test_an_embedded_type_is_not_also_a_field():
+    """It has no name, so recording it as one would invent a member."""
+    assert "Embedded" not in _types(_GO_EMBED, "go", "src/svc.go")["Svc"]["fields"]
