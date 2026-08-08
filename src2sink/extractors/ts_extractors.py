@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_sitter import Tree
+
 from .ast_walk import (
     extract_call_arguments,
     extract_call_receiver,
@@ -11,6 +16,7 @@ from .ast_walk import (
     line_number,
     node_text,
 )
+from ..constants import NOTE_PARSE_FAILED
 from .base import parse_source, supported_languages
 from .file_context import FileExtractionContext
 from .node_factory import make_node
@@ -29,6 +35,31 @@ from .patterns import (
 # these — `OI-17` step 3 widened them to every call, because a call graph
 # needs the hops between the ends, not only the ends.
 SCRIPT_EXEC_NAMES = frozenset({"eval", "exec", "compile"})
+
+
+def _parse_or_note(ctx: FileExtractionContext, ts_lang: str, src_bytes: bytes) -> Tree | None:
+    """Parse the file, recording *why* on failure instead of returning empty.
+
+    Three passes parsed the same file and each swallowed the failure the same
+    way, so a file tree-sitter could not read took part in no path and the
+    answer came back "nothing reaches a sink here" — at full confidence, from a
+    foundation that had not been read. That is `OI-36` sitting underneath
+    `OI-17`.
+
+    The note is deduplicated because all three passes hit the same file and fail
+    identically; one file that would not parse should read as one problem.
+    """
+    try:
+        return parse_source(ts_lang, src_bytes)
+    except (KeyError, OSError, ValueError) as exc:
+        note = (
+            f"{ctx.rel_path}: {ctx.language} {NOTE_PARSE_FAILED} "
+            f"({type(exc).__name__}); no calls, declarations or types were "
+            "extracted from this file, so it takes part in no path"
+        )
+        if note not in ctx.notes:
+            ctx.notes.append(note)
+        return None
 
 
 def _add_call_observation(
@@ -157,9 +188,8 @@ def extract_tree_sitter_calls(ctx: FileExtractionContext) -> None:
         return
 
     src_bytes = ctx.source.encode("utf-8")
-    try:
-        tree = parse_source(ts_lang, src_bytes)
-    except (KeyError, OSError, ValueError):
+    tree = _parse_or_note(ctx, ts_lang, src_bytes)
+    if tree is None:
         return
 
     # Computed once per file, not once per call: the answer cannot vary within a
@@ -281,9 +311,8 @@ def extract_method_declarations(ctx: FileExtractionContext) -> None:
     if not ts_lang:
         return
     src_bytes = ctx.source.encode("utf-8")
-    try:
-        tree = parse_source(ts_lang, src_bytes)
-    except (KeyError, OSError, ValueError):
+    tree = _parse_or_note(ctx, ts_lang, src_bytes)
+    if tree is None:
         return
 
     for owner, name, params, start, end in iter_method_declarations(
@@ -322,9 +351,8 @@ def extract_type_declarations(ctx: FileExtractionContext) -> None:
     if not ts_lang:
         return
     src_bytes = ctx.source.encode("utf-8")
-    try:
-        tree = parse_source(ts_lang, src_bytes)
-    except (KeyError, OSError, ValueError):
+    tree = _parse_or_note(ctx, ts_lang, src_bytes)
+    if tree is None:
         return
 
     for name, fields, supertypes, is_interface, line in iter_type_declarations(

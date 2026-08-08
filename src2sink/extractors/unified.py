@@ -41,8 +41,17 @@ def extract_from_file(
     rel_path: str,
     language: str,
     source: str,
+    notes: list[str] | None = None,
 ) -> tuple[list[FlowNode], list[FlowEdge]]:
-    """Run all extraction passes for one source file (regex, then tree-sitter)."""
+    """Run all extraction passes for one source file (regex, then tree-sitter).
+
+    ``notes`` collects anything that made a pass produce nothing *because it
+    broke*, rather than because there was nothing there (`OI-36`). It is an
+    optional sink rather than a third return value because roughly thirty tests
+    unpack the pair and none of them care; the scan passes ``summary.notes`` and
+    `tests/test_oi36_parse_failures.py` asserts that it does, so the production
+    path cannot quietly stop threading it.
+    """
     if _is_test_path(rel_path):
         return [], []
 
@@ -82,4 +91,6 @@ def extract_from_file(
     # A scan runs this inline for convenience; the same call re-runs over a
     # stored record with no source in sight, which is the point (OI-26, OI-20).
     derived_nodes, derived_edges = derive_from_observations(ctx.nodes)
+    if notes is not None:
+        notes.extend(ctx.notes)
     return [*ctx.nodes, *derived_nodes], [*ctx.edges, *derived_edges]

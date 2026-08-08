@@ -40,7 +40,16 @@ def test_manifest_records_provenance_without_secrets(tmp_path):
 
     assert m["tool"] == "src2sink"
     assert m["tool_version"]
-    assert m["counts"] == {"updated": 2, "skipped": 3, "timed_out": 1}
+    assert m["counts"] == {
+        "updated": 2, "skipped": 3, "timed_out": 1,
+        # `OI-36`, 4.0 phase 1: what the fleet could not read, counted at the
+        # run level so a note buried in one repo record among 746 is not the
+        # only place it appears.
+        "unparsed": {
+            "source_files": 0, "manifests": 0,
+            "repos_affected": 0, "records_unreadable": 0,
+        },
+    }
     # Per-repo SHAs recorded, sorted by repo id.
     assert m["updated_repos"][0] == {"repo": "a/one", "git_sha": "a" * 40}
     assert m["invocation"]["api_clients_configured"] is True

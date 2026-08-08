@@ -33,7 +33,13 @@ from .aggregators.library_source_map import (
 from .aggregators.phase3 import aggregate_phase3_v2
 from .aggregators.pii_flow_v2 import write_pii_flow_v2
 from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
-from .constants import MAX_FILE_BYTES, SKIP_DIRS, SOURCE_EXTENSIONS
+from .constants import (
+    MAX_FILE_BYTES,
+    NOTE_PARSE_FAILED,
+    NOTE_UNPARSED_MANIFEST,
+    SKIP_DIRS,
+    SOURCE_EXTENSIONS,
+)
 from .maven import resolve_pom_dependencies
 from .dependencies import (
     parse_go_mod,
@@ -294,22 +300,36 @@ def _collect_dependencies(repo_root: Path) -> tuple[list[dict[str, str]], list[s
                 "in build.gradle* matched no catalog entry; dependencies may be "
                 "incomplete (looked for *.versions.toml and settings.gradle*)"
             )
-    deps.extend(_collect_non_jvm_dependencies(repo_root))
+    non_jvm_deps, non_jvm_notes = _collect_non_jvm_dependencies(repo_root)
+    deps.extend(non_jvm_deps)
+    notes.extend(non_jvm_notes)
     notes.extend(unparsed_ecosystem_notes(repo_root))
     return deps, notes
 
 
-def _collect_non_jvm_dependencies(repo_root: Path) -> list[dict[str, str]]:
-    """Gather npm, Go and Python dependencies, preferring lockfiles (OI-19)."""
+def _collect_non_jvm_dependencies(
+    repo_root: Path,
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Gather npm, Go and Python dependencies, preferring lockfiles (OI-19).
+
+    Returns notes alongside: a manifest that will not parse yields no
+    dependencies, which is the same value as a repo that declares none
+    (`OI-36`).
+    """
     deps: list[dict[str, str]] = []
+    notes: list[str] = []
     for pkg in repo_root.rglob("package.json"):
         if not is_skipped_path(pkg, repo_root):
-            deps.extend(parse_npm_dependencies(repo_root, pkg))
+            pkg_deps, pkg_notes = parse_npm_dependencies(repo_root, pkg)
+            deps.extend(pkg_deps)
+            notes.extend(pkg_notes)
     for gomod in repo_root.rglob("go.mod"):
         if not is_skipped_path(gomod, repo_root):
             deps.extend(parse_go_mod(gomod))
-    deps.extend(parse_python_dependencies(repo_root))
-    return deps
+    py_deps, py_notes = parse_python_dependencies(repo_root)
+    deps.extend(py_deps)
+    notes.extend(py_notes)
+    return deps, notes
 
 
 def _record_dependencies(summary: RepoSummaryV2, deps: list[dict[str, str]]) -> None:
@@ -376,7 +396,8 @@ def _scan_repo_files(
             continue
         lang_counts[lang] += 1
         nodes, edges = extract_from_file(
-            repo_id=repo_id, rel_path=rel, language=lang, source=text
+            repo_id=repo_id, rel_path=rel, language=lang, source=text,
+            notes=summary.notes
         )
         all_nodes.extend(nodes)
         all_edges.extend(edges)
@@ -687,6 +708,46 @@ def _prewalk_checkout(repos_root: Path) -> None:
     )
 
 
+def _unparsed_counts(json_paths: list[Path]) -> dict[str, int]:
+    """Count what the fleet could not read, from the notes the scan recorded.
+
+    The sweep that emits these notes (`OI-36`, 4.0 phase 1) is only half the
+    fix: a note on one repo among 746 is not something anyone reads. The count
+    is what makes "12,000 files did not parse" visible on a run that otherwise
+    reports success, and the marker constants are shared with the producers so
+    the wording cannot drift out from under the counter.
+    """
+    counts = {
+        "source_files": 0, "manifests": 0, "repos_affected": 0, "records_unreadable": 0,
+    }
+    unreadable: list[str] = []
+    for jp in json_paths:
+        try:
+            data = json.loads(jp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            # A record this cannot read is a repo whose failures go uncounted, so
+            # the number would understate the problem while looking authoritative
+            # — the defect this function exists to report, in the reporter.
+            unreadable.append(f"{jp.name}: {type(exc).__name__}")
+            continue
+        before = counts["source_files"] + counts["manifests"]
+        for note in data.get("notes", []):
+            if NOTE_PARSE_FAILED in note:
+                counts["source_files"] += 1
+            elif NOTE_UNPARSED_MANIFEST in note:
+                counts["manifests"] += 1
+        if counts["source_files"] + counts["manifests"] > before:
+            counts["repos_affected"] += 1
+    counts["records_unreadable"] = len(unreadable)
+    if unreadable:
+        print(
+            f"  ⚠ {len(unreadable)} repo record(s) could not be read while "
+            "counting parse failures; the unparsed counts below are a lower bound",
+            file=sys.stderr,
+        )
+    return counts
+
+
 def _write_run_manifest(
     metabase_root: Path,
     args: argparse.Namespace,
@@ -697,6 +758,7 @@ def _write_run_manifest(
     started_at: str,
     finished_at: str,
     total_seconds: float,
+    json_paths: list[Path] | None = None,
 ) -> None:
     """Record run provenance for reproducibility / GDPR Art. 30 (finding R-1).
 
@@ -744,6 +806,12 @@ def _write_run_manifest(
             "updated": len(rows),
             "skipped": skipped,
             "timed_out": timed_out,
+            # `OI-36`, 4.0 phase 1. A detection path that failed to empty now
+            # records why, but a note buried in one repo record among 746 is not
+            # something anyone reads. This is the fleet-level number: a run that
+            # reports success while a tenth of the estate would not parse should
+            # say so in the same breath.
+            "unparsed": _unparsed_counts(json_paths or []),
         },
         "updated_repos": sorted(
             (
@@ -1166,6 +1234,7 @@ def main() -> int:
         started_at=started_at,
         finished_at=dt.datetime.now(dt.timezone.utc).isoformat(),
         total_seconds=total_seconds,
+        json_paths=jsons,
     )
     print(
         f"Finished {len(rows)} updated, {skipped} skipped, {timed_out} timed out, "

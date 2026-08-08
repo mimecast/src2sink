@@ -24,6 +24,10 @@ class FileExtractionContext:
     # with the request that carries it (sql-payload-out).
     http_out_sinks: list[FlowNode] = field(default_factory=list)
     raw_sql_field_lines: list[int] = field(default_factory=list)
+    # Why a pass produced nothing, when the reason is "it broke" rather than
+    # "there was nothing there" (`OI-36`). Every other field here is an
+    # observation about the source; this one is an observation about the scan.
+    notes: list[str] = field(default_factory=list)
 
     def line_number(self, pos: int) -> int:
         """Return the 1-based line number of byte offset ``pos`` in the source."""

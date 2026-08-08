@@ -108,7 +108,7 @@ had also listed them by hand. That is the coincidence the gate exists to stop
 relying on. Fixed; no new gaps surfaced, which is the good outcome and not
 evidence the fix was inert.
 
-### Phase 1 — the silent-failure sweep (`OI-36`)
+### Phase 1 — the silent-failure sweep (`OI-36`)  — **done**
 
 The gate shipped in 3.0.0 and holds the line at **43 frozen handlers**. This is
 the sweep it was deliberately scoped ahead of.
@@ -129,6 +129,45 @@ paths while nobody is watching.
 
 **Exit:** `_KNOWN_SILENT` materially smaller; the run manifest carries a count of
 what could not be parsed.
+
+**Shipped. 43 → 36.** Both clusters are gone.
+
+The four dependency parsers now return `(deps, notes)`. Two consequences are
+stated rather than one, because they are different: a manifest that will not
+parse means `dependencies_internal` is *incomplete, not empty*; a **lockfile**
+that will not parse means the manifest still parsed and every dependency
+silently demoted from a resolved version to a range, so `resolved` counts
+understate what is actually pinned. Reporting the second as "could not parse
+dependencies" would be wrong in the other direction.
+
+The three `ts_extractors` passes share one `_parse_or_note` helper. They all
+parse the *same file* and fail identically, so the note is deduplicated — one
+file that will not parse reads as one problem, not three.
+
+**The count is half the fix.** A note on one repo record among 746 is not
+something anyone reads, so `run-manifest.json` carries
+`counts.unparsed = {source_files, manifests, repos_affected, records_unreadable}`.
+The markers are shared constants (`NOTE_PARSE_FAILED`, `NOTE_UNPARSED_MANIFEST`)
+rather than repeated string literals, because a note whose wording drifts stops
+being counted and the run then reports *fewer* failures than happened.
+
+`records_unreadable` exists because the gate caught the counter itself failing
+silently: a record `_unparsed_counts` cannot read is a repo whose failures go
+uncounted, which is this issue arriving inside its own fix. It is now counted and
+warned about, and the manifest number is explicitly a lower bound.
+
+**What this phase surfaced and did not fix is now `OI-43`.** Asking whether any
+language other than Scala had no grammar turned up something larger: Scala is the
+honest gap, while TypeScript, JavaScript, Python and Go *have* grammars and
+resolve at `low` or not at all, because `OI-17`'s T1 and T2 tiers read tables
+filled in for Java and Kotlin only. Go's type declarations are discarded outright
+— `OI-13`'s shape for the third time. No `except` is involved anywhere in it,
+which is why neither the `OI-36` gate nor any list of handlers could have found
+it.
+
+`DETECTION_VERSION` 14 → 15. Unlike 14 this is a *real* detection change — `notes`
+genuinely differs — so the rescan is earned. If 14's rescan has not been run yet,
+15 subsumes it and one rescan covers both.
 
 ### Phase 2 — the estate's shape, told rather than inferred (`OI-27`, `OI-34`)
 
