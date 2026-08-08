@@ -30,7 +30,12 @@ SCHEMA_VERSION = 2
 # bump (`ccdb358`, `OI-31`), and the call was made the other way: one rescan
 # costs ~14 minutes once, and a gate with a growing list of judgement calls
 # stops being a gate. Records built by 13 and 14 are byte-identical.
-DETECTION_VERSION = 14
+#
+# 15 is the opposite: a real detection change. The `OI-36` sweep (4.0 phase
+# 1) makes a repo record say when a source file would not parse and when a
+# manifest could not be read, so `notes` genuinely differs. If 14's rescan
+# has not been run yet, 15 subsumes it — one rescan covers both.
+DETECTION_VERSION = 15
 
 
 

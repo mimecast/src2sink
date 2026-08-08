@@ -24,6 +24,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from .constants import NOTE_UNPARSED_MANIFEST
 from .repo_utils import is_internal_coordinate, safe_read_text
 
 # Ecosystems recognised for *identity* but not for dependencies. Listing them
@@ -40,6 +41,17 @@ _GOMOD_REQUIRE_LINE = re.compile(
     r"(?:/[A-Za-z0-9._~\-]+){1,10})\s+(v[0-9][A-Za-z0-9.+\-]{0,60})",
     re.M,
 )
+# What the reader loses, spelled out rather than left as "parse error". A note
+# saying only that something failed still leaves `dependencies_internal: []`
+# ambiguous, which is the whole complaint.
+_MANIFEST_CONSEQUENCE = (
+    "dependencies_internal is incomplete for this repo, not empty"
+)
+_LOCK_CONSEQUENCE = (
+    "versions fall back to the manifest's ranges, so `resolved` counts "
+    "understate what is actually pinned"
+)
+
 _PY_REQUIREMENT = re.compile(
     r"^\s*([A-Za-z0-9][A-Za-z0-9._\-]{0,120})\s*([<>=!~^][^;#]{0,120})?"
 )
@@ -80,40 +92,87 @@ def parse_go_mod(path: Path) -> list[dict[str, str]]:
     return deps
 
 
-def _python_lock_versions(repo_root: Path) -> dict[str, str]:
-    """Map distribution name to resolved version from any committed Python lockfile."""
+def _unreadable(name: str, consequence: str) -> str:
+    """The note for a manifest that is present but could not be read at all."""
+    return (
+        f"{name} is present but {NOTE_UNPARSED_MANIFEST} (unreadable or "
+        f"oversized); {consequence}"
+    )
+
+
+def _malformed(name: str, exc: Exception, consequence: str) -> str:
+    """The note for a manifest that is present, readable and not valid."""
+    return (
+        f"{name} is present but {NOTE_UNPARSED_MANIFEST} "
+        f"({type(exc).__name__}); {consequence}"
+    )
+
+
+def _python_lock_versions(repo_root: Path) -> tuple[dict[str, str], list[str]]:
+    """Map distribution name to resolved version from any committed Python lockfile.
+
+    Returns the notes alongside, because a lockfile that will not parse silently
+    demoted every dependency from `resolved` to `range` and nothing said so.
+    """
+    notes: list[str] = []
     for name in ("uv.lock", "poetry.lock"):
-        text = safe_read_text(repo_root / name)
+        path = repo_root / name
+        text = safe_read_text(path)
         if not text:
+            if path.is_file():
+                notes.append(_unreadable(name, _LOCK_CONSEQUENCE))
             continue
         try:
             data = tomllib.loads(text)
-        except tomllib.TOMLDecodeError:
+        except tomllib.TOMLDecodeError as exc:
+            notes.append(_malformed(name, exc, _LOCK_CONSEQUENCE))
             continue
         return {
             str(pkg.get("name", "")): str(pkg.get("version", ""))
             for pkg in data.get("package", [])
             if pkg.get("name")
-        }
-    return {}
+        }, notes
+    return {}, notes
 
 
-def parse_python_dependencies(repo_root: Path) -> list[dict[str, str]]:
+def _read_pyproject(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    """Return the `[project]` table, or None with a note saying why not.
+
+    Split out of `parse_python_dependencies` because reading-and-reporting is a
+    separate concern from resolving versions, and holding both put the function
+    over the complexity ratchet. `None` and `{}` are different answers: `{}` is a
+    manifest with no project table, `None` is a manifest nobody could read.
+    """
+    notes: list[str] = []
+    text = safe_read_text(path)
+    if not text:
+        if path.is_file():
+            notes.append(_unreadable(path.name, _MANIFEST_CONSEQUENCE))
+        return None, notes
+    try:
+        return tomllib.loads(text).get("project") or {}, notes
+    except tomllib.TOMLDecodeError as exc:
+        notes.append(_malformed(path.name, exc, _MANIFEST_CONSEQUENCE))
+        return None, notes
+
+
+def parse_python_dependencies(repo_root: Path) -> tuple[list[dict[str, str]], list[str]]:
     """Parse Python dependencies, preferring a lockfile's resolved versions.
 
     ``pyproject.toml`` states ranges; the lockfile states what those ranges
     became. Where both exist the lockfile wins, and where only the manifest
     exists the range is recorded as a range.
-    """
-    text = safe_read_text(repo_root / "pyproject.toml")
-    if not text:
-        return []
-    try:
-        project = tomllib.loads(text).get("project") or {}
-    except tomllib.TOMLDecodeError:
-        return []
 
-    locked = _python_lock_versions(repo_root)
+    A malformed manifest used to return `[]`, which reads as "this repo declares
+    no Python dependencies" — indistinguishable from the truth and wrong
+    (`OI-18` in another place, `OI-36` in general).
+    """
+    project, notes = _read_pyproject(repo_root / "pyproject.toml")
+    if project is None:
+        return [], notes
+
+    locked, lock_notes = _python_lock_versions(repo_root)
+    notes.extend(lock_notes)
     deps: list[dict[str, str]] = []
     for requirement in project.get("dependencies") or []:
         m = _PY_REQUIREMENT.match(str(requirement))
@@ -124,29 +183,34 @@ def parse_python_dependencies(repo_root: Path) -> list[dict[str, str]]:
             deps.append(_dep(name, locked[name], "resolved"))
         else:
             deps.append(_dep(name, spec, "range" if spec else "unresolved"))
-    return deps
+    return deps, notes
 
 
-def _npm_lock_versions(repo_root: Path) -> dict[str, str]:
+def _npm_lock_versions(repo_root: Path) -> tuple[dict[str, str], list[str]]:
     """Map package name to resolved version from ``package-lock.json``.
 
     Only the npm lockfile is parsed. ``yarn.lock`` and ``pnpm-lock.yaml`` use
     bespoke formats; a repo carrying one falls back to the manifest range, which
     is recorded honestly as a range rather than guessed at.
     """
-    text = safe_read_text(repo_root / "package-lock.json")
+    notes: list[str] = []
+    path = repo_root / "package-lock.json"
+    text = safe_read_text(path)
     if not text:
-        return {}
+        if path.is_file():
+            notes.append(_unreadable("package-lock.json", _LOCK_CONSEQUENCE))
+        return {}, notes
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as exc:
+        notes.append(_malformed("package-lock.json", exc, _LOCK_CONSEQUENCE))
+        return {}, notes
     out = _npm_lock_packages(data.get("packages") or {})
     for name, entry in (data.get("dependencies") or {}).items():
         version = (entry or {}).get("version")
         if version:
             out.setdefault(name, str(version))
-    return out
+    return out, notes
 
 
 def _npm_lock_packages(packages: dict[str, Any]) -> dict[str, str]:
@@ -162,17 +226,28 @@ def _npm_lock_packages(packages: dict[str, Any]) -> dict[str, str]:
     return out
 
 
-def parse_npm_dependencies(repo_root: Path, package_json: Path) -> list[dict[str, str]]:
-    """Parse npm dependencies, preferring the lockfile's resolved versions."""
+def parse_npm_dependencies(
+    repo_root: Path, package_json: Path
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Parse npm dependencies, preferring the lockfile's resolved versions.
+
+    A malformed `package.json` returned `[]`, which is the same answer as a repo
+    that genuinely declares nothing (`OI-36`).
+    """
+    notes: list[str] = []
     text = safe_read_text(package_json)
     if not text:
-        return []
+        if package_json.is_file():
+            notes.append(_unreadable(package_json.name, _MANIFEST_CONSEQUENCE))
+        return [], notes
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        notes.append(_malformed(package_json.name, exc, _MANIFEST_CONSEQUENCE))
+        return [], notes
 
-    locked = _npm_lock_versions(repo_root)
+    locked, lock_notes = _npm_lock_versions(repo_root)
+    notes.extend(lock_notes)
     deps: list[dict[str, str]] = []
     for section in ("dependencies", "devDependencies"):
         for name, spec in (data.get(section) or {}).items():
@@ -180,7 +255,7 @@ def parse_npm_dependencies(repo_root: Path, package_json: Path) -> list[dict[str
                 deps.append(_dep(name, locked[name], "resolved"))
             else:
                 deps.append(_dep(name, str(spec), "range"))
-    return deps
+    return deps, notes
 
 
 def unparsed_ecosystem_notes(repo_root: Path) -> list[str]:

@@ -25,6 +25,14 @@ CONFIG_FILE_NAMES = {
     "bootstrap.yml", "bootstrap.yaml", "bootstrap.properties",
 }
 
+# Stable markers in a repo's `notes`, so the run manifest can count what could
+# not be parsed without re-deriving anyone's wording (`OI-36`, 4.0 phase 1). A
+# note whose text drifts silently stops being counted, and the run then reports
+# fewer failures than happened — which is this issue arriving through its own
+# fix. Producers and `_unparsed_counts` share these two strings.
+NOTE_PARSE_FAILED = "parse failed"
+NOTE_UNPARSED_MANIFEST = "could not be parsed"
+
 MAX_FILE_BYTES = 1_500_000
 
 # Paths whose contents are not the deployed service. Matched against whole path

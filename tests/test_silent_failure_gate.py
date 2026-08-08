@@ -108,6 +108,13 @@ _SIGNAL_NOT_NEEDED: dict[str, str] = {
 # **cannot grow**: a new silent handler fails the build until someone either
 # emits a signal or argues for an addition. The ratchet below then requires it to
 # shrink over time.
+#
+# **43 -> 36 in 4.0 phase 1.** The two clusters the gate was scoped ahead of are
+# gone: the four dependency parsers now return notes alongside their results, so
+# a manifest that will not parse no longer reads as a repo declaring nothing; and
+# the three `ts_extractors` passes share one helper that records *why* a file
+# produced no observations, so a file tree-sitter cannot read no longer answers
+# "nothing reaches a sink here" at full confidence.
 _KNOWN_SILENT: frozenset[str] = frozenset({
     "src2sink.aggregators.api_client_discovery:_load_discovered",
     "src2sink.aggregators.library_source_map:fix_flagged_mappings",
@@ -126,13 +133,6 @@ _KNOWN_SILENT: frozenset[str] = frozenset({
     "src2sink.build_metabase_v2:_tool_version",
     "src2sink.build_metabase_v2:process_one_v2",
     "src2sink.build_metabase_v2:safe_read_text",
-    "src2sink.dependencies:_npm_lock_versions",
-    "src2sink.dependencies:_python_lock_versions",
-    "src2sink.dependencies:parse_npm_dependencies",
-    "src2sink.dependencies:parse_python_dependencies",
-    "src2sink.extractors.ts_extractors:extract_method_declarations",
-    "src2sink.extractors.ts_extractors:extract_tree_sitter_calls",
-    "src2sink.extractors.ts_extractors:extract_type_declarations",
     "src2sink.graph_common:iter_v2_repo_records",
     "src2sink.graph_common:load_one_v2_repo_record",
     "src2sink.known_api_clients:load_api_client_bindings",
@@ -278,7 +278,7 @@ def test_the_debt_only_shrinks() -> None:
         "an entry left _KNOWN_SILENT without the list being updated — good news, "
         "but shrink the frozen set so the ratchet holds the gain"
     )
-    assert len(_KNOWN_SILENT) <= 43, (
+    assert len(_KNOWN_SILENT) <= 36, (
         f"the OI-36 debt grew to {len(_KNOWN_SILENT)}; it is a ratchet and only "
         "goes down"
     )

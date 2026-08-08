@@ -56,13 +56,17 @@ _MUTANT_TIMEOUT_S = 120
 # away — but it has to be visible rather than creeping, so slow mutants are named
 # on every run.
 #
-# Raised 120 -> 130 -> 140 as the fleet-run issues landed. Measured at 122
+# Raised 120 -> 130 -> 140 -> 145 as the fleet-run issues landed. Measured at 122
 # mutants: 1m37s, of which **48s is two entries** (LIM-M3, LIM-M4) that can
 # only be killed by waiting for a timeout. The marginal cost of an ordinary
 # mutant is ~1s, so the budget is about the slow tail, not the count — which
 # is what the paragraph above says and what these raises respect. Revisit by
 # measuring the wall clock, not by counting entries.
-_MAX_CATALOGUE_SIZE = 140
+#
+# 140 -> 145 for the four `OI-36` phase-1 mutants. All four are ordinary: they
+# read a note or a count out of an in-memory structure, with no timeout to wait
+# on, so the slow tail is unchanged at two entries.
+_MAX_CATALOGUE_SIZE = 145
 _SLOW_MUTANT_S = 5.0
 
 
@@ -157,8 +161,8 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI19-M1",
         file="src2sink/dependencies.py",
-        old="    locked = _npm_lock_versions(repo_root)",
-        new="    locked: dict[str, str] = {}",
+        old="    locked, lock_notes = _npm_lock_versions(repo_root)",
+        new="    locked, lock_notes = {}, []",
         selector="tests/test_polyglot_dependencies.py",
         note=(
             "The npm lockfile stops overriding the manifest, so a resolved "
@@ -186,6 +190,54 @@ CATALOGUE: tuple[Mutant, ...] = (
         note=(
             "An unparsed ecosystem stops saying so, making "
             "dependencies_internal: [] mean both 'none' and 'cannot read'."
+        ),
+    ),
+    Mutant(
+        id="OI36-M1",
+        file="src2sink/extractors/ts_extractors.py",
+        old="        if note not in ctx.notes:\n            ctx.notes.append(note)",
+        new="        if False:\n            ctx.notes.append(note)",
+        selector="tests/test_oi36_parse_failures.py",
+        note=(
+            "A file tree-sitter cannot parse goes back to producing no "
+            "observations and no explanation, so 'nothing reaches a sink here' "
+            "is stated at full confidence from a foundation never read."
+        ),
+    ),
+    Mutant(
+        id="OI36-M2",
+        file="src2sink/dependencies.py",
+        old="        notes.append(_malformed(path.name, exc, _MANIFEST_CONSEQUENCE))",
+        new="        pass",
+        selector="tests/test_oi36_parse_failures.py",
+        note=(
+            "A malformed manifest returns [] with nothing recorded, which is "
+            "the same value as a repo that genuinely declares no dependencies "
+            "— OI-18's defect and the whole of OI-36."
+        ),
+    ),
+    Mutant(
+        id="OI36-M3",
+        file="src2sink/build_metabase_v2.py",
+        old="            notes=summary.notes",
+        new="            notes=None",
+        selector="tests/test_oi36_parse_failures.py",
+        note=(
+            "The scan stops collecting the per-file notes, so every parse "
+            "failure in the fleet is recorded into a list nobody reads. The "
+            "handlers still signal; nothing hears them."
+        ),
+    ),
+    Mutant(
+        id="OI36-M4",
+        file="src2sink/build_metabase_v2.py",
+        old='            unreadable.append(f"{jp.name}: {type(exc).__name__}")',
+        new="            pass",
+        selector="tests/test_oi36_parse_failures.py",
+        note=(
+            "The counter silently skips records it cannot read, so the run "
+            "reports fewer parse failures than happened while looking "
+            "authoritative — OI-36 arriving inside its own fix."
         ),
     ),
     Mutant(

@@ -9,18 +9,42 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### ⚠️ Upgrading
 
-**A full rescan is required.** `DETECTION_VERSION` moves 13 → 14, so records
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 15, so records
 built by an earlier version are not reused and the next run rebuilds every repo.
 `SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
 metabase still parses and no consumer needs changing.
 
-This one is a *deliberate false positive* of the detection gate. The change that
-triggered it adds phase timings and touches no record-producing code — records
-built by 13 and 14 are byte-identical — but the file it edits is fingerprinted,
-and the gate was allowed to be literal rather than accumulate another judgement
-call. The cost is one rescan, once.
+Two bumps, one rescan. **14** was a *deliberate false positive* of the detection
+gate: the phase-timing change touches no record-producing code — records built by
+13 and 14 are byte-identical — but the file it edits is fingerprinted, and the
+gate was allowed to be literal rather than accumulate another judgement call.
+**15** is a real detection change: the `OI-36` sweep makes a record say when a
+file or manifest could not be parsed, so `notes` genuinely differs. 15 subsumes
+14, so a single rescan covers both.
 
 ### Added
+
+- **A detection path that fails to empty now says so (`OI-36`, sweep phase 1).**
+  Two clusters, both the issue in its purest form. The **four dependency
+  parsers** recorded nothing when a manifest would not parse, so
+  `dependencies_internal: []` meant both "declares nothing" and "could not be
+  read". The **three tree-sitter passes** recorded nothing when a file would not
+  parse, so a file that was never read answered *"nothing reaches a sink here"*
+  at full confidence.
+
+  A malformed *manifest* and a malformed *lockfile* now say different things,
+  because the consequences differ: the first means dependencies are incomplete
+  rather than absent; the second means the manifest parsed fine and every
+  dependency silently demoted from a resolved version to a range.
+
+  `run-manifest.json` carries `counts.unparsed` —
+  `{source_files, manifests, repos_affected, records_unreadable}` — because a
+  note on one repo record among hundreds is not something anyone reads. The
+  frozen silent-handler debt drops **43 → 36**.
+
+  Not fixed, and now recorded in the issue: a language with **no grammar** (Scala
+  today) still contributes nothing silently. It is an early `return`, not an
+  `except`, so the gate cannot see it — the same shape `OI-13` had for Kotlin.
 
 - **Every run reports where its time went (`OI-32`).** `run-manifest.json` gains
   a `timing` block — total wall clock plus a nested per-phase breakdown, with

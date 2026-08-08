@@ -59,7 +59,7 @@ Every issue below is scheduled in
 
 | issue | 4.0 phase |
 |---|---|
-| `OI-36` sweep | Phase 1 — before `OI-34`, so identity work cannot add silent paths |
+| `OI-36` sweep | Phase 1 — **done**: 43 → 36, both named clusters fixed, before `OI-34` as planned |
 | `OI-27`, `OI-34` | Phase 2 — one piece of work; both want an authoritative statement of the estate |
 | `OI-20` | Phase 3 |
 | `OI-22`, `OI-23` | Phase 4 — `OI-22` is load-bearing for `OI-34`, since `.git` cannot discriminate when a fifth of the fleet lacks it |
@@ -80,7 +80,7 @@ Every issue below is scheduled in
 | OI-31 | 31 | The checkout is walked once per filename, and phases share nothing | small | 25 traversals of a 34 GB tree per run; `--discover-api-clients` was also silently ignored outside a full scan | **closed** |
 | OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Decided: the project is the unit.** Changes repo identity fleet-wide — a major | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
-| OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | **gate shipped in 3.0.0**; 44 handlers frozen as debt and ratcheted down. The remaining work is the sweep | **P1** |
+| OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | **gate shipped in 3.0.0**; sweep phase 1 shipped in 4.0 — the two named clusters fixed, debt **43 → 36**, and the run manifest now counts what could not be parsed. The remaining 36 are the tail | **P1** |
 | OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
 | OI-40 | 40 | A candidate's `target_repo` names the client library when the library is its own repo | small | 42 of 191 candidates named the wrong node; the correction agrees with the hand-authored bindings 11/11 | **closed** |
 
@@ -841,6 +841,45 @@ that cannot fire would be this same mistake one level up.
 
 ### Remaining: the sweep
 
+**Phase 1 of the 4.0 plan is done — steps 1 and 2 below, for the two clusters
+that were the issue in its purest form.** The debt ratchet moved **43 → 36**:
+
+* the **four dependency parsers** now return `(deps, notes)`. Two consequences
+  are distinguished, because they differ — a *manifest* that will not parse means
+  `dependencies_internal` is incomplete rather than empty; a *lockfile* that will
+  not parse means every dependency silently demoted from a resolved version to a
+  range, so `resolved` counts understate what is pinned;
+* the **three `ts_extractors` passes** share one `_parse_or_note` helper, so a
+  file tree-sitter cannot read no longer answers "nothing reaches a sink here" at
+  full confidence. All three parse the same file and fail identically, so the note
+  is deduplicated: one unreadable file reads as one problem;
+* `run-manifest.json` carries `counts.unparsed` —
+  `{source_files, manifests, repos_affected, records_unreadable}`. The markers are
+  shared constants, because a note whose wording drifts stops being counted and
+  the run then reports *fewer* failures than happened.
+
+`records_unreadable` is there because the gate caught the **counter itself**
+failing silently — a record it cannot read is a repo whose failures go uncounted,
+while the number still looks authoritative. It is counted, warned about, and the
+manifest figure is explicitly a lower bound.
+
+**Steps 3 and 4 below, and the remaining 36 handlers, are still open.** So is one
+thing phase 1 surfaced and deliberately did not fix:
+
+> **A language with no grammar is still silent, and it is not an `except` block.**
+> All three `ts_extractors` passes begin `if ctx.language not in
+> supported_languages(): return` — no exception, so the gate cannot see it, and
+> no note, so the file contributes no calls, declarations or types and nothing
+> says why. **Scala is scanned today and has no grammar**, which is exactly the
+> shape `OI-13` and `OI-17` had for Kotlin: counted in the language breakdown,
+> present in the report, contributing to no path, reported as clean.
+>
+> It was left out of phase 1 because the fix is not the same fix. A note per file
+> would fire for every Scala file in the estate, so the signal has to be per repo
+> per language — a count on the summary rather than a note — and that is a design
+> question, not a two-line change. It is also the second time `OI-39`'s lesson has
+> landed: **the surface is wider than any list of `except` blocks.**
+
 Not "raise everywhere" — the bulkhead exists for good reasons and a hostile repo
 must not stop a run. The rule is **degrade loudly, never silently**:
 
@@ -861,10 +900,12 @@ must not stop a run. The rule is **degrade loudly, never silently**:
 
 ### Suggested tests
 
-* A deliberately malformed manifest of each supported ecosystem produces a
-  **note**, not merely an empty list — one test per parser, since each was
-  written separately and each forgot separately.
-* An unparsable source file is counted in the run manifest.
+* ~~A deliberately malformed manifest of each supported ecosystem produces a
+  **note**, not merely an empty list~~ — **done** for Python and npm in
+  `tests/test_oi36_parse_failures.py`; the remaining ecosystems are identity-only
+  and already covered by `unparsed_ecosystem_notes`.
+* ~~An unparsable source file is counted in the run manifest.~~ **Done** —
+  `counts.unparsed.source_files`.
 * A repo with zero findings and a repo with zero *data* are distinguishable in
   the rendered output.
 * A structural gate: every `except` whose body is a lone `return`/`continue`/`pass`
