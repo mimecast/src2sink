@@ -7,6 +7,75 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-08
+
+**A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at
+`13` and `DERIVATION_VERSION` at `5` — no rescan, no re-derive, and an existing
+metabase is reused as-is. Two things in it: aggregation stops re-reading the same
+bytes, and `--promote-api-clients` stops taking a reviewer's word for what it can
+check itself.
+
+### ⚠️ Upgrading
+
+**`--promote-api-clients` now refuses candidates it previously accepted.** If you
+promote a batch that was already reviewed by hand, expect refusals on stderr and
+a lower merged count — that is the feature working, not a regression. A candidate
+is refused when its `target_repo` is empty or names no repo in the metabase, or
+when it names a **client library** rather than the service that receives the
+calls. In the first fleet review **50 of 191 candidates** failed one of those two
+by hand. Nothing else about the flow changes, refusals name the candidate and the
+reason, and one refusal does not block the rest of the batch.
+
+### Changed
+
+- **Aggregation reads the metabase once instead of fourteen times (`OI-41`).**
+  Every aggregator parsed the whole metabase for itself — measured at 2.2 GB per
+  parse on a 746-repo fleet, so ~31 GB of JSON decoded to read the same bytes
+  over and over, and that repetition was **67% of aggregation** in an A/B. A
+  shared streamed pass now offers each record to every collector in turn.
+
+  ```
+  full parses           : 14 -> 3
+  collect_service_edges :  3 -> 1
+  aggregation           : 2.12s -> 0.90s   (2.4x, on the test fixture)
+  peak RSS              : 148 MB -> 150 MB
+  ```
+
+  The memory line is the point. Memoising the load buys the same seconds and
+  costs a *held* copy of the fleet — measured at +118 MB on a 29 MB metabase,
+  which at 2.2 GB is `OI-15`'s ceiling reached through the fix, on a host already
+  observed swapping. Collectors retain their reductions and never the records, so
+  time is one parse and memory is one record. Output is unchanged: all 27
+  generated artefacts are pinned byte-for-byte.
+
+  The 2.4x is measured on the test fixture; the fleet figure is not yet
+  confirmed. Three parses remain, and deliberately — they are separate phases
+  with a data dependency, and collapsing them would mean holding records across
+  the whole aggregation. A ratchet fails the build if a new aggregator adds one
+  back.
+
+- **`--promote-api-clients` enforces the two mechanical review gates (`OI-42`).**
+  [`docs/api-clients-json.md`](docs/api-clients-json.md) §4 lists five
+  disqualifying gates; two of them are pure computation the tool already performs
+  at discovery time, and `promote` merged on trust and re-checked neither. A
+  binding that slipped past a reviewer became authoritative and misdirected every
+  edge it matched. The reviewer keeps the judgement calls; the tool now does the
+  arithmetic. The document's post-conditions are asserted as tests rather than
+  left as a checklist for a person.
+
+### Fixed
+
+- **`promote` no longer discards the rest of `api-clients.json` (`OI-42`).** It
+  rewrote the file as `{"bindings": [...]}`, dropping every other top-level key —
+  including the `_comment` carrying the *"never commit — internal topology"*
+  notice on a gitignored, sensitivity-marked file. Silently, and the file still
+  looked correct.
+- **Every duplicate of a binding key is refreshed (`OI-42`).** Bindings were
+  indexed with a dict comprehension over a list that may hold duplicates, so only
+  the last copy of a key was updated. Earlier copies kept their old values —
+  still present, still loaded, and now disagreeing with their twin about the same
+  binding.
+
 ## [3.0.0] - 2026-08-06
 
 **`src2sink` can now say which entry points reach which sinks, with evidence.**
@@ -728,6 +797,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[3.1.0]: https://github.com/mimecast/src2sink/releases/tag/v3.1.0
 [3.0.0]: https://github.com/mimecast/src2sink/releases/tag/v3.0.0
 [2.1.0]: https://github.com/mimecast/src2sink/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mimecast/src2sink/releases/tag/v2.0.0

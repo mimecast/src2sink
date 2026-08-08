@@ -2922,7 +2922,7 @@ relation nor unambiguous. See the migration table in `OI-34`.
 
 ### Resolution
 
-**Fixed in:** 3.1.0 (unreleased)  
+**Fixed in:** 3.1.0  
 **Commit:** `872e7ef` — PR #52 (the `_load_bindings_file` half landed early in `923fe1c`, PR #51 — see below)  
 **Tests:** `tests/test_oi42_promote_validation.py` — 9 cases across both gates, the lossy rewrite, duplicate keys, idempotence, and the documented post-conditions asserted rather than checklisted. Mutants `OI42-M1`…`OI42-M3`.
 
@@ -2984,7 +2984,7 @@ actually preserved until this change.
 
 ### Resolution
 
-**Fixed in:** 3.1.0 (unreleased)  
+**Fixed in:** 3.1.0  
 **Commit:** `923fe1c` — PR #51  
 **Tests:** `tests/test_fleet_pass.py` — 8 cases: streaming and loading agree, collectors retain no records, one pass serves every collector, ordering preserved, and a ratchet on the counts. Verified byte-for-byte by `tests/test_aggregate_output_golden.py`.
 
