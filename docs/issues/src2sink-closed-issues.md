@@ -2923,7 +2923,7 @@ relation nor unambiguous. See the migration table in `OI-34`.
 ### Resolution
 
 **Fixed in:** 3.1.0 (unreleased)  
-**Commit:** _this PR_ (the `_load_bindings_file` half landed early in `923fe1c`, PR #51 — see below)  
+**Commit:** `872e7ef` — PR #52 (the `_load_bindings_file` half landed early in `923fe1c`, PR #51 — see below)  
 **Tests:** `tests/test_oi42_promote_validation.py` — 9 cases across both gates, the lossy rewrite, duplicate keys, idempotence, and the documented post-conditions asserted rather than checklisted. Mutants `OI42-M1`…`OI42-M3`.
 
 ### The tool was asking a human to do its arithmetic
