@@ -42,9 +42,12 @@ file or manifest could not be parsed, so `notes` genuinely differs. 15 subsumes
   note on one repo record among hundreds is not something anyone reads. The
   frozen silent-handler debt drops **43 → 36**.
 
-  Not fixed, and now recorded in the issue: a language with **no grammar** (Scala
-  today) still contributes nothing silently. It is an early `return`, not an
-  `except`, so the gate cannot see it — the same shape `OI-13` had for Kotlin.
+  Not fixed, and now tracked as `OI-43`: a language with **no grammar** (Scala
+  today) still contributes nothing silently — an early `return`, not an `except`,
+  so the gate cannot see it. Following that question up found something larger,
+  which is what `OI-43` is about: outside Java and Kotlin, `OI-17`'s two strong
+  call-resolution tiers are structurally unreachable, so every non-JVM path
+  resolves `low` or not at all.
 
 - **Every run reports where its time went (`OI-32`).** `run-manifest.json` gains
   a `timing` block — total wall clock plus a nested per-phase breakdown, with

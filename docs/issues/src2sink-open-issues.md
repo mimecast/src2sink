@@ -60,6 +60,7 @@ Every issue below is scheduled in
 | issue | 4.0 phase |
 |---|---|
 | `OI-36` sweep | Phase 1 — **done**: 43 → 36, both named clusters fixed, before `OI-34` as planned |
+| `OI-43` | **unscheduled** — the gate in step 1 is small and belongs early, beside `OI-36`'s remaining sweep |
 | `OI-27`, `OI-34` | Phase 2 — one piece of work; both want an authoritative statement of the estate |
 | `OI-20` | Phase 3 |
 | `OI-22`, `OI-23` | Phase 4 — `OI-22` is load-bearing for `OI-34`, since `.git` cannot discriminate when a fifth of the fleet lacks it |
@@ -81,6 +82,7 @@ Every issue below is scheduled in
 | OI-34 | 34 | Repo discovery is two levels deep, so nested-subgroup projects are merged | medium | 15 records subsume 111 sub-projects; calls between them vanish as self-edges. **Decided: the project is the unit.** Changes repo identity fleet-wide — a major | **P1** |
 | OI-35 | 35 | Api-client discovery rescans the whole fleet once per class | small | reported from the field; node visits grew ~15x per doubling of the repo count | **closed** |
 | OI-36 | 36 | Detection paths fail to empty, or to a wrong answer, without emitting a signal | large | **gate shipped in 3.0.0**; sweep phase 1 shipped in 4.0 — the two named clusters fixed, debt **43 → 36**, and the run manifest now counts what could not be parsed. The remaining 36 are the tail | **P1** |
+| OI-43 | 43 | Language support is a matrix, and only the JVM column is filled | medium | outside Java/Kotlin, `OI-17`'s T1 and T2 tiers are structurally unreachable — every non-JVM call resolves `low` or not at all, undocumented. Go type declarations are discarded outright | **P1** |
 | OI-39 | 39 | The test-path predicate excluded production code and admitted test code | small | `api/latest/` contributed nothing to the metabase, silently; test files beside their code were extracted as though they shipped | **closed** |
 | OI-40 | 40 | A candidate's `target_repo` names the client library when the library is its own repo | small | 42 of 191 candidates named the wrong node; the correction agrees with the hand-authored bindings 11/11 | **closed** |
 
@@ -879,6 +881,11 @@ thing phase 1 surfaced and deliberately did not fix:
 > per language — a count on the summary rather than a note — and that is a design
 > question, not a two-line change. It is also the second time `OI-39`'s lesson has
 > landed: **the surface is wider than any list of `except` blocks.**
+>
+> **Now tracked as `OI-43`**, which is where following the question led: Scala is
+> the *honest* gap. The languages that do have grammars resolve at `low` or not
+> at all, because `OI-17`'s T1 and T2 tiers read tables filled in for Java and
+> Kotlin only — and Go's type declarations are discarded outright.
 
 Not "raise everywhere" — the bulkhead exists for good reasons and a hostile repo
 must not stop a run. The rule is **degrade loudly, never silently**:
@@ -922,4 +929,106 @@ knowing when we have found nothing because we broke.
 
 ---
 
----
+## 43. Language support is a matrix, and only the JVM column is filled  `OI-43`
+
+**Severity:** High. Not a crash and not an empty result — a **systematically
+degraded** one that is indistinguishable from a good one. Outside Java and
+Kotlin, `OI-17`'s two strong resolution tiers are structurally unreachable, and
+nothing says so.
+
+**Found:** by asking, after `OI-36` phase 1 flagged Scala as a language with no
+grammar, whether any other language was in the same position. Scala turned out to
+be the *safe* case.
+
+### Scala is the honest gap; the others pretend
+
+Scala has no tree-sitter grammar, so every AST pass returns before doing
+anything. That is documented under Known limitations, and `tree-sitter-scala` is
+on PyPI (0.26.2) — it was deferred, not blocked.
+
+The languages that **do** have grammars are the problem. `FIELD_NODE_TYPES` and
+`SUPERTYPE_NODE_TYPES` in `extractors/ast_walk.py` have entries for **Java and
+Kotlin only**. Those two tables are exactly what `OI-17` step 3 resolves against:
+**T1** is a declared field's type, **T2** is an interface expanded to its
+implementations.
+
+| language | grammar | class | method | call | **field** | **supertype** |
+|---|---|---|---|---|---|---|
+| java | yes | yes | yes | yes | **yes** | **yes** |
+| kotlin | yes | yes | yes | yes | **yes** | **yes** |
+| typescript / tsx | yes | yes | yes | yes | **no** | **no** |
+| javascript | yes | yes | yes | yes | **no** | **no** |
+| python | yes | yes | yes | yes | **no** | **no** |
+| go | yes | *broken* | yes | yes | **no** | **no** |
+| scala | **no** | no | no | no | no | no |
+
+Measured on the same three-type source (interface, implementation, caller holding
+the interface as a field) written in each language:
+
+```
+java        type-decls=3  fields=1  supertypes=1   resolved by T2  (medium)
+typescript  type-decls=2  fields=0  supertypes=0   resolved by T3  (low)
+go          type-decls=0  fields=0  supertypes=0   resolved by T3  (low)
+python      type-decls=2  fields=0  supertypes=0   resolved by T3  (low)
+```
+
+**Every non-JVM call resolves at `low` or not at all.** T3 is a unique-name
+match, so where a method name is not unique in the repo the call is dropped and
+there is no path. TypeScript is the sharpest case: it *has* interfaces and
+declared field types, and neither is read.
+
+Nothing in `README.md`, `SCHEMA.md` or the 3.0.0 notes scopes tainted paths to
+the JVM. A reader is told paths are found, and is not told for which languages.
+
+### Go is a defect, not a gap
+
+`type_declaration` **is** listed in `CLASS_NODE_TYPES` for Go, so the wiring
+looks complete. But Go puts the name on the child `type_spec`, while
+`_declaration_name` asks the node itself for a `name` field, gets `None`, and
+`continue`s. **Every Go type declaration is silently discarded.**
+
+That is precisely `OI-13`'s shape: *routed to a walker that needs a node the
+grammar never produces.* It has now happened for Kotlin calls, for Kotlin
+interfaces and parameters, and for Go types.
+
+### Why no gate caught this
+
+`OI-36`'s gate looks for an `except` whose body discards the error. There is no
+exception here. There is a `dict.get(language, frozenset())` returning empty and
+a loop that runs zero times.
+
+This is the **third** distinct surface for the same failure, after the handlers
+themselves and `OI-39`'s over-broad regex. The lesson `OI-39` already taught —
+*the surface is wider than any list of `except` blocks* — applies again, and the
+enforcement has to follow the same pattern: a table that must be complete, or
+carry a stated reason for each hole.
+
+### Proposed approach
+
+1. **A language-support gate, first.** Assert that every language in
+   `SOURCE_EXTENSIONS` has a grammar, and that every grammar-backed language
+   appears in every per-language table — or is exempted by name with a reason,
+   exactly as `_SIGNAL_NOT_NEEDED` does for silent handlers. This is cheap, it is
+   the thing that stops the matrix rotting again, and it would have found all of
+   the above. Do it before filling anything in.
+2. **Fix Go's `type_spec` lookup.** A defect rather than a gap, and it makes the
+   `CLASS_NODE_TYPES` entry honest.
+3. **Fill `FIELD_NODE_TYPES` and `SUPERTYPE_NODE_TYPES`** for the languages where
+   the concepts exist: TypeScript/TSX (`interface`, typed members), Go (struct
+   fields, embedded interfaces), Python (annotated attributes, base classes).
+   Driven by what the fleet actually contains, not alphabetically.
+4. **Say so in the output, not only in a changelog.** A repo whose language has
+   no grammar, or no resolution tables, should carry a note — per repo per
+   language, not per file, or the estate's Scala files alone would flood
+   `summary.notes`. This is the piece `OI-36` phase 1 deliberately left.
+5. **Add Scala last**, unless the fleet is Scala-heavy. Adding the grammar
+   without steps 1–3 buys calls and methods with no resolution behind them, which
+   is how this state was reached in the first place.
+
+### Why it is not P0
+
+Nothing here is wrong in the sense of *false*. A `low`-confidence T3 path is a
+real path, honestly labelled; the estate's Java and Kotlin — the bulk of the
+observed fleet — has the full picture. What is missing is coverage the reader has
+no way to know is missing, which is why the gate and the note matter more than
+the grammars.

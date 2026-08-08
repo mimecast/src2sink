@@ -156,6 +156,15 @@ silently: a record `_unparsed_counts` cannot read is a repo whose failures go
 uncounted, which is this issue arriving inside its own fix. It is now counted and
 warned about, and the manifest number is explicitly a lower bound.
 
+**What this phase surfaced and did not fix is now `OI-43`.** Asking whether any
+language other than Scala had no grammar turned up something larger: Scala is the
+honest gap, while TypeScript, JavaScript, Python and Go *have* grammars and
+resolve at `low` or not at all, because `OI-17`'s T1 and T2 tiers read tables
+filled in for Java and Kotlin only. Go's type declarations are discarded outright
+— `OI-13`'s shape for the third time. No `except` is involved anywhere in it,
+which is why neither the `OI-36` gate nor any list of handlers could have found
+it.
+
 `DETECTION_VERSION` 14 → 15. Unlike 14 this is a *real* detection change — `notes`
 genuinely differs — so the rescan is earned. If 14's rescan has not been run yet,
 15 subsumes it and one rescan covers both.
