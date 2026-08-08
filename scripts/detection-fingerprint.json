@@ -6,14 +6,14 @@
     "src2sink/resolve.py": "bff3a10729e644120998584f747a797e6894d6cba4df242b745bd8aec7102b38"
   },
   "derivation_version": 5,
-  "detection_version": 17,
+  "detection_version": 18,
   "files": {
     "src2sink/build_metabase_v2.py": "43920212c30edea1b8ef99f2cfaaea89e91d7ff5f8d7075fc587e035273d6b7f",
     "src2sink/checkout_scan.py": "8f2375e7b5a3ac8250892bd9b65f12515c44958f100bbed4e286077fa108f563",
     "src2sink/constants.py": "22913d5c48fa0a1535279588891f67f2363cc1a2b7fac2b4c2d824ddaeb96ac2",
     "src2sink/dependencies.py": "68ccefc20100798ed1f53c289574ea1e71ef67054067e45eefdcc6c650831227",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
-    "src2sink/extractors/ast_walk.py": "4a55c5c827aa382bff9768a0d2862d914470dc4b29db7218cd29ba1ceb203553",
+    "src2sink/extractors/ast_walk.py": "97deaab16946b2a5cf0db33538e1add907793ea0ee72fed82df1730f2f5009ce",
     "src2sink/extractors/base.py": "f308246442fb03e9f0da86b522c7ff9c0471f721502bd4dc279f188f7eb36d61",
     "src2sink/extractors/config.py": "8cad67e5c7729b68942874619d733ae72a757a50cc7851413f190b9847f50c14",
     "src2sink/extractors/file_context.py": "777dff71cf0199e96683c38ce09dd1fcabc12cddee04e28d1f1d8e9f87390837",
@@ -39,7 +39,7 @@
     "src2sink/repo_utils.py": "182f08579260ff44551759390461695993603dec554eb6198ce4778b039e36d6",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "136f55c2d4d3048f44cfb5d5008cbdc54aa8118e635ca33d93168af0e3bf7041",
+    "src2sink/schema.py": "d20a35220f2d3348750e77c3079c8ad896d0df14307b8889c75bee409779f587",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }

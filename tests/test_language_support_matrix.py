@@ -30,7 +30,10 @@ from __future__ import annotations
 import src2sink.extractors.ast_walk as aw
 from src2sink.constants import SOURCE_EXTENSIONS
 from src2sink.extractors.base import supported_languages
+import pytest
+
 from src2sink.extractors.unified import extract_from_file
+from src2sink.resolve import build_symbol_table, resolve_calls
 
 # The per-language tables that decide what a grammar yields. Named here rather
 # than discovered, so adding a table is a deliberate act that shows up in review.
@@ -58,23 +61,12 @@ _NO_GRAMMAR: dict[str, str] = {
 # `table:language` pairs deliberately absent today. Each is a hole in call
 # resolution by consent, and the reason is what stops it becoming folklore.
 _TABLE_GAPS: dict[str, str] = {
-    **{
-        f"FIELD_NODE_TYPES:{lang}": (
-            f"`OI-43` step 3. Without declared field types, `OI-17`'s T1 tier "
-            f"cannot fire for {lang}, so every call falls to T3 (unique name, "
-            f"`low`) or is dropped. The concept exists in this language, so this "
-            f"is unfilled work rather than an impossibility."
-        )
-        for lang in ("python", "javascript", "typescript", "tsx", "go")
-    },
-    **{
-        f"SUPERTYPE_NODE_TYPES:{lang}": (
-            f"`OI-43` step 3. Without supertypes, a call on an interface cannot "
-            f"reach the implementations that have a body, so T2 cannot fire for "
-            f"{lang} and an interface-typed hop is a dead end."
-        )
-        for lang in ("python", "javascript", "typescript", "tsx", "go")
-    },
+    "FIELD_NODE_TYPES:javascript": (
+        "**Intrinsic, not unfilled.** JavaScript declares no types, so there is "
+        "no declared field type to read and T1 cannot fire for it however much "
+        "work is done. Its supertypes *are* read, so T2 still applies. This "
+        "entry is the one gap here that will never close."
+    ),
 }
 
 # One realistic three-type shape per language: an interface, an implementation
@@ -119,8 +111,12 @@ interface Repo { find(): void }
 class JdbcRepo implements Repo { find(): void { db.query("SELECT 1") } }
 class Svc { private repo: Repo; go() { this.repo.find() } }
 """),
+    # `extends` is in the sample deliberately: JavaScript has no declared field
+    # types, so `fields` is permanently 0 for it, and without a supertype the
+    # frozen record would exercise neither half and could not see either regress.
     "javascript": ("svc.js", """
-class JdbcRepo { find() { db.query("SELECT 1") } }
+class Base { find() {} }
+class JdbcRepo extends Base { find() { db.query("SELECT 1") } }
 class Svc { constructor(repo) { this.repo = repo } go() { this.repo.find() } }
 """),
     "python": ("svc.py", """
@@ -132,8 +128,16 @@ class Svc:
     repo: Repo
     def go(self): self.repo.find()
 """),
+    # Embedding is in the sample because it is Go's only syntactic supertype:
+    # `type Repo interface { Base }` and an unnamed struct field both promote
+    # another type's methods. Interface *satisfaction* is structural and says
+    # nothing syntactically, so it can never appear here.
     "go": ("svc.go", """
-type Repo interface { Find() }
+type Base interface { Ping() }
+type Repo interface {
+	Base
+	Find()
+}
 type JdbcRepo struct {}
 func (j *JdbcRepo) Find() { db.Query("SELECT 1") }
 type Svc struct { repo Repo }
@@ -154,13 +158,13 @@ func (s *Svc) Go() { s.repo.Find() }
 _OBSERVED: dict[str, dict[str, int]] = {
     "java":       {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "owned_methods": 3, "calls": 2},
     "kotlin":     {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "owned_methods": 3, "calls": 2},
-    "typescript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
-    "tsx":        {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
-    "javascript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 3, "owned_methods": 3, "calls": 2},
-    "python":     {"types": 3, "fields": 0, "supertypes": 0, "methods": 3, "owned_methods": 3, "calls": 2},
-    # `OI-43` step 2 landed: `types` 0 -> 3 and `owned_methods` 0 -> 2. Go still
-    # has no fields or supertypes, so T1 and T2 remain out of reach until step 3.
-    "go":         {"types": 3, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
+    "typescript": {"types": 3, "fields": 1, "supertypes": 1, "methods": 2, "owned_methods": 2, "calls": 2},
+    "tsx":        {"types": 3, "fields": 1, "supertypes": 1, "methods": 2, "owned_methods": 2, "calls": 2},
+    # `fields` is permanently 0: JavaScript declares no types. Its supertypes are
+    # read, so T2 applies where T1 never can.
+    "javascript": {"types": 3, "fields": 0, "supertypes": 1, "methods": 4, "owned_methods": 4, "calls": 2},
+    "python":     {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "owned_methods": 3, "calls": 2},
+    "go":         {"types": 4, "fields": 1, "supertypes": 1, "methods": 2, "owned_methods": 2, "calls": 2},
 }
 
 
@@ -285,12 +289,15 @@ def test_the_matrix_records_todays_known_holes() -> None:
     assert _OBSERVED["go"]["owned_methods"] > 0, (
         "OI-43 step 2 regressed: Go methods stopped knowing their receiver type"
     )
-    for language in ("typescript", "go", "python", "javascript", "tsx"):
-        assert _OBSERVED[language]["fields"] == 0
-        assert _OBSERVED[language]["supertypes"] == 0
-    for language in ("java", "kotlin"):
-        assert _OBSERVED[language]["fields"] > 0, "the JVM column is the filled one"
-        assert _OBSERVED[language]["supertypes"] > 0
+    # `OI-43` step 3: the matrix is filled everywhere the concept exists.
+    for language in ("java", "kotlin", "typescript", "tsx", "python", "go"):
+        assert _OBSERVED[language]["fields"] > 0, f"{language} lost declared field types"
+    for language in _OBSERVED:
+        assert _OBSERVED[language]["supertypes"] > 0, f"{language} lost supertypes"
+    assert _OBSERVED["javascript"]["fields"] == 0, (
+        "JavaScript declares no types, so this is the one entry that can never "
+        "be filled — if it is non-zero the probe is measuring something else"
+    )
 
 
 def test_the_gate_can_actually_fail() -> None:
@@ -316,18 +323,22 @@ def test_coverage_gaps_are_computed_not_restated() -> None:
     because it is confidently wrong; reading the live tables means the claim and
     the behaviour cannot disagree.
     """
-    assert aw.coverage_gaps("java") == ()
-    assert aw.coverage_gaps("kotlin") == ()
-    assert "T1" in " ".join(aw.coverage_gaps("typescript"))
-    assert "T2" in " ".join(aw.coverage_gaps("typescript"))
+    for language in ("java", "kotlin", "typescript", "tsx", "python", "go"):
+        assert aw.coverage_gaps(language) == (), f"{language} is fully covered now"
+    # JavaScript declares no types, so T1 is out of reach by language design
+    # rather than by unfilled work — the one gap that will never close.
+    assert "T1" in " ".join(aw.coverage_gaps("javascript"))
+    assert "T2" not in " ".join(aw.coverage_gaps("javascript")), (
+        "JavaScript supertypes are read, so T2 applies where T1 never can"
+    )
     assert "no tree-sitter grammar" in aw.coverage_gaps("scala")[0]
 
 
 def test_a_filled_table_silences_its_gap(monkeypatch) -> None:
     """The proof that it is derived: fill a table, the gap disappears."""
-    before = aw.coverage_gaps("go")
-    monkeypatch.setitem(aw.FIELD_NODE_TYPES, "go", frozenset({"field_declaration"}))
-    after = aw.coverage_gaps("go")
+    before = aw.coverage_gaps("javascript")
+    monkeypatch.setitem(aw.FIELD_NODE_TYPES, "javascript", frozenset({"field_definition"}))
+    after = aw.coverage_gaps("javascript")
     assert len(after) == len(before) - 1
     assert not [g for g in after if "T1" in g]
 
@@ -344,12 +355,17 @@ def test_the_note_is_per_repo_per_language_not_per_file(tmp_path) -> None:
     from src2sink.schema import RepoSummaryV2
 
     summary = RepoSummaryV2(group="g", name="r")
-    _note_language_coverage(summary, Counter({"go": 40, "scala": 900, "java": 12}))
+    _note_language_coverage(
+        summary, Counter({"javascript": 40, "scala": 900, "java": 12, "go": 7})
+    )
 
     assert len(summary.notes) == 2, "one note per affected language, whatever the file count"
-    assert not [n for n in summary.notes if n.startswith("java")], (
-        "a fully covered language must stay quiet, or the signal is noise"
-    )
+    for covered in ("java", "go"):
+        # `f"{covered}:"`, not `covered` — "java" is a prefix of "javascript",
+        # and the loose form passed while asserting the opposite of the truth.
+        assert not [n for n in summary.notes if n.startswith(f"{covered}:")], (
+            f"{covered} is fully covered and must stay quiet, or the signal is noise"
+        )
     scala = next(n for n in summary.notes if n.startswith("scala"))
     assert "900 file(s)" in scala
     assert "incomplete rather than absent" in scala, "the consequence is the point"
@@ -363,5 +379,78 @@ def test_a_fully_covered_repo_carries_no_note() -> None:
     from src2sink.schema import RepoSummaryV2
 
     summary = RepoSummaryV2(group="g", name="r")
-    _note_language_coverage(summary, Counter({"java": 10, "kotlin": 3}))
+    _note_language_coverage(summary, Counter({"java": 10, "kotlin": 3, "python": 5}))
     assert summary.notes == []
+
+
+# --- what the matrix buys: resolution tiers (`OI-43` step 3) ------------------
+
+_RESOLUTION_SAMPLES: dict[str, tuple[str, str]] = {
+    "typescript": ("svc.ts", """
+interface Repo { find(): void }
+class JdbcRepo implements Repo { find(): void { db.query("SELECT 1") } }
+class Svc { private repo: Repo; go() { this.repo.find() } }
+"""),
+    "python": ("svc.py", """
+class Repo:
+    def find(self): ...
+class JdbcRepo(Repo):
+    def find(self): db.query("SELECT 1")
+class Svc:
+    repo: Repo
+    def go(self): self.repo.find()
+"""),
+}
+
+# The tier each language reaches on the canonical shape: an interface-typed
+# field, called, resolving to the implementation that has a body. Filling the
+# tables is only worth anything if this moves, so it is asserted rather than
+# assumed — `OI-43` step 2 was explicit that it changed no tier, and this is the
+# step that does.
+_EXPECTED_TIER = {"typescript": "T2", "python": "T1"}
+
+
+@pytest.mark.parametrize("language", sorted(_RESOLUTION_SAMPLES))
+def test_the_canonical_shape_resolves_above_unique_name(language):
+    """Before `OI-43` step 3 every one of these was T3 — unique name, `low`."""
+    rel_path, source = _RESOLUTION_SAMPLES[language]
+    nodes, _edges = extract_from_file(
+        repo_id="g/r", rel_path=rel_path, language=language, source=source,
+    )
+    resolved = resolve_calls(nodes)
+    tiers = {r.tier for r in resolved}
+    assert tiers == {_EXPECTED_TIER[language]}, (
+        f"{language} resolved by {tiers or 'nothing'}; filling the tables is "
+        "only worth something if the tier moves off T3"
+    )
+
+
+def test_go_still_resolves_only_by_unique_name():
+    """Go has the facts now and still cannot use them, for two separate reasons.
+
+    **Fixable:** `_normalise_receiver` knows `this.` and `self.`, and Go's
+    receiver name is whatever the author chose — `func (s *Svc)` makes `s.repo`
+    exactly `this.repo`, but nothing carries `s` from the declaration to the
+    call, so the receiver is discarded as an unfollowable chain.
+
+    **Intrinsic:** Go interface satisfaction is *structural*. `JdbcRepo` declares
+    no link to `Repo`, so no syntactic read can connect them and T2 can never
+    fire through a Go interface however much work is done.
+
+    Asserted rather than left implicit, so that fixing the first has to come here
+    and say so — and so nobody reads `OI-43` step 3 as having finished Go.
+    """
+    nodes, _edges = extract_from_file(
+        repo_id="g/r", rel_path="svc.go", language="go", source="""
+type JdbcRepo struct {}
+func (j *JdbcRepo) Find() { db.Query("SELECT 1") }
+type Svc struct { repo JdbcRepo }
+func (s *Svc) Go() { s.repo.Find() }
+""",
+    )
+    assert {r.tier for r in resolve_calls(nodes)} == {"T3"}
+
+    # The facts themselves are present and correct — only the receiver is lost.
+    table = build_symbol_table(nodes)
+    assert table.declared_type_of("Svc", "repo") == "JdbcRepo"
+    assert table.method_on("JdbcRepo", "Find") is not None

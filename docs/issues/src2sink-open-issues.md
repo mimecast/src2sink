@@ -1067,10 +1067,50 @@ carry a stated reason for each hole.
    change altered no method *count*, only whether each method knew its owner, so
    `owned_methods` is now recorded beside `methods`. A gate that watches the wrong
    number watches nothing.
-3. **Fill `FIELD_NODE_TYPES` and `SUPERTYPE_NODE_TYPES`** for the languages where
-   the concepts exist: TypeScript/TSX (`interface`, typed members), Go (struct
-   fields, embedded interfaces), Python (annotated attributes, base classes).
-   Driven by what the fleet actually contains, not alphabetically.
+3. ~~**Fill `FIELD_NODE_TYPES` and `SUPERTYPE_NODE_TYPES`.**~~ **Done**, and the
+   tiers moved:
+
+   | language | before | after |
+   |---|---|---|
+   | TypeScript / TSX | T3 `low` | **T2 `medium`** |
+   | Python | T3 `low` | **T1 `high`** |
+   | Go | T3 `low` | T3 `low` — see below |
+   | JavaScript | T3 `low` | supertypes only; T1 is **intrinsically** impossible |
+
+   TypeScript reads both member forms, and the second is the one that matters:
+   `constructor(private dao: Dao)` declares a member and injects it in one line,
+   which is the Angular/NestJS shape — the same trap `class_parameter` was for
+   Kotlin. A parameter *without* an accessibility modifier declares nothing, so
+   without that check every method's arguments would become fields of its class.
+
+   **`interface_declaration` was also missing from TypeScript's
+   `CLASS_NODE_TYPES`**, so a TS interface was never recorded as a type at all.
+   Supertypes alone would not have helped: the declaration a call resolves *to*
+   was missing, not merely the edge to it.
+
+   Python's bases are read from the `superclasses` **field**, never by walking:
+   `class Svc(Repo, Base)` is an `argument_list`, and so is `helper(alpha, beta)`
+   inside a method. Only annotated attributes count — `plain = 1` states no type,
+   and recording it with an empty one would leave a reader unable to tell
+   "untyped" from "typed as nothing".
+
+   Go's embedding is its only syntactic supertype: an unnamed struct field, or a
+   bare `type_elem` in an interface. Both promote another type's methods, which
+   is exactly T2's question.
+
+   **Go still resolves only at T3, for two further reasons — one fixable, one
+   not.** The facts are now present and correct: `declared_type_of("Svc","repo")`
+   and `method_on("JdbcRepo","Find")` both answer. What blocks it is that
+   `_normalise_receiver` knows only `this.` and `self.`, while Go's receiver name
+   is whatever the author chose — `func (s *Svc)` makes `s.repo` exactly
+   `this.repo`, but nothing carries `s` from the declaration to the call, so the
+   receiver is discarded as an unfollowable chain. **That is fixable and is the
+   next Go item.** What is *not* fixable is that Go interface satisfaction is
+   structural: `JdbcRepo` declares no link to `Repo`, so no syntactic read can
+   connect them and T2 can never fire through a Go interface.
+
+   `tests/test_language_support_matrix.py` asserts both — the tiers that moved,
+   and that Go has not — so nobody reads step 3 as having finished Go.
 4. ~~**Say so in the output, not only in a changelog.**~~ **Done.** One note per
    repo per language whose extraction is limited, never per file — Scala alone
    would otherwise put a note on every Scala file in the estate, and a signal

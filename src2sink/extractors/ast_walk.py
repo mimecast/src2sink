@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from .base import supported_languages
 from typing import TYPE_CHECKING
@@ -239,8 +239,12 @@ CLASS_NODE_TYPES: dict[str, frozenset[str]] = {
     "kotlin": frozenset({"class_declaration", "object_declaration"}),
     "python": frozenset({"class_definition"}),
     "javascript": frozenset({"class_declaration"}),
-    "typescript": frozenset({"class_declaration"}),
-    "tsx": frozenset({"class_declaration"}),
+    # `interface_declaration` too (`OI-43` step 3). Without it a TypeScript
+    # interface was never recorded as a type at all, so T2 had nothing to expand
+    # even once supertypes existed — the declaration a call resolves *to* was
+    # missing, not just the edge to it.
+    "typescript": frozenset({"class_declaration", "interface_declaration"}),
+    "tsx": frozenset({"class_declaration", "interface_declaration"}),
     # `type_spec`, not `type_declaration` (`OI-43` step 2). Go puts the name on
     # the spec, so asking the declaration for a `name` field returned None and
     # `iter_type_declarations` skipped **every Go type in the fleet** — present
@@ -433,6 +437,19 @@ def iter_method_declarations(
 FIELD_NODE_TYPES: dict[str, frozenset[str]] = {
     "java": frozenset({"field_declaration"}),
     "kotlin": frozenset({"property_declaration", "class_parameter"}),
+    # `OI-43` step 3. TypeScript declares a member outright and also declares one
+    # as a constructor parameter property — `constructor(private dao: Dao)` — and
+    # the second form is the Angular/NestJS injection shape, so missing it would
+    # leave TypeScript resolvable only by accident, exactly as it would have for
+    # Kotlin's `class_parameter`.
+    "typescript": frozenset({"public_field_definition", "required_parameter"}),
+    "tsx": frozenset({"public_field_definition", "required_parameter"}),
+    # Go's struct members. An entry with no name is an *embedded* type, which is
+    # a supertype rather than a field — see `_go_supertypes`.
+    "go": frozenset({"field_declaration"}),
+    # Only an *annotated* assignment. `plain = 1` states no type, so it says
+    # nothing a call can be resolved against.
+    "python": frozenset({"assignment"}),
 }
 
 # Java names the two relations; Kotlin gives both as `delegation_specifier` and
@@ -442,6 +459,18 @@ FIELD_NODE_TYPES: dict[str, frozenset[str]] = {
 SUPERTYPE_NODE_TYPES: dict[str, frozenset[str]] = {
     "java": frozenset({"superclass", "super_interfaces"}),
     "kotlin": frozenset({"delegation_specifier"}),
+    # `OI-43` step 3. `class_heritage` holds both the extends and implements
+    # clauses; an interface says `extends` in its own node.
+    "typescript": frozenset({"class_heritage", "extends_type_clause"}),
+    "tsx": frozenset({"class_heritage", "extends_type_clause"}),
+    "javascript": frozenset({"class_heritage"}),
+    # Both of these are read positionally rather than by walking for the node
+    # type — see `_supertypes`. Python's bases are an `argument_list`, which is
+    # also every call's argument list, and Go's embedding is a `field_declaration`
+    # with no name, which is also every named field. Walking for either would
+    # collect nonsense, so the entry declares coverage and the reader is precise.
+    "python": frozenset({"argument_list"}),
+    "go": frozenset({"field_declaration", "type_elem"}),
 }
 
 # Bounded like every pattern that reads scanned source (TA-005). An identifier
@@ -505,11 +534,148 @@ def _kotlin_fields(source: bytes, node: Node) -> dict[str, str]:
     return out
 
 
+def _annotation_text(source: bytes, node: Node | None) -> str:
+    """A `type_annotation` reads `: Repo`; the colon is punctuation, not a type."""
+    if node is None:
+        return ""
+    return node_text(source, node).lstrip(":").strip()
+
+
+def _ts_fields(source: bytes, node: Node) -> dict[str, str]:
+    """Return {member: declared type} for a TypeScript class (`OI-43` step 3).
+
+    Two forms, and the second is the one that matters. `private repo: Repo` is a
+    plain member; `constructor(private dao: Dao)` is a *parameter property*, which
+    declares a member and injects it in one line. That is the Angular and NestJS
+    shape, so reading only the first would leave TypeScript resolvable by
+    accident — the same trap `class_parameter` was for Kotlin.
+
+    A constructor parameter with no accessibility modifier is an ordinary
+    argument and declares nothing, so it is skipped.
+    """
+    out: dict[str, str] = {}
+    for child in walk(node):
+        pair = _ts_member(source, child)
+        if pair is not None:
+            out[pair[0]] = pair[1]
+    return out
+
+
+def _ts_member(source: bytes, node: Node) -> tuple[str, str] | None:
+    """Read one TypeScript member, from either declaration form."""
+    if node.type == "public_field_definition":
+        name = node.child_by_field_name("name")
+    elif node.type == "required_parameter" and _ts_parameter_property(node):
+        name = node.child_by_field_name("pattern")
+    else:
+        return None
+    declared = _annotation_text(source, node.child_by_field_name("type"))
+    if name is None or not declared:
+        return None
+    return node_text(source, name), declared
+
+
+def _ts_parameter_property(node: Node) -> bool:
+    """Whether a constructor parameter also declares a member.
+
+    `private dao: Dao` does; `plain: string` does not. The accessibility modifier
+    is the whole difference, and without this check every method's arguments
+    would be recorded as fields of its class.
+    """
+    return any(c.type == "accessibility_modifier" for c in node.children)
+
+
+def _go_fields(source: bytes, node: Node) -> dict[str, str]:
+    """Return {field: declared type} for a Go struct (`OI-43` step 3).
+
+    A `field_declaration` with no name is an *embedded* type, not a field —
+    `_go_supertypes` reads those, because embedding is how Go says "this has
+    everything that one has", which is the question a supertype answers.
+    """
+    out: dict[str, str] = {}
+    for child in walk(node):
+        if child.type != "field_declaration":
+            continue
+        name = child.child_by_field_name("name")
+        declared = child.child_by_field_name("type")
+        if name is not None and declared is not None:
+            out[node_text(source, name)] = node_text(source, declared)
+    return out
+
+
+def _python_fields(source: bytes, node: Node) -> dict[str, str]:
+    """Return {attribute: annotated type} for a Python class (`OI-43` step 3).
+
+    Only annotated assignments. `repo: Repo` states a type a call can be resolved
+    against; `plain = 1` states none, and recording it as a field with no type
+    would be worse than not recording it — the caller cannot tell "untyped" from
+    "typed as nothing".
+    """
+    out: dict[str, str] = {}
+    for child in walk(node):
+        if child.type != "assignment":
+            continue
+        name = child.child_by_field_name("left")
+        declared = child.child_by_field_name("type")
+        if name is not None and declared is not None:
+            out[node_text(source, name)] = node_text(source, declared)
+    return out
+
+
+_FIELD_READERS: dict[str, Callable[[bytes, Node], dict[str, str]]] = {
+    "kotlin": _kotlin_fields,
+    "typescript": _ts_fields,
+    "tsx": _ts_fields,
+    "go": _go_fields,
+    "python": _python_fields,
+}
+
+
+def _python_supertypes(source: bytes, node: Node) -> list[str]:
+    """Python's bases, read from the `superclasses` field rather than by walking.
+
+    `class Svc(Repo, Base)` is an `argument_list` — and so is `helper(1, 2)`
+    inside a method. Walking for the node type would record every call's
+    arguments as supertypes, so the field is the only safe way in.
+    """
+    bases = node.child_by_field_name("superclasses")
+    if bases is None:
+        return []
+    return [
+        node_text(source, child)
+        for child in bases.children
+        if child.type in ("identifier", "attribute")
+    ]
+
+
+def _go_supertypes(source: bytes, node: Node) -> list[str]:
+    """Go's embedded types, which are how it says "has everything that one has".
+
+    A struct embeds by declaring a `field_declaration` with a type and **no
+    name**; an interface embeds with a bare `type_elem`. Both promote the
+    embedded type's methods onto the embedder, which is exactly the question
+    `OI-17`'s T2 asks — where else might this method be declared.
+    """
+    out: list[str] = []
+    for child in walk(node):
+        if child.type == "field_declaration" and child.child_by_field_name("name") is None:
+            declared = child.child_by_field_name("type")
+            if declared is not None:
+                out.append(node_text(source, declared))
+        elif child.type == "type_elem":
+            out.append(node_text(source, child))
+    return [n for n in dict.fromkeys(out) if n]
+
+
 def _supertypes(source: bytes, node: Node, language: str) -> list[str]:
     """Return the type names this declaration extends or implements."""
     wanted = SUPERTYPE_NODE_TYPES.get(language, frozenset())
     if not wanted:
         return []
+    if language == "python":
+        return _python_supertypes(source, node)
+    if language == "go":
+        return _go_supertypes(source, node)
     out: list[str] = []
     for child in walk(node):
         if child.type not in wanted:
@@ -567,10 +733,9 @@ def iter_type_declarations(
         body = node.child_by_field_name("body")
         if language == "java":
             fields = _java_fields(source, body) if body is not None else {}
-        elif language == "kotlin":
-            fields = _kotlin_fields(source, node)
         else:
-            fields = {}
+            reader = _FIELD_READERS.get(language)
+            fields = reader(source, node) if reader is not None else {}
         yield (
             name,
             fields,

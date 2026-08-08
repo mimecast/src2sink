@@ -64,10 +64,11 @@ _MUTANT_TIMEOUT_S = 120
 # measuring the wall clock, not by counting entries.
 #
 # 140 -> 145 for the four `OI-36` phase-1 mutants, then 145 -> 148 for the three
-# `OI-43` step-2 ones and 148 -> 150 for step 4. All nine are ordinary: they read a note, a count or a
+# `OI-43` step-2 ones, 148 -> 150 for step 4 and 150 -> 156 for step 3. All
+# fourteen are ordinary: they read a note, a count or a
 # parsed node out of an in-memory structure, with no timeout to wait on, so the
 # slow tail is unchanged at two entries.
-_MAX_CATALOGUE_SIZE = 150
+_MAX_CATALOGUE_SIZE = 156
 _SLOW_MUTANT_S = 5.0
 
 
@@ -298,6 +299,77 @@ CATALOGUE: tuple[Mutant, ...] = (
         note=(
             "The per-repo coverage note stops being emitted, so a repo whose "
             "language cannot reach T1 or T2 looks identical to one that can."
+        ),
+    ),
+    Mutant(
+        id="OI43-M6",
+        file="src2sink/extractors/ast_walk.py",
+        old='    elif node.type == "required_parameter" and _ts_parameter_property(node):',
+        new='    elif False:',
+        selector="tests/test_type_declarations.py",
+        note=(
+            "TypeScript constructor parameter properties stop being fields, so "
+            "the Angular/NestJS injection shape resolves by accident or not at "
+            "all - the trap class_parameter was for Kotlin in OI-17."
+        ),
+    ),
+    Mutant(
+        id="OI43-M7",
+        file="src2sink/extractors/ast_walk.py",
+        old="    return any(c.type == \"accessibility_modifier\" for c in node.children)",
+        new="    return True",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "Every method argument becomes a field of its class, so a receiver "
+            "resolves to whatever a neighbouring method happened to take."
+        ),
+    ),
+    Mutant(
+        id="OI43-M8",
+        file="src2sink/extractors/ast_walk.py",
+        old="""    bases = node.child_by_field_name("superclasses")
+    if bases is None:
+        return []
+    return [
+        node_text(source, child)
+        for child in bases.children
+        if child.type in ("identifier", "attribute")
+    ]""",
+        new="""    return [
+        node_text(source, child)
+        for parent in walk(node) if parent.type == "argument_list"
+        for child in parent.children
+        if child.type in ("identifier", "attribute")
+    ]""",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "Python bases collected by walking for argument_list rather than "
+            "read from the superclasses field. An argument_list is also every "
+            "call's arguments, so a class picks up supertypes from identifiers "
+            "passed to calls inside its own methods."
+        ),
+    ),
+    Mutant(
+        id="OI43-M9",
+        file="src2sink/extractors/ast_walk.py",
+        old='        if child.type == "field_declaration" and child.child_by_field_name("name") is None:',
+        new='        if child.type == "field_declaration":',
+        selector="tests/test_type_declarations.py",
+        note=(
+            "Every named Go struct field becomes a supertype as well, so T2 "
+            "expands a type to whatever it happens to hold."
+        ),
+    ),
+    Mutant(
+        id="OI43-M10",
+        file="src2sink/extractors/ast_walk.py",
+        old='    "typescript": frozenset({"class_declaration", "interface_declaration"}),',
+        new='    "typescript": frozenset({"class_declaration"}),',
+        selector="tests/test_type_declarations.py",
+        note=(
+            "TypeScript interfaces stop being type declarations, so T2 has "
+            "nothing to expand: the declaration a call resolves to is missing, "
+            "not just the edge to it."
         ),
     ),
     Mutant(
