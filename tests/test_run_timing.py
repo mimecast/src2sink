@@ -133,14 +133,20 @@ def test_a_leaf_phase_reports_no_gap(clock):
 
 
 # --- the edges ----------------------------------------------------------------
+# The two raising tests put the raise in a named helper rather than inline in
+# `pytest.raises`, so the block holds only what raises and the failure names what
+# died.
 
 
 def test_a_phase_that_raises_is_still_timed(clock):
     """A run that died partway is exactly when you want to know where it was."""
-    with pytest.raises(ValueError):
+    def dies_inside_extraction() -> None:
         with run_timing.phase("extraction"):
             clock[0] += 4.0
             raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        dies_inside_extraction()
 
     rows = run_timing.timings(4.0)
     assert rows[0]["phase"] == "extraction"
@@ -149,9 +155,12 @@ def test_a_phase_that_raises_is_still_timed(clock):
 
 def test_a_raise_does_not_leave_the_tree_mis_nested(clock):
     """An unbalanced stack would nest every later phase under the dead one."""
-    with pytest.raises(ValueError):
+    def dies_inside_aggregation() -> None:
         with run_timing.phase("aggregation"):
             raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        dies_inside_aggregation()
     _record("extraction", 1.0, clock)
 
     assert [r["phase"] for r in run_timing.timings(1.0)] == ["aggregation", "extraction"]

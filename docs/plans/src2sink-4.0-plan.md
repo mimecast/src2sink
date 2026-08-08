@@ -91,6 +91,15 @@ included. Two decisions worth carrying forward:
   safe against its own sequel before that lands. Threaded time still shows, as
   the enclosing phase's remainder.
 
+**`DETECTION_VERSION` moves 13 → 14, and that is a deliberate false positive.**
+The timing change edits `build_metabase_v2.py`, which is a fingerprinted file,
+but only its imports, `main`, `_run_aggregate_only`, a new `_aggregate_all`
+helper and the manifest writer — no record-producing function is touched, so
+records built by 13 and 14 are byte-identical. Precedent existed for re-freezing
+without a bump (`ccdb358`, `OI-31`) and the call was made the other way: one
+rescan costs ~14 minutes once, and a gate carrying a growing list of judgement
+calls stops being a gate. The cost is paid rather than argued away.
+
 One thing fell out of it. The gate deriving detection inputs from the import
 closure (`tests/test_detection_input_coverage.py`) never followed
 `from . import x` — that form names submodules in its aliases, not in `module` —
