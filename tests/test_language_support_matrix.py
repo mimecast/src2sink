@@ -152,16 +152,15 @@ func (s *Svc) Go() { s.repo.Find() }
 # was written by hand and was wrong for four of the seven languages, which is a
 # fair illustration of why the behavioural check exists at all.
 _OBSERVED: dict[str, dict[str, int]] = {
-    "java":       {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "calls": 2},
-    "kotlin":     {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "calls": 2},
-    "typescript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "calls": 2},
-    "tsx":        {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "calls": 2},
-    "javascript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 3, "calls": 2},
-    "python":     {"types": 3, "fields": 0, "supertypes": 0, "methods": 3, "calls": 2},
-    # `type_declaration` IS in CLASS_NODE_TYPES, so the structural check passes.
-    # Go still yields nothing, because the name lives on the child `type_spec`
-    # and `_declaration_name` asks the node itself. `OI-43` step 2.
-    "go":         {"types": 0, "fields": 0, "supertypes": 0, "methods": 2, "calls": 2},
+    "java":       {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "owned_methods": 3, "calls": 2},
+    "kotlin":     {"types": 3, "fields": 1, "supertypes": 1, "methods": 3, "owned_methods": 3, "calls": 2},
+    "typescript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
+    "tsx":        {"types": 2, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
+    "javascript": {"types": 2, "fields": 0, "supertypes": 0, "methods": 3, "owned_methods": 3, "calls": 2},
+    "python":     {"types": 3, "fields": 0, "supertypes": 0, "methods": 3, "owned_methods": 3, "calls": 2},
+    # `OI-43` step 2 landed: `types` 0 -> 3 and `owned_methods` 0 -> 2. Go still
+    # has no fields or supertypes, so T1 and T2 remain out of reach until step 3.
+    "go":         {"types": 3, "fields": 0, "supertypes": 0, "methods": 2, "owned_methods": 2, "calls": 2},
 }
 
 
@@ -172,11 +171,18 @@ def _capabilities(language: str) -> dict[str, int]:
         repo_id="g/r", rel_path=rel_path, language=language, source=source,
     )
     types = [n for n in nodes if n.family == "type-decl"]
+    methods = [n for n in nodes if n.family == "method-decl"]
     return {
         "types": len(types),
         "fields": sum(len(n.detail.get("fields") or {}) for n in types),
         "supertypes": sum(len(n.detail.get("supertypes") or []) for n in types),
-        "methods": len([n for n in nodes if n.family == "method-decl"]),
+        "methods": len(methods),
+        # Counted separately from `methods` because the two move independently,
+        # and the difference is a whole defect: Go's receiver fix (`OI-43` step 2)
+        # changed no method *count* at all, only whether each one knew what it
+        # hung off. Without this column the gate would have watched that land and
+        # said nothing.
+        "owned_methods": len([n for n in methods if n.detail.get("class")]),
         "calls": len([n for n in nodes if n.family == "call-site"]),
     }
 
@@ -275,7 +281,10 @@ def test_the_matrix_records_todays_known_holes() -> None:
     reason. These are the holes `OI-43` was filed about, asserted so that fixing
     them has to come here and say so.
     """
-    assert _OBSERVED["go"]["types"] == 0, "OI-43 step 2 (Go `type_spec`) landed"
+    assert _OBSERVED["go"]["types"] > 0, "OI-43 step 2 regressed: Go types vanished again"
+    assert _OBSERVED["go"]["owned_methods"] > 0, (
+        "OI-43 step 2 regressed: Go methods stopped knowing their receiver type"
+    )
     for language in ("typescript", "go", "python", "javascript", "tsx"):
         assert _OBSERVED[language]["fields"] == 0
         assert _OBSERVED[language]["supertypes"] == 0

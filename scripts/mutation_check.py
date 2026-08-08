@@ -63,10 +63,11 @@ _MUTANT_TIMEOUT_S = 120
 # is what the paragraph above says and what these raises respect. Revisit by
 # measuring the wall clock, not by counting entries.
 #
-# 140 -> 145 for the four `OI-36` phase-1 mutants. All four are ordinary: they
-# read a note or a count out of an in-memory structure, with no timeout to wait
-# on, so the slow tail is unchanged at two entries.
-_MAX_CATALOGUE_SIZE = 145
+# 140 -> 145 for the four `OI-36` phase-1 mutants, then 145 -> 148 for the three
+# `OI-43` step-2 ones. All seven are ordinary: they read a note, a count or a
+# parsed node out of an in-memory structure, with no timeout to wait on, so the
+# slow tail is unchanged at two entries.
+_MAX_CATALOGUE_SIZE = 148
 _SLOW_MUTANT_S = 5.0
 
 
@@ -238,6 +239,43 @@ CATALOGUE: tuple[Mutant, ...] = (
             "The counter silently skips records it cannot read, so the run "
             "reports fewer parse failures than happened while looking "
             "authoritative — OI-36 arriving inside its own fix."
+        ),
+    ),
+    Mutant(
+        id="OI43-M1",
+        file="src2sink/extractors/ast_walk.py",
+        old='    "go": frozenset({"type_spec", "type_alias"}),',
+        new='    "go": frozenset({"type_declaration"}),',
+        selector="tests/test_type_declarations.py",
+        note=(
+            "The exact defect OI-43 step 2 fixed: type_declaration is present "
+            "in the table so the structural gate passes, and Go puts the name "
+            "on the child type_spec, so every Go type in the fleet is discarded "
+            "with no error."
+        ),
+    ),
+    Mutant(
+        id="OI43-M2",
+        file="src2sink/extractors/ast_walk.py",
+        old='        owner = _go_receiver_owner(source, node) if language == "go" else None',
+        new="        owner = None",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "Go methods stop knowing the type they hang off. Containment cannot "
+            "answer it because Go declares methods outside the type, so the "
+            "types become inert: indexed, with nothing resolving to them."
+        ),
+    ),
+    Mutant(
+        id="OI43-M3",
+        file="src2sink/extractors/ast_walk.py",
+        old='        return declared is not None and declared.type == "interface_type"',
+        new="        return False",
+        selector="tests/test_type_declarations.py",
+        note=(
+            "A Go interface is recorded as a class, so a call on an "
+            "interface-typed value cannot expand to implementations — the "
+            "OI-13 Kotlin defect, in another language."
         ),
     ),
     Mutant(
