@@ -34,7 +34,7 @@ def test_manifest_records_provenance_without_secrets(tmp_path):
     ]
     _write_run_manifest(
         tmp_path, _args(), rows, skipped=3, timed_out=1,
-        started_at="2026-07-01T00:00:00+00:00", finished_at="2026-07-01T00:05:00+00:00",
+        started_at="2026-07-01T00:00:00+00:00", finished_at="2026-07-01T00:05:00+00:00", total_seconds=1.0,
     )
     m = json.loads((tmp_path / "run-manifest.json").read_text(encoding="utf-8"))
 
@@ -56,7 +56,7 @@ def test_manifest_records_provenance_without_secrets(tmp_path):
 def test_manifest_flags_disabled_config(tmp_path):
     _write_run_manifest(
         tmp_path, _args(api_clients=None, prescreen_indicators=None), [],
-        skipped=0, timed_out=0, started_at="T0", finished_at="T1",
+        skipped=0, timed_out=0, started_at="T0", finished_at="T1", total_seconds=1.0,
     )
     m = json.loads((tmp_path / "run-manifest.json").read_text(encoding="utf-8"))
     assert m["invocation"]["api_clients_configured"] is False

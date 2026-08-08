@@ -7,6 +7,33 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+### ⚠️ Upgrading
+
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 14, so records
+built by an earlier version are not reused and the next run rebuilds every repo.
+`SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
+metabase still parses and no consumer needs changing.
+
+This one is a *deliberate false positive* of the detection gate. The change that
+triggered it adds phase timings and touches no record-producing code — records
+built by 13 and 14 are byte-identical — but the file it edits is fingerprinted,
+and the gate was allowed to be literal rather than accumulate another judgement
+call. The cost is one rescan, once.
+
+### Added
+
+- **Every run reports where its time went (`OI-32`).** `run-manifest.json` gains
+  a `timing` block — total wall clock plus a nested per-phase breakdown, with
+  shares of the whole run at every depth — and the same table prints at the end
+  of every run, `--aggregate-only` included. Previously the manifest recorded
+  only `started_at` and `finished_at`, so every performance number in 3.0.0 had
+  to be gathered by instrumenting a build by hand, including the finding that
+  aggregation was 78% of the run.
+
+  Time inside a phase that no sub-step accounted for is reported as
+  `unattributed` rather than absorbed into a neighbour, so the breakdown never
+  implies coverage it does not have.
+
 ## [3.1.0] - 2026-08-08
 
 **A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at

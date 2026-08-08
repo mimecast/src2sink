@@ -66,7 +66,7 @@ them.
 
 Each phase is independently releasable and leaves the tool working.
 
-### Phase 0 — see the cost (`OI-32`, part)
+### Phase 0 — see the cost (`OI-32`, part)  — **done**
 
 **Small, and first, because everything below is judged by it.**
 
@@ -76,6 +76,37 @@ that aggregation was 78% of the run, which nobody suspected. Phase timings in th
 manifest make that a property of every run instead of a one-off exercise.
 
 **Exit:** a run reports where its time went, per phase, without a profiler.
+
+**Shipped.** `src2sink/run_timing.py`; `run-manifest.json` gains a `timing`
+block and the same table prints at the end of every run, `--aggregate-only`
+included. Two decisions worth carrying forward:
+
+* **The parts are not claimed to sum to the whole.** Time inside a phase that no
+  child accounted for is emitted as `unattributed`. A tidy table that implies
+  full coverage it does not have is `OI-36` in measurement form, and the gaps are
+  where the next phase's instrumentation goes.
+* **Worker threads are ignored rather than recorded.** Their phases would
+  interleave with the main thread's and nest under whatever happened to be open.
+  This matters because `OI-32` step 2 threads the reads: the recorder had to be
+  safe against its own sequel before that lands. Threaded time still shows, as
+  the enclosing phase's remainder.
+
+**`DETECTION_VERSION` moves 13 → 14, and that is a deliberate false positive.**
+The timing change edits `build_metabase_v2.py`, which is a fingerprinted file,
+but only its imports, `main`, `_run_aggregate_only`, a new `_aggregate_all`
+helper and the manifest writer — no record-producing function is touched, so
+records built by 13 and 14 are byte-identical. Precedent existed for re-freezing
+without a bump (`ccdb358`, `OI-31`) and the call was made the other way: one
+rescan costs ~14 minutes once, and a gate carrying a growing list of judgement
+calls stops being a gate. The cost is paid rather than argued away.
+
+One thing fell out of it. The gate deriving detection inputs from the import
+closure (`tests/test_detection_input_coverage.py`) never followed
+`from . import x` — that form names submodules in its aliases, not in `module` —
+so six of `build_metabase_v2`'s dependencies were reachable only because someone
+had also listed them by hand. That is the coincidence the gate exists to stop
+relying on. Fixed; no new gaps surfaced, which is the good outcome and not
+evidence the fix was inert.
 
 ### Phase 1 — the silent-failure sweep (`OI-36`)
 

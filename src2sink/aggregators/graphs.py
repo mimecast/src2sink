@@ -11,6 +11,7 @@ from ..graph_common import (
     v2_record_paths,
 )
 from ..index_store import build_index
+from .. import run_timing
 from .data_stores import StoreCollector, write_data_store_graph
 from .index_v2 import _row_from_record, write_index_v2
 from .openapi_edges import write_openapi_artifacts
@@ -77,12 +78,15 @@ def aggregate_graphs_v2(
     """Run all v2 cross-repo graph writers (service, queue, data-store, PII, phase 3)."""
     # One load serves the report and the index, and the edges it computes are
     # handed on rather than recomputed (`OI-41`).
-    shared = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
-    call_edges, _unmatched = write_service_call_graph(
-        metabase_root, repo_jsons, repos_root=repos_root, records=shared,
-    )
+    with run_timing.phase("shared-load"):
+        shared = load_v2_repo_records(metabase_root, json_paths=repo_jsons)
+    with run_timing.phase("service-call-graph"):
+        call_edges, _unmatched = write_service_call_graph(
+            metabase_root, repo_jsons, repos_root=repos_root, records=shared,
+        )
     if repos_root:
-        write_openapi_artifacts(metabase_root, repos_root, repo_jsons)
+        with run_timing.phase("openapi"):
+            write_openapi_artifacts(metabase_root, repos_root, repo_jsons)
     # One streamed pass drives every converted aggregator, instead of each
     # parsing the whole metabase for itself (`OI-41`). Collectors retain their
     # reductions, never the records — so this buys the time without the resident
@@ -90,22 +94,28 @@ def aggregate_graphs_v2(
     queues, stores = QueueCollector(), StoreCollector()
     index_rows = MapCollector(_row_from_record)
     pii_flow = PiiFlowCollector()
-    run_fleet_pass(
-        metabase_root, (queues, stores, index_rows, pii_flow), json_paths=repo_jsons,
-    )
-    write_queue_graph(metabase_root, repo_jsons, graph=queues.result())
-    write_data_store_graph(metabase_root, repo_jsons, collected=stores.result())
-    producer_indices = write_payload_producer_index(
-        metabase_root, repo_jsons, repos_root=repos_root, records=shared,
-    )
-    del shared   # released before the streamed pass below
-    write_index_v2(metabase_root, repo_jsons, rows=index_rows.result())
-    write_pii_flow_v2(metabase_root, repo_jsons, counts=pii_flow.result())
-    write_traces_index(metabase_root)
-    if phase3:
-        aggregate_phase3_v2(metabase_root, repo_jsons, edges=call_edges)
-    if fleet_index:
-        write_fleet_index(
-            metabase_root, repo_jsons, repos_root=repos_root,
-            producer_indices=producer_indices, call_edges=call_edges,
+    with run_timing.phase("streamed-pass"):
+        run_fleet_pass(
+            metabase_root, (queues, stores, index_rows, pii_flow), json_paths=repo_jsons,
         )
+    with run_timing.phase("queue-and-store-graphs"):
+        write_queue_graph(metabase_root, repo_jsons, graph=queues.result())
+        write_data_store_graph(metabase_root, repo_jsons, collected=stores.result())
+    with run_timing.phase("payload-producers"):
+        producer_indices = write_payload_producer_index(
+            metabase_root, repo_jsons, repos_root=repos_root, records=shared,
+        )
+    del shared   # released before the streamed pass below
+    with run_timing.phase("index-and-pii"):
+        write_index_v2(metabase_root, repo_jsons, rows=index_rows.result())
+        write_pii_flow_v2(metabase_root, repo_jsons, counts=pii_flow.result())
+        write_traces_index(metabase_root)
+    if phase3:
+        with run_timing.phase("phase3"):
+            aggregate_phase3_v2(metabase_root, repo_jsons, edges=call_edges)
+    if fleet_index:
+        with run_timing.phase("fleet-index"):
+            write_fleet_index(
+                metabase_root, repo_jsons, repos_root=repos_root,
+                producer_indices=producer_indices, call_edges=call_edges,
+            )

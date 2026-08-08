@@ -485,9 +485,19 @@ aggregation's share is if anything understated. `run-manifest.json` records only
 output — every number above required external instrumentation. Phase timings in
 the manifest would make step 1 a property of every run instead of a one-off
 exercise, and would have surfaced the 78% without anyone asking.
+**This part is now fixed** — see step 0 below.
 
 ### Proposed approach
 
+0. ~~**Make the run report its own cost.**~~ **Done — 4.0 phase 0.**
+   `run-manifest.json` now carries a `timing` block: total wall clock plus a
+   nested per-phase breakdown, shares of the whole run at every depth, and the
+   same table printed at the end of every run. Time no phase claimed is reported
+   as `unattributed` rather than folded into a neighbour, so the breakdown never
+   implies coverage it does not have. `src2sink/run_timing.py`; the recorder
+   ignores worker threads by design, so step 2 cannot silently mis-nest it.
+   The measurement above would have been a manifest field rather than a
+   fortnight's instrumentation.
 1. ~~**Measure before building.**~~ **Done — see the measurement above.** The
    answer was not the expected one: the reads parallelise 3.0x even on local
    NVMe, and are worth 2.4% of the run; the 78% that dominates is CPU-bound and

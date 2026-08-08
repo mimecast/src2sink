@@ -21,7 +21,16 @@ SCHEMA_VERSION = 2
 # either, which would fire on a comment. `scripts/detection_version_check.py`
 # holds the honesty line — it fails the build when a detection input changes
 # without a bump here.
-DETECTION_VERSION = 13
+#
+# 14 is a deliberate *false* positive of that gate, paid rather than argued away.
+# The phase-0 timing change edited `build_metabase_v2.py` — a fingerprinted file
+# — but only its imports, `main`, `_run_aggregate_only`, a new `_aggregate_all`
+# helper and the manifest writer; no record-producing function was touched, so
+# nothing a record says can differ. Precedent existed for re-freezing without a
+# bump (`ccdb358`, `OI-31`), and the call was made the other way: one rescan
+# costs ~14 minutes once, and a gate with a growing list of judgement calls
+# stops being a gate. Records built by 13 and 14 are byte-identical.
+DETECTION_VERSION = 14
 
 
 
