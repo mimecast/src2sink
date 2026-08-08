@@ -86,6 +86,15 @@ needs a lifecycle:
 - **Provenance:** each build writes `metabase/run-manifest.json` (tool version,
   secret-free invocation summary, per-repo SHAs, counts, UTC timestamps) to
   support reproducibility and Art. 30 records (`R-1`).
+- **Cost:** the same manifest carries a `timing` block — total wall clock plus a
+  nested breakdown per phase, with shares of the whole run at every depth. Time
+  no phase claimed is reported as `unattributed` rather than absorbed into a
+  neighbour, so the table never implies coverage it does not have. The same
+  breakdown is printed at the end of every run, including `--aggregate-only`
+  (which prints it but writes no manifest, because that mode re-renders without
+  scanning and would otherwise replace a full run's provenance with a partial
+  one). It names phases only — no repo, path or duration attributable to an
+  individual — so it adds nothing to the record's sensitivity.
 
 ---
 

@@ -679,7 +679,7 @@ def test_manifest_records_the_real_binding_count(tmp_path, monkeypatch, bindings
     )
     _write_run_manifest(
         tmp_path, args, [], skipped=0, timed_out=0,
-        started_at="T0", finished_at="T1",
+        started_at="T0", finished_at="T1", total_seconds=1.0,
     )
     m = json.loads((tmp_path / "run-manifest.json").read_text(encoding="utf-8"))
     assert m["invocation"]["api_clients_binding_count"] == 1

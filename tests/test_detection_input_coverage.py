@@ -43,6 +43,14 @@ _EXEMPT: dict[str, str] = {
         "which folds in SCHEMA_VERSION and DERIVATION_VERSION and invalidates "
         "the index whenever either moves."
     ),
+    "src2sink.run_timing": (
+        "a stopwatch (OI-32, 4.0 phase 0). It reads a monotonic clock and "
+        "accumulates floats; it is handed no repo, no file and no record, and "
+        "nothing it returns is consulted by any code that writes one. Its "
+        "output lands in run-manifest.json, which is run provenance rather "
+        "than record content. Fingerprinting it would charge a fleet rescan "
+        "for changing how a duration is rounded."
+    ),
 }
 
 
@@ -71,8 +79,18 @@ def _import_graph() -> dict[str, set[str]]:
                 target = f"{base}.{node.module}" if node.module else base
             else:
                 target = node.module or ""
-            if target.startswith("src2sink"):
-                deps.add(target)
+            if not target.startswith("src2sink"):
+                continue
+            deps.add(target)
+            if node.module is None:
+                # `from . import checkout_scan, run_timing` names submodules in
+                # its aliases, not in `module` — so recording only the package
+                # lost every edge spelled that way, and `build_metabase_v2`
+                # imports six of its dependencies like this. They passed the gate
+                # only because they happened to be listed by hand as well, which
+                # is precisely the coincidence this test exists to stop relying
+                # on.
+                deps.update(f"{target}.{alias.name}" for alias in node.names)
         graph[mod] = deps
     return graph
 

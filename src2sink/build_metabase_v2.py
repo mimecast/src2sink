@@ -11,13 +11,14 @@ import multiprocessing as mp
 import os
 import re
 import sys
+import time
 from collections import Counter
 from collections.abc import Iterator
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from . import checkout_scan, prescreen, repo_utils
+from . import checkout_scan, prescreen, repo_utils, run_timing
 from .aggregators.api_client_discovery import (
     DISCOVERED_FILE,
     discover_api_clients,
@@ -695,6 +696,7 @@ def _write_run_manifest(
     timed_out: int,
     started_at: str,
     finished_at: str,
+    total_seconds: float,
 ) -> None:
     """Record run provenance for reproducibility / GDPR Art. 30 (finding R-1).
 
@@ -710,6 +712,15 @@ def _write_run_manifest(
         "detection_version": DETECTION_VERSION,
         "started_at": started_at,
         "finished_at": finished_at,
+        # `OI-32`, 4.0 phase 0. Wall clock alone answered only "how long", and
+        # every 3.0.0 performance number had to be gathered by instrumenting a
+        # build by hand — including that aggregation was 78% of the run. Shares
+        # are of the whole run at every depth; time no phase claimed is reported
+        # as `unattributed` rather than dropped. See `src2sink/run_timing.py`.
+        "timing": {
+            "total_seconds": round(total_seconds, 2),
+            "phases": run_timing.timings(total_seconds),
+        },
         "invocation": {
             "repos_root": Path(args.repos_root).name,
             "metabase_root": Path(args.metabase_root).name,
@@ -923,6 +934,35 @@ def _generate_source_map(
         print(f"{prefix}resolved {fixed} flagged source-map entries from pom.xml")
 
 
+def _aggregate_all(
+    metabase_root: Path,
+    jsons: list[Path],
+    repos_root: Path,
+    args: argparse.Namespace,
+    *,
+    taint: bool = True,
+    phase3: bool = True,
+    prefix: str = "",
+) -> None:
+    """Run every aggregation step over the written records, timing each.
+
+    Shared by the full scan and `--aggregate-only` so both report the same
+    breakdown — the aggregate-only path is how you would measure aggregation
+    deliberately, and it would be perverse for that one to be the untimed one.
+    """
+    # Before any phase searches the tree, so they all share one traversal.
+    with run_timing.phase("prewalk-checkout"):
+        _prewalk_checkout(repos_root)
+    if taint:
+        with run_timing.phase("taint-catalogs"):
+            aggregate_taint_catalogs_v2(metabase_root, jsons)
+    aggregate_graphs_v2(metabase_root, jsons, repos_root=repos_root, phase3=phase3)
+    with run_timing.phase("source-map"):
+        _generate_source_map(metabase_root, jsons, repos_root, prefix=prefix)
+    with run_timing.phase("api-client-discovery"):
+        _maybe_discover_api_clients(metabase_root, jsons, repos_root, args)
+
+
 def _run_aggregate_only(
     metabase_root: Path, repos_root: Path, args: argparse.Namespace
 ) -> int:
@@ -936,20 +976,23 @@ def _run_aggregate_only(
         )
         return 2
     print(f"Aggregate-only: {len(jsons)} v2 JSONs")
+    run_timing.reset()
+    started = time.perf_counter()
     if args.phase3_only:
-        write_pii_flow_v2(metabase_root, jsons)
-        aggregate_phase3_v2(metabase_root, jsons)
+        with run_timing.phase("pii-flow"):
+            write_pii_flow_v2(metabase_root, jsons)
+        with run_timing.phase("phase3"):
+            aggregate_phase3_v2(metabase_root, jsons)
     else:
-        # Before any phase searches the tree, so they all share one traversal.
-        _prewalk_checkout(repos_root)
-        if not args.graphs_only:
-            aggregate_taint_catalogs_v2(metabase_root, jsons)
-        aggregate_graphs_v2(
-            metabase_root, jsons, repos_root=repos_root, phase3=not args.no_phase3
+        _aggregate_all(
+            metabase_root, jsons, repos_root, args,
+            taint=not args.graphs_only, phase3=not args.no_phase3, prefix="  ",
         )
-        _generate_source_map(metabase_root, jsons, repos_root, prefix="  ")
-        _maybe_discover_api_clients(metabase_root, jsons, repos_root, args)
     print("Done.")
+    # No manifest here: this mode re-renders artefacts without scanning, so
+    # writing `run-manifest.json` would replace a full run's provenance with a
+    # partial one that looks like a scan which updated nothing.
+    print("\n".join(run_timing.render_lines(time.perf_counter() - started)))
     return 0
 
 
@@ -1084,8 +1127,11 @@ def main() -> int:
         return _run_aggregate_only(metabase_root, repos_root, args)
 
     started_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    run_timing.reset()
+    run_started = time.perf_counter()
     force = args.force
-    discovered = _discover_repos(repos_root, metabase_root, args, force)
+    with run_timing.phase("discovery"):
+        discovered = _discover_repos(repos_root, metabase_root, args, force)
 
     # Load pre-screen indicators once in the parent; pass the list to workers.
     prescreen_indicators: tuple[str, ...] = ()
@@ -1100,18 +1146,17 @@ def main() -> int:
         f"v2: {len(discovered)} repos, workers={args.workers}, "
         f"repo-timeout={args.repo_timeout}s{' (force)' if force else ''}"
     )
-    rows, skipped, timed_out = _dispatch_and_collect(
-        discovered, args, pattern_strings, prescreen_indicators
-    )
+    with run_timing.phase("extraction"):
+        rows, skipped, timed_out = _dispatch_and_collect(
+            discovered, args, pattern_strings, prescreen_indicators
+        )
 
-    jsons = _load_v2_jsons(metabase_root)
+    with run_timing.phase("load-records"):
+        jsons = _load_v2_jsons(metabase_root)
     if jsons:
-        # Before any phase searches the tree, so they all share one traversal.
-        _prewalk_checkout(repos_root)
-        aggregate_taint_catalogs_v2(metabase_root, jsons)
-        aggregate_graphs_v2(metabase_root, jsons, repos_root=repos_root)
-        _generate_source_map(metabase_root, jsons, repos_root, prefix="")
-        _maybe_discover_api_clients(metabase_root, jsons, repos_root, args)
+        with run_timing.phase("aggregation"):
+            _aggregate_all(metabase_root, jsons, repos_root, args)
+    total_seconds = time.perf_counter() - run_started
     _write_run_manifest(
         metabase_root,
         args,
@@ -1120,12 +1165,14 @@ def main() -> int:
         timed_out=timed_out,
         started_at=started_at,
         finished_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        total_seconds=total_seconds,
     )
     print(
         f"Finished {len(rows)} updated, {skipped} skipped, {timed_out} timed out, "
         f"{len(jsons)} v2 JSONs for aggregation."
         f"{_limits_hit_summary(jsons, timed_out)}"
     )
+    print("\n".join(run_timing.render_lines(total_seconds)))
     return 0
 
 
