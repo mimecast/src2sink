@@ -383,24 +383,61 @@ def _go_receiver_owner(source: bytes, node: Node) -> str | None:
     all. Types alone would not have fixed that: they would have been indexed with
     no method ever resolving to them.
     """
+    return _go_receiver_part(source, node, "type")
+
+
+def _go_receiver_self(source: bytes, node: Node) -> str | None:
+    """The variable a Go method calls itself by (`OI-43`).
+
+    `func (s *Svc) Go()` makes `s` mean what `this` means everywhere else — but
+    the name is the author's choice, so it cannot be a constant the way `this.`
+    and `self.` are. Carried on the declaration and looked up at the call, which
+    is the only place both facts exist.
+    """
+    return _go_receiver_part(source, node, "name")
+
+
+def _go_receiver_part(source: bytes, node: Node, wanted: str) -> str | None:
+    """Read one field off a Go method's receiver declaration."""
     receiver = node.child_by_field_name("receiver")
     if receiver is None:
         return None
     for child in receiver.children:
         if child.type != "parameter_declaration":
             continue
-        declared = child.child_by_field_name("type")
-        if declared is None:
+        part = child.child_by_field_name(wanted)
+        if part is None:
             continue
         # `*JdbcRepo` and `JdbcRepo` name the same type for resolution.
-        return node_text(source, declared).lstrip("*").strip()
+        return node_text(source, part).lstrip("*").strip()
     return None
+
+
+def _owner_of(
+    source: bytes, node: Node, language: str, classes: list[tuple[Node, str | None]]
+) -> str | None:
+    """What a method hangs off: containment everywhere, the receiver in Go.
+
+    Go declares methods at file scope, so containment finds nothing and the
+    receiver is the only statement of ownership. Containment still wins where it
+    applies, because a method genuinely nested inside a type is the stronger
+    answer.
+    """
+    owner = _go_receiver_owner(source, node) if language == "go" else None
+    for cls_node, cls_name in classes:
+        if cls_node.start_byte <= node.start_byte and node.end_byte <= cls_node.end_byte:
+            owner = cls_name
+    return owner
 
 
 def iter_method_declarations(
     source: bytes, root: Node, language: str
-) -> Iterator[tuple[str | None, str, list[str], int, int]]:
-    """Yield (class, method, params, start line, end line) for each callable.
+) -> Iterator[tuple[str | None, str, list[str], int, int, str | None]]:
+    """Yield (class, method, params, start line, end line, self name) for each callable.
+
+    ``self name`` is the variable the method refers to itself by, and is only
+    ever set for Go — every other grammar here spells it `this` or `self`, which
+    resolution already knows as constants.
 
     The enclosing class is resolved by containment rather than by walking parents,
     because the grammars disagree about how a method hangs off its class and
@@ -417,16 +454,14 @@ def iter_method_declarations(
         name = _declaration_name(source, node)
         if name is None:
             continue
-        owner = _go_receiver_owner(source, node) if language == "go" else None
-        for cls_node, cls_name in classes:
-            if cls_node.start_byte <= node.start_byte and node.end_byte <= cls_node.end_byte:
-                owner = cls_name
+        owner = _owner_of(source, node, language, classes)
         yield (
             owner,
             name,
             _parameter_names(source, node, language),
             node.start_point[0] + 1,
             node.end_point[0] + 1,
+            _go_receiver_self(source, node) if language == "go" else None,
         )
 
 

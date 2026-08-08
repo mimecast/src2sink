@@ -1,19 +1,19 @@
 {
   "_comment": "Content fingerprint of the detection inputs, frozen against DETECTION_VERSION. Regenerate with scripts/detection_version_check.py --update.",
   "derivation_files": {
-    "src2sink/derive.py": "368ea70a5d442d7f9a0b08733f28b4d705e4244c2d0b468dbf767a47addcd5b2",
+    "src2sink/derive.py": "725fdf185725ace7d56ff579fcd2a61655d852a5e3f80d6cdb6413a39bf329b3",
     "src2sink/paths.py": "994ca5c3998f720c4429ec0a76ed04d753673d7d4039a638b87cf4ebe6f9f445",
-    "src2sink/resolve.py": "bff3a10729e644120998584f747a797e6894d6cba4df242b745bd8aec7102b38"
+    "src2sink/resolve.py": "0109cb4d0fa7239d382babfe7a87024dcd4247333e1e71cc8a0ef6868d3c2b10"
   },
-  "derivation_version": 5,
-  "detection_version": 18,
+  "derivation_version": 6,
+  "detection_version": 19,
   "files": {
     "src2sink/build_metabase_v2.py": "43920212c30edea1b8ef99f2cfaaea89e91d7ff5f8d7075fc587e035273d6b7f",
     "src2sink/checkout_scan.py": "8f2375e7b5a3ac8250892bd9b65f12515c44958f100bbed4e286077fa108f563",
     "src2sink/constants.py": "22913d5c48fa0a1535279588891f67f2363cc1a2b7fac2b4c2d824ddaeb96ac2",
     "src2sink/dependencies.py": "68ccefc20100798ed1f53c289574ea1e71ef67054067e45eefdcc6c650831227",
     "src2sink/extractors/__init__.py": "bfdaa61333723a505336017982ce90765746e00ca5b1c667bb2646792eb1138f",
-    "src2sink/extractors/ast_walk.py": "97deaab16946b2a5cf0db33538e1add907793ea0ee72fed82df1730f2f5009ce",
+    "src2sink/extractors/ast_walk.py": "154c5e9b182a0b1fd21cacfb898619d8b981d9ff9449de126bcd72d7c54036a1",
     "src2sink/extractors/base.py": "f308246442fb03e9f0da86b522c7ff9c0471f721502bd4dc279f188f7eb36d61",
     "src2sink/extractors/config.py": "8cad67e5c7729b68942874619d733ae72a757a50cc7851413f190b9847f50c14",
     "src2sink/extractors/file_context.py": "777dff71cf0199e96683c38ce09dd1fcabc12cddee04e28d1f1d8e9f87390837",
@@ -27,7 +27,7 @@
     "src2sink/extractors/python_extractor.py": "149bb9c80c0791248be622d74b6e76ff6270031299f81842308409fca6e7a232",
     "src2sink/extractors/regex_extractors.py": "9bd6b6252dac086b2874b2946c466071f088c4fc92be885a4ef146c1cb3f7923",
     "src2sink/extractors/symbols.py": "c3516ca04394e0abc9cdd9f137f8b107b11488fe1fd6bf4dd7db3effb53e0ee4",
-    "src2sink/extractors/ts_extractors.py": "f650a29a3a254829b865ab16b932cc8c2d9399d44f4510156e8bb9f4b7ae123c",
+    "src2sink/extractors/ts_extractors.py": "b205767fdf7425fdf1a256e75a57e2dab550f359ce076e7aaccd471a35877601",
     "src2sink/extractors/unified.py": "2c30df86c93592f877af52a633da780de8523ad16d91bf180054ffa270c710db",
     "src2sink/graph_common.py": "1cf1a1a46d66f9495d30aa6dae20f6ecd79203a825512f38bc8d585a8b5be118",
     "src2sink/internal_groups.py": "382ecc2c855820f64990cd5d3f43af8f208b7325b744124091cb34ebdc378e20",
@@ -39,7 +39,7 @@
     "src2sink/repo_utils.py": "182f08579260ff44551759390461695993603dec554eb6198ce4778b039e36d6",
     "src2sink/safe_paths.py": "f9770327e0ae47db5ed9287bbd37d56f876a06989c68c03c98b5be6c71ca9831",
     "src2sink/sanitize.py": "e0c6f7186b146d90d1569b9b5fdc1cc30b28b47206cd4d1d4eca4f1788f11384",
-    "src2sink/schema.py": "d20a35220f2d3348750e77c3079c8ad896d0df14307b8889c75bee409779f587",
+    "src2sink/schema.py": "b405cc30ad92b05cf27dd0096d90c038c415062e104565628179779f5408a9cc",
     "src2sink/vocabulary.py": "cc69b99bb67753ff3d476a8a9bb4529fff17484b6f3e94e073b105d9bf8c27ea"
   }
 }

@@ -315,7 +315,7 @@ def extract_method_declarations(ctx: FileExtractionContext) -> None:
     if tree is None:
         return
 
-    for owner, name, params, start, end in iter_method_declarations(
+    for owner, name, params, start, end, self_name in iter_method_declarations(
         src_bytes, tree.root_node, ctx.language
     ):
         ctx.nodes.append(make_node(
@@ -331,6 +331,10 @@ def extract_method_declarations(ctx: FileExtractionContext) -> None:
                 "params": params,
                 "start_line": start,
                 "end_line": end,
+                # Only Go sets this, and only when the method has a receiver, so
+                # the key is absent everywhere else rather than carrying a null
+                # on every method declaration in the fleet.
+                **({"self_name": self_name} if self_name else {}),
             },
             confidence="high",
         ))

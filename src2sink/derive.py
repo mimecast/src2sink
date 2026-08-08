@@ -50,7 +50,7 @@ from .schema import FlowEdge, FlowNode
 # It lives here rather than in schema.py deliberately. schema.py is a *detection*
 # input, so a bump there would change the detection fingerprint and force the
 # fleet rescan this separation exists to avoid.
-DERIVATION_VERSION = 5
+DERIVATION_VERSION = 6
 
 DERIVED_FAMILIES = frozenset({
     ("sql", "sink"),
