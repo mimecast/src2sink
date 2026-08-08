@@ -33,7 +33,7 @@ from src2sink.extractors.base import supported_languages
 import pytest
 
 from src2sink.extractors.unified import extract_from_file
-from src2sink.resolve import build_symbol_table, resolve_calls
+from src2sink.resolve import resolve_calls
 
 # The per-language tables that decide what a grammar yields. Named here rather
 # than discovered, so adding a table is a deliberate act that shows up in review.
@@ -400,6 +400,14 @@ class Svc:
     repo: Repo
     def go(self): self.repo.find()
 """),
+    # Go's canonical shape is a *concrete* field: interface satisfaction is
+    # structural, so an interface-typed field can never resolve above T3 here.
+    "go": ("svc.go", """
+type JdbcRepo struct {}
+func (j *JdbcRepo) Find() { db.Query("SELECT 1") }
+type Svc struct { repo JdbcRepo }
+func (s *Svc) Go() { s.repo.Find() }
+"""),
 }
 
 # The tier each language reaches on the canonical shape: an interface-typed
@@ -407,7 +415,7 @@ class Svc:
 # tables is only worth anything if this moves, so it is asserted rather than
 # assumed — `OI-43` step 2 was explicit that it changed no tier, and this is the
 # step that does.
-_EXPECTED_TIER = {"typescript": "T2", "python": "T1"}
+_EXPECTED_TIER = {"typescript": "T2", "python": "T1", "go": "T1"}
 
 
 @pytest.mark.parametrize("language", sorted(_RESOLUTION_SAMPLES))
@@ -425,32 +433,49 @@ def test_the_canonical_shape_resolves_above_unique_name(language):
     )
 
 
-def test_go_still_resolves_only_by_unique_name():
-    """Go has the facts now and still cannot use them, for two separate reasons.
+def test_go_resolves_a_concrete_field_by_declared_type():
+    """The fixable half of Go's gap, now fixed.
 
-    **Fixable:** `_normalise_receiver` knows `this.` and `self.`, and Go's
-    receiver name is whatever the author chose — `func (s *Svc)` makes `s.repo`
-    exactly `this.repo`, but nothing carries `s` from the declaration to the
-    call, so the receiver is discarded as an unfollowable chain.
+    `_normalise_receiver` knew only `this.` and `self.`, and Go's receiver name
+    is the author's choice — `func (s *Svc)` makes `s.repo` exactly `this.repo`,
+    but nothing carried `s` from the declaration to the call, so every Go field
+    access was discarded as an unfollowable chain. Go had the facts and could not
+    use them.
+    """
+    for receiver, call in (("s *Svc", "s"), ("svc Svc", "svc")):
+        nodes, _edges = extract_from_file(
+            repo_id="g/r", rel_path="svc.go", language="go", source=f"""
+type JdbcRepo struct {{}}
+func (j *JdbcRepo) Find() {{ db.Query("SELECT 1") }}
+type Svc struct {{ repo JdbcRepo }}
+func ({receiver}) Go() {{ {call}.repo.Find() }}
+""",
+        )
+        resolved = resolve_calls(nodes)
+        assert [(r.tier, r.confidence) for r in resolved] == [("T1", "high")], (
+            f"a {'pointer' if '*' in receiver else 'value'} receiver must resolve "
+            "the same way; the name is arbitrary either way"
+        )
 
-    **Intrinsic:** Go interface satisfaction is *structural*. `JdbcRepo` declares
-    no link to `Repo`, so no syntactic read can connect them and T2 can never
-    fire through a Go interface however much work is done.
 
-    Asserted rather than left implicit, so that fixing the first has to come here
-    and say so — and so nobody reads `OI-43` step 3 as having finished Go.
+def test_go_interfaces_remain_unreachable_by_design():
+    """The half that is not fixable, asserted so nobody expects it to be.
+
+    Go interface satisfaction is **structural**: a type implements an interface
+    by having the methods, and declares no link to it. No syntactic read can
+    connect `JdbcRepo` to `Repo`, so T2 can never fire through a Go interface
+    however much work is done — unlike `OI-43`'s other gaps, which were unfilled
+    rather than impossible.
     """
     nodes, _edges = extract_from_file(
         repo_id="g/r", rel_path="svc.go", language="go", source="""
+type Repo interface { Find() }
 type JdbcRepo struct {}
 func (j *JdbcRepo) Find() { db.Query("SELECT 1") }
-type Svc struct { repo JdbcRepo }
-func (s *Svc) Go() { s.repo.Find() }
 """,
     )
-    assert {r.tier for r in resolve_calls(nodes)} == {"T3"}
-
-    # The facts themselves are present and correct — only the receiver is lost.
-    table = build_symbol_table(nodes)
-    assert table.declared_type_of("Svc", "repo") == "JdbcRepo"
-    assert table.method_on("JdbcRepo", "Find") is not None
+    types = {n.detail["class"]: n.detail for n in nodes if n.family == "type-decl"}
+    assert types["JdbcRepo"]["supertypes"] == [], (
+        "if this ever becomes non-empty, Go has gained a syntactic implements "
+        "clause and this whole limitation is worth revisiting"
+    )

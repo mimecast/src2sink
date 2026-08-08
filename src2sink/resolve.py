@@ -84,6 +84,10 @@ class SymbolTable:
     implementations: dict[str, list[str]] = field(default_factory=dict)
     methods: dict[tuple[str, str], FlowNode] = field(default_factory=dict)
     by_name: dict[str, list[FlowNode]] = field(default_factory=lambda: defaultdict(list))
+    # (class, method) -> the variable that method calls itself by. Only Go
+    # populates this: `func (s *Svc)` makes `s` mean what `this` means elsewhere,
+    # and the name is the author's choice rather than a keyword (`OI-43`).
+    self_names: dict[tuple[str, str], str] = field(default_factory=dict)
 
     def declared_type_of(self, owner: str, receiver: str) -> str | None:
         """The declared type of ``receiver`` as a field of ``owner``, if any."""
@@ -94,11 +98,19 @@ class SymbolTable:
         return self.methods.get((class_name, method))
 
 
-def _normalise_receiver(receiver: str | None) -> str | None:
-    """Strip a self-reference prefix so `this.dao` reads as the field `dao`."""
+def _normalise_receiver(receiver: str | None, self_name: str | None = None) -> str | None:
+    """Strip a self-reference prefix so `this.dao` reads as the field `dao`.
+
+    ``self_name`` carries Go's answer to the same question. Go names the
+    receiver in the declaration — `func (s *Svc)` — so `s.repo` is exactly
+    `this.repo`, but `s` is the author's choice and cannot be a constant. Without
+    it every Go field access looked like an unfollowable chain and was discarded,
+    which is why Go had the resolution facts and still could not use them.
+    """
     if not receiver:
         return None
-    for prefix in _SELF_PREFIXES:
+    prefixes = (*_SELF_PREFIXES, f"{self_name}.") if self_name else _SELF_PREFIXES
+    for prefix in prefixes:
         if receiver.startswith(prefix):
             receiver = receiver[len(prefix):]
     # Anything still qualified — `a.b.c` — is a chain this pass cannot follow,
@@ -127,6 +139,9 @@ def _index_method(table: SymbolTable, obs: FlowNode, detail: dict[str, Any]) -> 
         # signature to tell them apart, so binding to the first is as good an
         # answer as it can honestly give.
         table.methods.setdefault((owner, method), obs)
+        self_name = detail.get("self_name")
+        if self_name:
+            table.self_names[(owner, method)] = str(self_name)
     table.by_name[method].append(obs)
 
 
@@ -206,7 +221,9 @@ def resolve_call(call: FlowNode, table: SymbolTable) -> list[ResolvedCall]:
     if not symbol:
         return []
     owner = detail.get("enclosing_class")
-    receiver = _normalise_receiver(detail.get("receiver"))
+    method = detail.get("enclosing_method")
+    self_name = table.self_names.get((owner, method)) if owner and method else None
+    receiver = _normalise_receiver(detail.get("receiver"), self_name)
 
     if owner and receiver:
         resolved = _resolve_via_declared_type(call, table, owner, receiver, symbol)

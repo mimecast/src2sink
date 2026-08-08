@@ -9,10 +9,10 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### ⚠️ Upgrading
 
-**A full rescan is required.** `DETECTION_VERSION` moves 13 → 18, so records
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 19 and `DERIVATION_VERSION` 5 → 6, so records
 built by an earlier version are not reused and the next run rebuilds every repo.
-`SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
-metabase still parses and no consumer needs changing.
+`SCHEMA_VERSION` stays at `2`; an existing metabase still parses and no
+consumer needs changing.
 
 Two bumps, one rescan. **14** was a *deliberate false positive* of the detection
 gate: the phase-timing change touches no record-producing code — records built by
@@ -38,17 +38,24 @@ unreleased window, so **a single rescan covers the lot.**
   | TypeScript / TSX | T3 `low` | **T2 `medium`** |
   | Python | T3 `low` | **T1 `high`** |
   | JavaScript | T3 `low` | supertypes read; T1 impossible — it declares no types |
-  | Go | T3 `low` | T3 `low` — the facts are there, the receiver is not |
+  | Go (concrete field) | T3 `low` | **T1 `high`** |
+  | Go (interface field) | T3 `low` | unreachable — structural typing |
 
   TypeScript reads `constructor(private dao: Dao)` as well as explicit members,
   because that one line both declares a member and injects it — the Angular and
   NestJS shape. Python counts only *annotated* attributes.
 
-  **Go is deliberately unfinished and says so.** Its type and field facts are now
-  correct, but `s.repo` is discarded because the receiver name is whatever the
-  author chose and nothing carries it from the declaration to the call. Separately,
-  Go interface satisfaction is *structural*, so T2 can never fire through a Go
-  interface at all. Both are recorded in `OI-43`.
+  **Go now reaches T1 `high` on a concrete field too.** A Go method records the
+  variable it calls itself by — `func (s *Svc)` makes `s.repo` mean `this.repo`,
+  but the name is the author's choice, so it could not be a constant the way
+  `this.` and `self.` are. Without it every Go field access was discarded as an
+  unfollowable chain, and Go had the resolution facts while being unable to use
+  them. Pointer and value receivers behave identically.
+
+  **One gap here is permanent, not pending.** Go interface satisfaction is
+  *structural* — a type implements an interface by having the methods and
+  declares no link to it — so T2 can never fire through a Go interface, however
+  much work is done. Recorded in `OI-43` and asserted by a test.
 
 - **A repo says which of its languages it could only partly read (`OI-43`,
   step 4).** One note per repo per language whose extraction is limited — never

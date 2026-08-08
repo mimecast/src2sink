@@ -47,7 +47,11 @@ SCHEMA_VERSION = 2
 # Go and Python, plus TypeScript interfaces, which were never recorded as
 # types at all. Every `type-decl` in those languages gains content it never
 # carried, and TypeScript and Python calls resolve at a stronger tier.
-DETECTION_VERSION = 18
+#
+# 19 records `self_name` on a Go method declaration — the variable the method
+# calls itself by, which Go leaves to the author rather than spelling `this`.
+# Present only on Go methods with a receiver, so no other record grows.
+DETECTION_VERSION = 19
 
 
 

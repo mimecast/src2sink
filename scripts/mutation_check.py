@@ -64,11 +64,11 @@ _MUTANT_TIMEOUT_S = 120
 # measuring the wall clock, not by counting entries.
 #
 # 140 -> 145 for the four `OI-36` phase-1 mutants, then 145 -> 148 for the three
-# `OI-43` step-2 ones, 148 -> 150 for step 4 and 150 -> 156 for step 3. All
-# fourteen are ordinary: they read a note, a count or a
+# `OI-43` step-2 ones, 148 -> 150 for step 4 and 150 -> 156 for step 3 and 156 -> 158
+# for the Go receiver. All sixteen are ordinary: they read a note, a count or a
 # parsed node out of an in-memory structure, with no timeout to wait on, so the
 # slow tail is unchanged at two entries.
-_MAX_CATALOGUE_SIZE = 156
+_MAX_CATALOGUE_SIZE = 158
 _SLOW_MUTANT_S = 5.0
 
 
@@ -258,8 +258,8 @@ CATALOGUE: tuple[Mutant, ...] = (
     Mutant(
         id="OI43-M2",
         file="src2sink/extractors/ast_walk.py",
-        old='        owner = _go_receiver_owner(source, node) if language == "go" else None',
-        new="        owner = None",
+        old='    owner = _go_receiver_owner(source, node) if language == "go" else None',
+        new="    owner = None",
         selector="tests/test_type_declarations.py",
         note=(
             "Go methods stop knowing the type they hang off. Containment cannot "
@@ -370,6 +370,29 @@ CATALOGUE: tuple[Mutant, ...] = (
             "TypeScript interfaces stop being type declarations, so T2 has "
             "nothing to expand: the declaration a call resolves to is missing, "
             "not just the edge to it."
+        ),
+    ),
+    Mutant(
+        id="OI43-M11",
+        file="src2sink/resolve.py",
+        old='    prefixes = (*_SELF_PREFIXES, f"{self_name}.") if self_name else _SELF_PREFIXES',
+        new="    prefixes = _SELF_PREFIXES",
+        selector="tests/test_language_support_matrix.py",
+        note=(
+            "Go's receiver name stops being stripped, so s.repo looks like an "
+            "unfollowable chain and every Go field access is discarded - the "
+            "state where Go had the resolution facts and could not use them."
+        ),
+    ),
+    Mutant(
+        id="OI43-M12",
+        file="src2sink/extractors/ts_extractors.py",
+        old='                **({"self_name": self_name} if self_name else {}),',
+        new="",
+        selector="tests/test_language_support_matrix.py",
+        note=(
+            "The receiver name never reaches the record, so resolution cannot "
+            "look it up at the call. Same outcome as OI43-M11, one layer down."
         ),
     ),
     Mutant(

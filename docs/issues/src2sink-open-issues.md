@@ -1098,19 +1098,32 @@ carry a stated reason for each hole.
    bare `type_elem` in an interface. Both promote another type's methods, which
    is exactly T2's question.
 
-   **Go still resolves only at T3, for two further reasons — one fixable, one
-   not.** The facts are now present and correct: `declared_type_of("Svc","repo")`
-   and `method_on("JdbcRepo","Find")` both answer. What blocks it is that
-   `_normalise_receiver` knows only `this.` and `self.`, while Go's receiver name
-   is whatever the author chose — `func (s *Svc)` makes `s.repo` exactly
-   `this.repo`, but nothing carries `s` from the declaration to the call, so the
-   receiver is discarded as an unfollowable chain. **That is fixable and is the
-   next Go item.** What is *not* fixable is that Go interface satisfaction is
-   structural: `JdbcRepo` declares no link to `Repo`, so no syntactic read can
-   connect them and T2 can never fire through a Go interface.
+   **Go's fixable half is now fixed too: it reaches T1 `high` on a concrete
+   field.** `_normalise_receiver` knew only `this.` and `self.`, while Go's
+   receiver name is whatever the author chose — `func (s *Svc)` makes `s.repo`
+   exactly `this.repo`, but nothing carried `s` from the declaration to the call,
+   so every Go field access was discarded as an unfollowable chain. Go had the
+   facts and could not use them.
 
-   `tests/test_language_support_matrix.py` asserts both — the tiers that moved,
-   and that Go has not — so nobody reads step 3 as having finished Go.
+   A Go method declaration now records `self_name`, and resolution looks it up by
+   `(enclosing_class, enclosing_method)` — the only place both facts exist. The
+   key is absent on every other language's methods rather than carrying a null
+   across the fleet. Pointer and value receivers behave identically, because the
+   name is arbitrary either way.
+
+   **What is not fixable is that Go interface satisfaction is structural.**
+   `JdbcRepo` declares no link to `Repo`, so no syntactic read can connect them
+   and T2 can never fire through a Go interface. That is the one gap in this
+   issue that is a property of the language rather than unfilled work, and
+   `test_go_interfaces_remain_unreachable_by_design` says so.
+
+   | language | before step 3 | now |
+   |---|---|---|
+   | TypeScript / TSX | T3 `low` | **T2 `medium`** |
+   | Python | T3 `low` | **T1 `high`** |
+   | Go, concrete field | T3 `low` | **T1 `high`** |
+   | Go, interface field | T3 `low` | unreachable — structural typing |
+   | JavaScript | T3 `low` | supertypes only; T1 impossible |
 4. ~~**Say so in the output, not only in a changelog.**~~ **Done.** One note per
    repo per language whose extraction is limited, never per file — Scala alone
    would otherwise put a note on every Scala file in the estate, and a signal
