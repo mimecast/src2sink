@@ -35,7 +35,12 @@ SCHEMA_VERSION = 2
 # 1) makes a repo record say when a source file would not parse and when a
 # manifest could not be read, so `notes` genuinely differs. If 14's rescan
 # has not been run yet, 15 subsumes it — one rescan covers both.
-DETECTION_VERSION = 15
+#
+# 16 is `OI-43` step 2: Go type declarations were discarded outright, so every
+# Go repo gains `type-decl` nodes and its `method-decl` nodes gain the type
+# they hang off. 3.1.0 shipped detection 13, so 14, 15 and 16 all land in the
+# same unreleased window — one rescan covers the lot.
+DETECTION_VERSION = 16
 
 
 

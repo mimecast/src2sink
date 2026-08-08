@@ -239,7 +239,16 @@ CLASS_NODE_TYPES: dict[str, frozenset[str]] = {
     "javascript": frozenset({"class_declaration"}),
     "typescript": frozenset({"class_declaration"}),
     "tsx": frozenset({"class_declaration"}),
-    "go": frozenset({"type_declaration"}),
+    # `type_spec`, not `type_declaration` (`OI-43` step 2). Go puts the name on
+    # the spec, so asking the declaration for a `name` field returned None and
+    # `iter_type_declarations` skipped **every Go type in the fleet** — present
+    # in the table, so the structural half of the language gate passed, and
+    # producing nothing. `OI-13`'s shape for the third time.
+    #
+    # It also fixes the grouped form for free: `type ( A struct{}; B interface{} )`
+    # is one declaration holding several specs, so keying on the declaration
+    # could at best have found the first.
+    "go": frozenset({"type_spec", "type_alias"}),
 }
 
 METHOD_NODE_TYPES: dict[str, frozenset[str]] = {
@@ -358,6 +367,30 @@ def _parameter_name(source: bytes, child: Node) -> str | None:
     return node_text(source, ident) if ident is not None else None
 
 
+def _go_receiver_owner(source: bytes, node: Node) -> str | None:
+    """The type a Go method hangs off, read from its receiver (`OI-43` step 2).
+
+    Every other grammar here nests a method inside its class, so containment
+    answers "what does this belong to". **Go does not** — `func (j *JdbcRepo)
+    Find()` sits at file scope and names its owner in the receiver, so
+    containment finds nothing and every Go method was recorded with no class at
+    all. Types alone would not have fixed that: they would have been indexed with
+    no method ever resolving to them.
+    """
+    receiver = node.child_by_field_name("receiver")
+    if receiver is None:
+        return None
+    for child in receiver.children:
+        if child.type != "parameter_declaration":
+            continue
+        declared = child.child_by_field_name("type")
+        if declared is None:
+            continue
+        # `*JdbcRepo` and `JdbcRepo` name the same type for resolution.
+        return node_text(source, declared).lstrip("*").strip()
+    return None
+
+
 def iter_method_declarations(
     source: bytes, root: Node, language: str
 ) -> Iterator[tuple[str | None, str, list[str], int, int]]:
@@ -378,7 +411,7 @@ def iter_method_declarations(
         name = _declaration_name(source, node)
         if name is None:
             continue
-        owner = None
+        owner = _go_receiver_owner(source, node) if language == "go" else None
         for cls_node, cls_name in classes:
             if cls_node.start_byte <= node.start_byte and node.end_byte <= cls_node.end_byte:
                 owner = cls_name
@@ -534,6 +567,11 @@ def _is_interface(node: Node, language: str) -> bool:
     """
     if node.type == "interface_declaration":
         return True
+    if language == "go":
+        # Go says it in the spec's `type` child: `type Repo interface { ... }`
+        # is a `type_spec` whose type is an `interface_type`.
+        declared = node.child_by_field_name("type")
+        return declared is not None and declared.type == "interface_type"
     if language != "kotlin":
         return False
     return any(child.type == "interface" for child in node.children)

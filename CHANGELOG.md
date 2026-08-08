@@ -9,7 +9,7 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### ⚠️ Upgrading
 
-**A full rescan is required.** `DETECTION_VERSION` moves 13 → 15, so records
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 16, so records
 built by an earlier version are not reused and the next run rebuilds every repo.
 `SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
 metabase still parses and no consumer needs changing.
@@ -18,11 +18,28 @@ Two bumps, one rescan. **14** was a *deliberate false positive* of the detection
 gate: the phase-timing change touches no record-producing code — records built by
 13 and 14 are byte-identical — but the file it edits is fingerprinted, and the
 gate was allowed to be literal rather than accumulate another judgement call.
-**15** is a real detection change: the `OI-36` sweep makes a record say when a
-file or manifest could not be parsed, so `notes` genuinely differs. 15 subsumes
-14, so a single rescan covers both.
+**15** and **16** are real detection changes: the `OI-36` sweep makes a record
+say when a file or manifest could not be parsed, and `OI-43` step 2 gives Go
+repos the type declarations they were never emitting. All three land in the same
+unreleased window, so **a single rescan covers the lot.**
 
 ### Added
+
+- **Go type declarations are extracted at all (`OI-43`, step 2).** `type Repo
+  interface{...}` and `type Svc struct{...}` produced **nothing**: Go puts the
+  name on the child `type_spec` while the walker asked the declaration itself,
+  got `None`, and skipped. Every Go type in a scan was discarded silently. The
+  grouped `type ( A struct{}; B interface{} )` form now works too, which keying
+  on the declaration could never have expressed.
+
+  Alongside it, **Go methods now know the type they hang off.** Every other
+  grammar nests a method inside its class, so ownership is answered by
+  containment; Go declares methods at file scope and names the owner in the
+  receiver, so every Go method was recorded with no class. Without this the type
+  fix would have been inert.
+
+  Go calls still resolve at the same tier — fields and supertypes are step 3 —
+  but Go repos gain `type-decl` nodes and their `method-decl` nodes gain a class.
 
 - **A language-support gate (`OI-43`, step 1).** `OI-36`'s gate looks for an
   `except` that discards an error; there is no exception in this failure mode at

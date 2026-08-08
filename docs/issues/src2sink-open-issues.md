@@ -1045,8 +1045,28 @@ carry a stated reason for each hole.
    The frozen record was measured, not predicted: the hand-written first draft
    was wrong for four of the seven languages, which is its own argument for the
    behavioural half.
-2. **Fix Go's `type_spec` lookup.** A defect rather than a gap, and it makes the
-   `CLASS_NODE_TYPES` entry honest.
+2. ~~**Fix Go's `type_spec` lookup.**~~ **Done.** `CLASS_NODE_TYPES["go"]` reads
+   `type_spec` / `type_alias` rather than `type_declaration`, which also fixes the
+   grouped `type ( A struct{}; B interface{} )` form — keying on the declaration
+   could at best have found the first spec. `_is_interface` reads Go's answer from
+   the spec's `type` child.
+
+   **A second defect surfaced doing it, and is fixed alongside**, because step 2
+   would otherwise have been inert. Every other grammar nests a method inside its
+   class, so ownership is answered by containment; **Go declares methods outside
+   the type** and names the owner in the receiver, so every Go method was recorded
+   with no class at all. Types without that fix would have been indexed with
+   nothing ever resolving to them. `_go_receiver_owner` reads the receiver's
+   declared type, and `*T` and `T` name the same type.
+
+   Go still has no fields or supertypes, so **T1 and T2 remain out of reach until
+   step 3** — the tier a Go call resolves at is unchanged by this. What changed is
+   that the declarations exist to be resolved against at all.
+
+   The language gate needed a new column to see the second fix: the receiver
+   change altered no method *count*, only whether each method knew its owner, so
+   `owned_methods` is now recorded beside `methods`. A gate that watches the wrong
+   number watches nothing.
 3. **Fill `FIELD_NODE_TYPES` and `SUPERTYPE_NODE_TYPES`** for the languages where
    the concepts exist: TypeScript/TSX (`interface`, typed members), Go (struct
    fields, embedded interfaces), Python (annotated attributes, base classes).

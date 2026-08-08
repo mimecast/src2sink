@@ -204,3 +204,92 @@ def test_a_kotlin_class_is_not_mistaken_for_an_interface():
         "kotlin", "src/StockServiceImpl.kt",
     )
     assert types["StockServiceImpl"]["is_interface"] is False
+
+
+# --- Go (`OI-43` step 2) ------------------------------------------------------
+
+_GO = """
+type StockService interface {
+	Process(filter string) Result
+}
+
+type StockServiceImpl struct {
+	jdbc *JdbcTemplate
+}
+
+func (s *StockServiceImpl) Process(filter string) Result { return nil }
+
+func Free() {}
+
+type (
+	Grouped struct{ x int }
+	AlsoGrouped interface{ Go() }
+)
+"""
+
+
+def _go_types():
+    return _types(_GO, "go", "src/service.go")
+
+
+def test_go_declares_types_at_all():
+    """`OI-43` step 2: every Go type in the fleet was discarded, silently.
+
+    `type_declaration` was in `CLASS_NODE_TYPES`, so it looked configured — but
+    Go puts the name on the child `type_spec`, and `_declaration_name` asks the
+    node itself. It got `None` and skipped. `OI-13`'s shape for the third time:
+    routed to a walker that needs a node the grammar never produces.
+    """
+    assert sorted(_go_types()) == [
+        "AlsoGrouped", "Grouped", "StockService", "StockServiceImpl",
+    ]
+
+
+def test_a_grouped_declaration_yields_every_type():
+    """`type ( A struct{}; B interface{} )` is one declaration holding many specs.
+
+    Keying on the declaration could at best have found the first, so reading the
+    spec fixes a second defect the original could not have expressed.
+    """
+    types = _go_types()
+    assert "Grouped" in types and "AlsoGrouped" in types
+
+
+def test_a_go_interface_is_recognised():
+    """Go says it in the spec's `type` child, not in the node type."""
+    assert _go_types()["StockService"]["is_interface"] is True
+
+
+def test_a_go_struct_is_not_mistaken_for_an_interface():
+    """The other direction, so the fix cannot be 'return True for Go'."""
+    assert _go_types()["StockServiceImpl"]["is_interface"] is False
+
+
+def test_a_go_method_knows_the_type_it_hangs_off():
+    """Containment cannot answer this: Go declares methods outside the type.
+
+    Types alone would have been inert — indexed, with no method ever resolving to
+    them — so the receiver is read to find the owner.
+    """
+    nodes = extract_from_file(
+        repo_id="g/r", rel_path="src/service.go", language="go", source=_GO,
+    )[0]
+    owners = {
+        n.detail["method"]: n.detail.get("class")
+        for n in nodes if n.family == "method-decl"
+    }
+    assert owners["Process"] == "StockServiceImpl", (
+        "a pointer receiver names the same type as a value receiver"
+    )
+
+
+def test_a_package_level_go_function_has_no_owner():
+    """`func Free()` hangs off nothing, and must not be attributed to a neighbour."""
+    nodes = extract_from_file(
+        repo_id="g/r", rel_path="src/service.go", language="go", source=_GO,
+    )[0]
+    owners = {
+        n.detail["method"]: n.detail.get("class")
+        for n in nodes if n.family == "method-decl"
+    }
+    assert owners["Free"] is None
