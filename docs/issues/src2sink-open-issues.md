@@ -991,6 +991,33 @@ That is precisely `OI-13`'s shape: *routed to a walker that needs a node the
 grammar never produces.* It has now happened for Kotlin calls, for Kotlin
 interfaces and parameters, and for Go types.
 
+### A fourth surface, found while building the gate
+
+**Nothing anywhere checks `tree.root_node.has_error`.** tree-sitter does not
+raise on source it cannot parse — it returns a tree with `ERROR` nodes — so
+`_parse_or_note` never fires and the file yields whatever the regex passes
+managed plus nothing from the AST.
+
+Demonstrated with valid Kotlin that this grammar rejects (`tree_sitter_kotlin`
+1.1.0 does not accept a single-line class body):
+
+```
+class Svc { fun go() { db.query("SELECT 1") } }
+  -> root_node.has_error = True
+  -> 5 observations, 0 notes, exit code 0
+```
+
+This is the one most likely to bite in practice, because **grammar versions lag
+language versions**. Every pinned grammar in `pyproject.toml` is a snapshot; a
+repo using syntax newer than the pin degrades quietly across however many files
+use it, and the run reports success.
+
+It is not fixed here because sizing it needs the fleet: a note per file could be
+very loud if a pinned grammar disagrees with a common idiom, which is the same
+noise question that kept the per-language note out of `OI-36` phase 1. Measure
+`has_error` rates across the estate first, then decide between a per-file note
+and a per-repo count.
+
 ### Why no gate caught this
 
 `OI-36`'s gate looks for an `except` whose body discards the error. There is no
@@ -1005,12 +1032,19 @@ carry a stated reason for each hole.
 
 ### Proposed approach
 
-1. **A language-support gate, first.** Assert that every language in
-   `SOURCE_EXTENSIONS` has a grammar, and that every grammar-backed language
-   appears in every per-language table — or is exempted by name with a reason,
-   exactly as `_SIGNAL_NOT_NEEDED` does for silent handlers. This is cheap, it is
-   the thing that stops the matrix rotting again, and it would have found all of
-   the above. Do it before filling anything in.
+1. ~~**A language-support gate, first.**~~ **Done** —
+   `tests/test_language_support_matrix.py`. Two checks, because one of them would
+   have missed the worst case: a *structural* check that every scanned language
+   has a grammar and every grammar-backed language appears in every table (or is
+   exempted by name with a reason, exactly as `_SIGNAL_NOT_NEEDED` does), and a
+   *behavioural* check that runs a three-type sample through each language and
+   compares what comes out against a frozen record. The second is what catches
+   Go, whose table entry is present and whose output is empty — **a table can be
+   complete and wrong.**
+
+   The frozen record was measured, not predicted: the hand-written first draft
+   was wrong for four of the seven languages, which is its own argument for the
+   behavioural half.
 2. **Fix Go's `type_spec` lookup.** A defect rather than a gap, and it makes the
    `CLASS_NODE_TYPES` entry honest.
 3. **Fill `FIELD_NODE_TYPES` and `SUPERTYPE_NODE_TYPES`** for the languages where
@@ -1024,6 +1058,11 @@ carry a stated reason for each hole.
 5. **Add Scala last**, unless the fleet is Scala-heavy. Adding the grammar
    without steps 1–3 buys calls and methods with no resolution behind them, which
    is how this state was reached in the first place.
+6. **Check `has_error` and report it.** Size it against the fleet first — count
+   how many files parse to an `ERROR` tree today — then choose a per-file note or
+   a per-repo count. `_parse_or_note` is already the single choke point all three
+   AST passes go through, so the change itself is small; only the noise question
+   is open.
 
 ### Why it is not P0
 

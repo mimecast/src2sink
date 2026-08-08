@@ -24,6 +24,23 @@ file or manifest could not be parsed, so `notes` genuinely differs. 15 subsumes
 
 ### Added
 
+- **A language-support gate (`OI-43`, step 1).** `OI-36`'s gate looks for an
+  `except` that discards an error; there is no exception in this failure mode at
+  all, just a table lookup returning empty and a loop that runs zero times. The
+  new gate asserts every scanned language has a grammar and appears in every
+  per-language table — or is exempted by name with a reason — **and** runs a
+  sample through each language, comparing what comes out against a frozen record.
+  The second check is the one that matters: a table can be complete and wrong.
+
+  **What it documents is worth knowing if you scan non-JVM code.** `OI-17`'s two
+  strong call-resolution tiers — T1, a declared field's type, and T2, an
+  interface expanded to its implementations — read tables filled in for **Java
+  and Kotlin only**. Outside those two, every call resolves by unique name at
+  `low` confidence, or is dropped. TypeScript, JavaScript, Python and Go are all
+  affected, and Go's type declarations are discarded entirely. Nothing is
+  *false* — a `low` path is a real path, honestly labelled — but the coverage
+  gap was not visible anywhere before. Tracked in `OI-43`; the fixes follow.
+
 - **A detection path that fails to empty now says so (`OI-36`, sweep phase 1).**
   Two clusters, both the issue in its purest form. The **four dependency
   parsers** recorded nothing when a manifest would not parse, so
