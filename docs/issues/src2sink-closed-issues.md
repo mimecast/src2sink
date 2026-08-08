@@ -2978,3 +2978,60 @@ The half that shipped was also inert on its own: it preserved the whole document
 on *load* while the write still rebuilt `{"bindings": ...}`, so nothing was
 actually preserved until this change.
 
+---
+
+## OI-41 — Aggregation parses the whole metabase 14 times per run
+
+### Resolution
+
+**Fixed in:** 3.1.0 (unreleased)  
+**Commit:** `923fe1c` — PR #51  
+**Tests:** `tests/test_fleet_pass.py` — 8 cases: streaming and loading agree, collectors retain no records, one pass serves every collector, ordering preserved, and a ratchet on the counts. Verified byte-for-byte by `tests/test_aggregate_output_golden.py`.
+
+### Result
+
+```
+full parses           : 14 -> 3
+collect_service_edges :  3 -> 1
+aggregation           : 2.12s -> 0.90s   (2.4x on the test fixture)
+peak RSS              : 148 MB -> 150 MB (memoising was 266 MB)
+```
+
+That +2 MB is the point. Memoising buys the same seconds and costs a *held* copy
+of the fleet — measured at +118 MB on a 29 MB metabase, which at 2.2 GB is
+`OI-15`'s ceiling reached through the fix, on a host already swapping.
+
+### The bigger find was not a parse
+
+`collect_service_edges` — the fleet-wide derivation `OI-14` identified as
+dominating cost — ran three times per aggregation: the service-call report, the
+fleet index, and inside the PII cross-repo flows, which is *per PII field*.
+
+That is the sixth instance of one pattern, after `OI-14`, `OI-30`, `OI-31`,
+`OI-35` and this issue's own parses: **a target-independent derivation computed
+per consumer.**
+
+### Why three parses remain
+
+Three genuinely separate phases with a data dependency, not laziness: the shared
+load feeding the service-call report and producer index; the PII lifecycle pass
+that *produces* the touchpoints; and phase 3, which consumes them. Collapsing
+them means holding records across the whole aggregation — the cost this exists to
+avoid.
+
+A ratchet asserts parses ≤ 3 and edge builds ≤ 1, so a new aggregator that loads
+for itself fails rather than quietly adding a pass back.
+
+### It also corrected the 3.0 plan
+
+Withdrawing Phase 1 from `OI-15`'s critical path was right; concluding it could
+be deferred indefinitely was not. It is not on *trace*'s critical path — it is
+squarely on *aggregation*'s, which is 78% of the run. The withdrawal reasoned
+from one consumer and generalised to the whole plan. §2a records both.
+
+### Residual not covered
+
+Extraction is unchanged, and `OI-32`'s measurement puts it at ~150 s of a 657 s
+run already spread across 11 processes. The remaining aggregation time is real
+work rather than repetition.
+
