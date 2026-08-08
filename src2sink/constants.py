@@ -32,6 +32,9 @@ CONFIG_FILE_NAMES = {
 # fix. Producers and `_unparsed_counts` share these two strings.
 NOTE_PARSE_FAILED = "parse failed"
 NOTE_UNPARSED_MANIFEST = "could not be parsed"
+# `OI-43` step 4. Marks a per-repo statement about what a language could
+# contribute, as distinct from a file that broke.
+NOTE_LANGUAGE_COVERAGE = "limited extraction"
 
 MAX_FILE_BYTES = 1_500_000
 

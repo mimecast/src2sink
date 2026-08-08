@@ -35,6 +35,7 @@ from .aggregators.pii_flow_v2 import write_pii_flow_v2
 from .aggregators.taint_catalogs import aggregate_taint_catalogs_v2
 from .constants import (
     MAX_FILE_BYTES,
+    NOTE_LANGUAGE_COVERAGE,
     NOTE_PARSE_FAILED,
     NOTE_UNPARSED_MANIFEST,
     SKIP_DIRS,
@@ -48,6 +49,7 @@ from .dependencies import (
     unparsed_ecosystem_notes,
 )
 from .extractors.config import extract_from_config, is_config_path
+from .extractors.ast_walk import coverage_gaps
 from .extractors.unified import extract_from_file
 from .internal_groups import (
     add_internal_groups_arguments,
@@ -346,6 +348,28 @@ def _record_dependencies(summary: RepoSummaryV2, deps: list[dict[str, str]]) -> 
             summary.dependencies_external_count += 1
 
 
+def _note_language_coverage(summary: RepoSummaryV2, lang_counts: Counter[str]) -> None:
+    """Say, once per language, what this repo's scan could not extract (`OI-43`).
+
+    Per repo per language, never per file: Scala alone would otherwise put a note
+    on every Scala file in the estate, and a signal that loud stops being read —
+    the noise question that kept this out of `OI-36` phase 1.
+
+    The gaps are computed from the grammar tables, so a note cannot claim a
+    limitation that has since been fixed, and cannot stay silent about one that
+    has not. A language with full coverage produces nothing.
+    """
+    for language in sorted(lang_counts):
+        gaps = coverage_gaps(language)
+        if not gaps:
+            continue
+        summary.notes.append(
+            f"{language}: {NOTE_LANGUAGE_COVERAGE} across {lang_counts[language]} "
+            f"file(s) — {'; '.join(gaps)}. Findings for this language are "
+            "incomplete rather than absent; see OI-43."
+        )
+
+
 def _scan_repo_files(
     repo_root: Path, repo_id: str, summary: RepoSummaryV2
 ) -> tuple[Counter[str], list[FlowNode], list[FlowEdge]]:
@@ -466,6 +490,7 @@ def analyse_repo_v2(repo_root: Path, group: str, name: str, path_rel: str) -> Re
     lang_counts, all_nodes, all_edges = _scan_repo_files(repo_root, repo_id, summary)
     all_nodes = prune_unresolvable_calls(all_nodes)
     summary.language_breakdown = dict(lang_counts)
+    _note_language_coverage(summary, lang_counts)
     if lang_counts:
         summary.primary_language = lang_counts.most_common(1)[0][0]
     summary.file_counts = dict(lang_counts)
@@ -708,18 +733,41 @@ def _prewalk_checkout(repos_root: Path) -> None:
     )
 
 
-def _unparsed_counts(json_paths: list[Path]) -> dict[str, int]:
-    """Count what the fleet could not read, from the notes the scan recorded.
+def _fold_record(
+    data: dict[str, Any], unparsed: dict[str, int], gaps: Counter[str]
+) -> None:
+    """Fold one repo record's notes and languages into the running counts."""
+    before = unparsed["source_files"] + unparsed["manifests"]
+    for note in data.get("notes", []):
+        if NOTE_PARSE_FAILED in note:
+            unparsed["source_files"] += 1
+        elif NOTE_UNPARSED_MANIFEST in note:
+            unparsed["manifests"] += 1
+    if unparsed["source_files"] + unparsed["manifests"] > before:
+        unparsed["repos_affected"] += 1
+    for language in data.get("language_breakdown") or {}:
+        if coverage_gaps(language):
+            gaps[language] += 1
 
-    The sweep that emits these notes (`OI-36`, 4.0 phase 1) is only half the
-    fix: a note on one repo among 746 is not something anyone reads. The count
-    is what makes "12,000 files did not parse" visible on a run that otherwise
-    reports success, and the marker constants are shared with the producers so
-    the wording cannot drift out from under the counter.
+
+def _record_counts(json_paths: list[Path]) -> dict[str, Any]:
+    """What the fleet could not read, and where resolution is limited.
+
+    Both numbers in **one pass**. The notes that feed them (`OI-36` phase 1,
+    `OI-43` step 4) are only half of each fix: a note on one repo among 746 is
+    not something anyone reads, and the count is what makes it visible on a run
+    that otherwise reports success. Reading the fleet twice to produce two
+    numbers would be `OI-41`'s defect reintroduced for the sake of tidiness.
+
+    `unparsed` counts from the notes, whose markers are shared constants so the
+    wording cannot drift out from under the counter. `resolution_gaps` is
+    recomputed from each record's `language_breakdown` instead, because deriving
+    it from the live grammar tables cannot go stale the way parsing prose can.
     """
-    counts = {
+    unparsed = {
         "source_files": 0, "manifests": 0, "repos_affected": 0, "records_unreadable": 0,
     }
+    gaps: Counter[str] = Counter()
     unreadable: list[str] = []
     for jp in json_paths:
         try:
@@ -730,22 +778,15 @@ def _unparsed_counts(json_paths: list[Path]) -> dict[str, int]:
             # — the defect this function exists to report, in the reporter.
             unreadable.append(f"{jp.name}: {type(exc).__name__}")
             continue
-        before = counts["source_files"] + counts["manifests"]
-        for note in data.get("notes", []):
-            if NOTE_PARSE_FAILED in note:
-                counts["source_files"] += 1
-            elif NOTE_UNPARSED_MANIFEST in note:
-                counts["manifests"] += 1
-        if counts["source_files"] + counts["manifests"] > before:
-            counts["repos_affected"] += 1
-    counts["records_unreadable"] = len(unreadable)
+        _fold_record(data, unparsed, gaps)
+    unparsed["records_unreadable"] = len(unreadable)
     if unreadable:
         print(
             f"  ⚠ {len(unreadable)} repo record(s) could not be read while "
             "counting parse failures; the unparsed counts below are a lower bound",
             file=sys.stderr,
         )
-    return counts
+    return {"unparsed": unparsed, "resolution_gaps": dict(sorted(gaps.items()))}
 
 
 def _write_run_manifest(
@@ -806,12 +847,13 @@ def _write_run_manifest(
             "updated": len(rows),
             "skipped": skipped,
             "timed_out": timed_out,
-            # `OI-36`, 4.0 phase 1. A detection path that failed to empty now
-            # records why, but a note buried in one repo record among 746 is not
-            # something anyone reads. This is the fleet-level number: a run that
-            # reports success while a tenth of the estate would not parse should
-            # say so in the same breath.
-            "unparsed": _unparsed_counts(json_paths or []),
+            # `OI-36` phase 1 and `OI-43` step 4. A detection path that failed
+            # to empty now records why, and a language whose resolution is
+            # limited says so — but a note buried in one repo record among 746
+            # is not something anyone reads. These are the fleet-level numbers:
+            # a run that reports success while a tenth of the estate would not
+            # parse should say so in the same breath.
+            **_record_counts(json_paths or []),
         },
         "updated_repos": sorted(
             (

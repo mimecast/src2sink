@@ -38,9 +38,11 @@ SCHEMA_VERSION = 2
 #
 # 16 is `OI-43` step 2: Go type declarations were discarded outright, so every
 # Go repo gains `type-decl` nodes and its `method-decl` nodes gain the type
-# they hang off. 3.1.0 shipped detection 13, so 14, 15 and 16 all land in the
-# same unreleased window — one rescan covers the lot.
-DETECTION_VERSION = 16
+# they hang off. 17 is `OI-43` step 4, which adds one note per repo per
+# language whose extraction is limited. 3.1.0 shipped detection 13, so 14
+# through 17 all land in the same unreleased window — one rescan covers the
+# lot.
+DETECTION_VERSION = 17
 
 
 

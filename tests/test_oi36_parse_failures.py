@@ -26,7 +26,7 @@ from pathlib import Path
 from src2sink.build_metabase_v2 import (
     _collect_dependencies,
     _scan_repo_files,
-    _unparsed_counts,
+    _record_counts,
     _write_run_manifest,
 )
 from src2sink.constants import NOTE_PARSE_FAILED, NOTE_UNPARSED_MANIFEST
@@ -201,7 +201,7 @@ def test_the_run_counts_what_the_fleet_could_not_read(tmp_path):
     ])
     _record(tmp_path, "c", [])
 
-    counts = _unparsed_counts(sorted((tmp_path / "repos" / "g").glob("*.json")))
+    counts = _record_counts(sorted((tmp_path / "repos" / "g").glob("*.json")))["unparsed"]
     assert counts == {
         "source_files": 2, "manifests": 1, "repos_affected": 2, "records_unreadable": 0,
     }
@@ -216,7 +216,7 @@ def test_a_record_it_cannot_read_is_not_counted_as_clean(tmp_path, capsys):
     _record(tmp_path, "a", [])
     (tmp_path / "repos" / "g" / "broken.json").write_text("{not json", encoding="utf-8")
 
-    counts = _unparsed_counts(sorted((tmp_path / "repos" / "g").glob("*.json")))
+    counts = _record_counts(sorted((tmp_path / "repos" / "g").glob("*.json")))["unparsed"]
     assert counts["records_unreadable"] == 1
     assert "lower bound" in capsys.readouterr().err
 

@@ -49,6 +49,9 @@ def test_manifest_records_provenance_without_secrets(tmp_path):
             "source_files": 0, "manifests": 0,
             "repos_affected": 0, "records_unreadable": 0,
         },
+        # `OI-43` step 4: repos per language whose resolution is limited, so a
+        # coverage gap is a number on the run rather than prose in one record.
+        "resolution_gaps": {},
     }
     # Per-repo SHAs recorded, sorted by repo id.
     assert m["updated_repos"][0] == {"repo": "a/one", "git_sha": "a" * 40}
