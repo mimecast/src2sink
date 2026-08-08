@@ -1071,10 +1071,22 @@ carry a stated reason for each hole.
    the concepts exist: TypeScript/TSX (`interface`, typed members), Go (struct
    fields, embedded interfaces), Python (annotated attributes, base classes).
    Driven by what the fleet actually contains, not alphabetically.
-4. **Say so in the output, not only in a changelog.** A repo whose language has
-   no grammar, or no resolution tables, should carry a note — per repo per
-   language, not per file, or the estate's Scala files alone would flood
-   `summary.notes`. This is the piece `OI-36` phase 1 deliberately left.
+4. ~~**Say so in the output, not only in a changelog.**~~ **Done.** One note per
+   repo per language whose extraction is limited, never per file — Scala alone
+   would otherwise put a note on every Scala file in the estate, and a signal
+   that loud stops being read.
+
+   **The gaps are computed from the grammar tables, never restated.** A
+   hand-maintained list of "languages we do not fully support" is exactly what
+   rotted into this issue, and it would go stale the moment a table gained an
+   entry; reading the live tables means a repo's note and the code's behaviour
+   cannot disagree. `coverage_gaps()` returns empty for Java and Kotlin, so a
+   fully covered repo stays quiet.
+
+   `run-manifest.json` carries `counts.resolution_gaps` — repos affected, per
+   language — computed in the **same pass** as `counts.unparsed`, because reading
+   the fleet twice to produce two numbers would be `OI-41`'s defect reintroduced
+   for the sake of tidiness.
 5. **Add Scala last**, unless the fleet is Scala-heavy. Adding the grammar
    without steps 1–3 buys calls and methods with no resolution behind them, which
    is how this state was reached in the first place.

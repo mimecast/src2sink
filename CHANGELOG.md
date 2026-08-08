@@ -9,7 +9,7 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ### ⚠️ Upgrading
 
-**A full rescan is required.** `DETECTION_VERSION` moves 13 → 16, so records
+**A full rescan is required.** `DETECTION_VERSION` moves 13 → 17, so records
 built by an earlier version are not reused and the next run rebuilds every repo.
 `SCHEMA_VERSION` stays at `2` and `DERIVATION_VERSION` at `5`; an existing
 metabase still parses and no consumer needs changing.
@@ -18,12 +18,30 @@ Two bumps, one rescan. **14** was a *deliberate false positive* of the detection
 gate: the phase-timing change touches no record-producing code — records built by
 13 and 14 are byte-identical — but the file it edits is fingerprinted, and the
 gate was allowed to be literal rather than accumulate another judgement call.
-**15** and **16** are real detection changes: the `OI-36` sweep makes a record
-say when a file or manifest could not be parsed, and `OI-43` step 2 gives Go
-repos the type declarations they were never emitting. All three land in the same
-unreleased window, so **a single rescan covers the lot.**
+**15**, **16** and **17** are real detection changes: the `OI-36` sweep makes a
+record say when a file or manifest could not be parsed, `OI-43` step 2 gives Go
+repos the type declarations they were never emitting, and `OI-43` step 4 adds the
+per-language coverage note. All of them land in the same unreleased window, so
+**a single rescan covers the lot.**
 
 ### Added
+
+- **A repo says which of its languages it could only partly read (`OI-43`,
+  step 4).** One note per repo per language whose extraction is limited — never
+  per file, since Scala alone would otherwise put a note on every Scala file in
+  an estate, and a signal that loud stops being read. A Java or Kotlin repo stays
+  quiet, because those are the fully covered ones.
+
+  ```
+  go: limited extraction across 40 file(s) — declared field types, so T1
+  resolution cannot fire; supertypes, so T2 resolution cannot fire. Findings for
+  this language are incomplete rather than absent; see OI-43.
+  ```
+
+  `run-manifest.json` gains `counts.resolution_gaps`, repos affected per
+  language. The gaps are **computed from the grammar tables**, so a note cannot
+  claim a limitation that has since been fixed, nor stay silent about one that
+  has not.
 
 - **Go type declarations are extracted at all (`OI-43`, step 2).** `type Repo
   interface{...}` and `type Svc struct{...}` produced **nothing**: Go puts the

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+
+from .base import supported_languages
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -517,6 +519,33 @@ def _supertypes(source: bytes, node: Node, language: str) -> list[str]:
             if name not in ("extends", "implements") and name not in out:
                 out.append(name)
     return out
+
+
+def coverage_gaps(language: str) -> tuple[str, ...]:
+    """What this language cannot contribute, derived from the tables themselves.
+
+    `OI-43` step 4. The gaps are *computed*, never restated: a hand-written list
+    of "languages we do not fully support" is the thing that rotted into `OI-43`
+    in the first place, and would go stale the moment a table gained an entry.
+    Reading the tables means the note a repo carries and the code's actual
+    behaviour cannot disagree.
+
+    Empty means full coverage — the note is only emitted when there is something
+    to say, so a Java repo stays quiet.
+    """
+    if language not in supported_languages():
+        return ("no tree-sitter grammar, so no calls, declarations or types",)
+    missing: list[str] = []
+    for what, table in (
+        ("type declarations", CLASS_NODE_TYPES),
+        ("method declarations", METHOD_NODE_TYPES),
+        ("call sites", CALL_NODE_TYPES),
+        ("declared field types, so T1 resolution cannot fire", FIELD_NODE_TYPES),
+        ("supertypes, so T2 resolution cannot fire", SUPERTYPE_NODE_TYPES),
+    ):
+        if language not in table:
+            missing.append(what)
+    return tuple(missing)
 
 
 def iter_type_declarations(

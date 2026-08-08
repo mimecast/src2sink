@@ -304,3 +304,64 @@ def test_the_gate_can_actually_fail() -> None:
         "the _NO_GRAMMAR path must still be reachable, or the staleness check "
         "above is the only thing keeping this honest"
     )
+
+
+# --- the note (`OI-43` step 4) ------------------------------------------------
+
+
+def test_coverage_gaps_are_computed_not_restated() -> None:
+    """The list that rotted into `OI-43` was hand-maintained. This one is derived.
+
+    A note claiming a limitation that has since been fixed is worse than no note,
+    because it is confidently wrong; reading the live tables means the claim and
+    the behaviour cannot disagree.
+    """
+    assert aw.coverage_gaps("java") == ()
+    assert aw.coverage_gaps("kotlin") == ()
+    assert "T1" in " ".join(aw.coverage_gaps("typescript"))
+    assert "T2" in " ".join(aw.coverage_gaps("typescript"))
+    assert "no tree-sitter grammar" in aw.coverage_gaps("scala")[0]
+
+
+def test_a_filled_table_silences_its_gap(monkeypatch) -> None:
+    """The proof that it is derived: fill a table, the gap disappears."""
+    before = aw.coverage_gaps("go")
+    monkeypatch.setitem(aw.FIELD_NODE_TYPES, "go", frozenset({"field_declaration"}))
+    after = aw.coverage_gaps("go")
+    assert len(after) == len(before) - 1
+    assert not [g for g in after if "T1" in g]
+
+
+def test_the_note_is_per_repo_per_language_not_per_file(tmp_path) -> None:
+    """Scala alone would otherwise put a note on every Scala file in the estate.
+
+    A signal that loud stops being read, which is the noise question that kept
+    this out of `OI-36` phase 1.
+    """
+    from collections import Counter
+
+    from src2sink.build_metabase_v2 import _note_language_coverage
+    from src2sink.schema import RepoSummaryV2
+
+    summary = RepoSummaryV2(group="g", name="r")
+    _note_language_coverage(summary, Counter({"go": 40, "scala": 900, "java": 12}))
+
+    assert len(summary.notes) == 2, "one note per affected language, whatever the file count"
+    assert not [n for n in summary.notes if n.startswith("java")], (
+        "a fully covered language must stay quiet, or the signal is noise"
+    )
+    scala = next(n for n in summary.notes if n.startswith("scala"))
+    assert "900 file(s)" in scala
+    assert "incomplete rather than absent" in scala, "the consequence is the point"
+
+
+def test_a_fully_covered_repo_carries_no_note() -> None:
+    """A JVM-only repo has nothing to be told."""
+    from collections import Counter
+
+    from src2sink.build_metabase_v2 import _note_language_coverage
+    from src2sink.schema import RepoSummaryV2
+
+    summary = RepoSummaryV2(group="g", name="r")
+    _note_language_coverage(summary, Counter({"java": 10, "kotlin": 3}))
+    assert summary.notes == []

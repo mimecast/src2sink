@@ -64,10 +64,10 @@ _MUTANT_TIMEOUT_S = 120
 # measuring the wall clock, not by counting entries.
 #
 # 140 -> 145 for the four `OI-36` phase-1 mutants, then 145 -> 148 for the three
-# `OI-43` step-2 ones. All seven are ordinary: they read a note, a count or a
+# `OI-43` step-2 ones and 148 -> 150 for step 4. All nine are ordinary: they read a note, a count or a
 # parsed node out of an in-memory structure, with no timeout to wait on, so the
 # slow tail is unchanged at two entries.
-_MAX_CATALOGUE_SIZE = 148
+_MAX_CATALOGUE_SIZE = 150
 _SLOW_MUTANT_S = 5.0
 
 
@@ -276,6 +276,28 @@ CATALOGUE: tuple[Mutant, ...] = (
             "A Go interface is recorded as a class, so a call on an "
             "interface-typed value cannot expand to implementations — the "
             "OI-13 Kotlin defect, in another language."
+        ),
+    ),
+    Mutant(
+        id="OI43-M4",
+        file="src2sink/extractors/ast_walk.py",
+        old="    if language not in supported_languages():\n        return (\"no tree-sitter grammar, so no calls, declarations or types\",)",
+        new="    if False:\n        return ()",
+        selector="tests/test_language_support_matrix.py",
+        note=(
+            "A language with no grammar stops saying so, so a Scala repo reads "
+            "as fully scanned - the exact silence OI-43 step 4 exists to break."
+        ),
+    ),
+    Mutant(
+        id="OI43-M5",
+        file="src2sink/build_metabase_v2.py",
+        old="        gaps = coverage_gaps(language)\n        if not gaps:\n            continue",
+        new="        gaps = coverage_gaps(language)\n        if gaps or not gaps:\n            continue",
+        selector="tests/test_language_support_matrix.py",
+        note=(
+            "The per-repo coverage note stops being emitted, so a repo whose "
+            "language cannot reach T1 or T2 looks identical to one that can."
         ),
     ),
     Mutant(
