@@ -144,6 +144,20 @@ unreleased window, so **a single rescan covers the lot.**
   `unattributed` rather than absorbed into a neighbour, so the breakdown never
   implies coverage it does not have.
 
+- **A parse-error measurement instrument** (`scripts/measure_parse_errors.py`),
+  for sizing `OI-43` step 6 — how many files parse to a tree containing `ERROR`
+  nodes. Deliberately outside the `ci` chain: it needs a real fleet on disk and
+  produces a number to reason about, not a threshold to pass. It mirrors
+  `_scan_repo`'s file selection exactly, including the test-path skip that
+  `extract_from_file` applies before parsing, which is worth 36% of the
+  denominator on its own.
+
+  Nothing in the scanner changed. The sizing did change the shape of the pending
+  fix, and is recorded in `OI-43`: `has_error` merges valid source a grammar
+  cannot accept (a bare `&` in JSX) with source that genuinely does not compile,
+  and on the sample corpus repairing the error region recovered **zero**
+  extracted nodes. It is not yet a signal worth reporting raw.
+
 ## [3.1.0] - 2026-08-08
 
 **A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at

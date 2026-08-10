@@ -1143,11 +1143,90 @@ carry a stated reason for each hole.
 5. **Add Scala last**, unless the fleet is Scala-heavy. Adding the grammar
    without steps 1–3 buys calls and methods with no resolution behind them, which
    is how this state was reached in the first place.
-6. **Check `has_error` and report it.** Size it against the fleet first — count
-   how many files parse to an `ERROR` tree today — then choose a per-file note or
-   a per-repo count. `_parse_or_note` is already the single choke point all three
-   AST passes go through, so the change itself is small; only the noise question
-   is open.
+6. **Check `has_error` and report it.** `_parse_or_note` is already the single
+   choke point all three AST passes go through, so the change itself is small.
+
+   **Sized on a sample corpus — see below. The fleet run is still outstanding,
+   and the sizing already moved the question.** It was framed as a noise
+   question: per-file note or per-repo count. The measurement says the prior
+   question is whether `has_error` is a *truthful* signal at all, because it
+   merges two populations that want opposite treatment. Do not report it raw.
+
+### Measured — step 6: `has_error` is two populations, not one
+
+**Instrument:** [`scripts/measure_parse_errors.py`](../../scripts/measure_parse_errors.py).
+It mirrors `_scan_repo` — same walk, size cap, per-repo file cap, prescreen,
+config diversion and extension table — and, critically, applies the same
+test-path skip that `extract_from_file` performs *before* it parses. That skip
+alone moved the denominator by **36%** (3,653 → 2,349 files); without it the
+measurement would have counted files no run has ever parsed.
+
+**Corpus: not the fleet.** 21 local repos, 2,349 files parsed, 1,310 skipped as
+test paths. Stated plainly because it bounds every number here: it is
+Python- and TSX-heavy where the fleet is Java/Kotlin-heavy, it is 1.3% of the
+fleet's 177,693 files, **12 of the 15 hits come from one React application**, and
+the two Java hits are *the same file* in two near-duplicate checkouts. The
+genuinely-broken-source population in this sample is one file.
+
+| | |
+|---|---|
+| files with an ERROR tree | **15 / 2,349 — 0.64%** |
+| repos with at least one | 4 / 21 |
+| largest error region | **0.53% of its file** |
+| files where errors covered >1% | **none** |
+
+Per language: `tsx` 4.23%, `java` 1.04%, `javascript` 0.43%, and `python`, `go`,
+`kotlin`, `typescript` all **0.00%**.
+
+**The finding is in the parent node types**, which is why the instrument records
+them. The count is not one population:
+
+| where the error lands | sites | what it is |
+|---|---|---|
+| `tsx:error/jsx_element` | 13 | valid, shipping source |
+| `javascript:error/jsx_opening_element` | 12 | valid, shipping source |
+| `tsx:error/string` | 6 | valid, shipping source |
+| `java:error/local_variable_declaration` + its `missing/` twin | 8 | genuinely broken source |
+| `java:error/formal_parameters` | 2 | genuinely broken source |
+
+31 of 48 error sites are **a bare `&` in JSX** — `<h2>Costs & Admin</h2>`,
+`href="/api/x?format=csv&limit=500"`. Checked against the grammar rather than
+inferred: tree-sitter-typescript's TSX grammar errors on both and accepts
+`&amp;`. That is ordinary React that compiles and ships, so reporting it would
+tell a reader 4.23% of their TSX has a parse problem when none of it does. The
+Java sites are the opposite and the grammar is right — `String alias, , byte[][]
+certData` does not compile.
+
+**And today it costs extraction nothing.** Repairing only the bytes inside each
+ERROR span — targeted, so no `&&` elsewhere is touched, which a first attempt got
+wrong and produced meaningless deltas — then re-extracting:
+
+| file | as-is | repaired | delta |
+|---|---|---|---|
+| `Trends.tsx`, `API.tsx`, `Dashboard.tsx`, `DeviceDetail.tsx` | 50 / 28 / 453 / 425 | identical | **0** |
+| `HttpsClientUtils.java` (hand-repaired until it compiles) | 47 | 47 | **0** |
+
+Not one node recovered, and the node *sets* are identical — including for the
+broken Java. tree-sitter's recovery is local enough that the surrounding
+declarations and calls still extract. **`has_error` does not currently predict
+lost extraction**, so a note keyed on it would be reporting something that is not
+happening.
+
+**What this makes the fix.** Not a report of `has_error`, but a severity-gated
+one: report when the error region is a material share of the file, per repo, in
+the same manifest pass as `counts.unparsed` and `counts.resolution_gaps` — for
+the reason step 4 gave. On this corpus that threshold reports nothing, which is
+the correct answer for this corpus.
+
+**What the fleet run must still settle**, and why the threshold cannot be chosen
+yet: whether the Java/Kotlin bulk carries a broken-source population this sample
+is far too small to show, and whether any file exists with a *catastrophic* error
+— the grammar bailing early, ratio approaching 1.0 — which is the class that
+would actually cost nodes and which this corpus does not contain.
+
+```
+uv run python scripts/measure_parse_errors.py --repos-root <fleet> --depth 2 -o out.json
+```
 
 ### Why it is not P0
 
