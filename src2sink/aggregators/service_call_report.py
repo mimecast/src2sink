@@ -122,6 +122,35 @@ def _write_unmatched(out_dir: Path, broken: list[dict[str, str]]) -> None:
             }, ensure_ascii=False) + "\n")
 
 
+def _write_self_edges(out_dir: Path, dropped: set[tuple[str, str, str]]) -> None:
+    """Persist the self-edges the collector refused, per repo (`OI-34` sizing).
+
+    A call from a client library to the service it fronts is a call within one
+    repo id, so it is dropped as a self-edge and never reaches a written record.
+    That is the hop `OI-34` exists to recover, and until now there was no way to
+    say how many of them there are without instrumenting the collector by hand.
+
+    Written per repo rather than per edge: the question this answers is *which
+    repos would gain edges if the project became the unit of analysis, and how
+    many* — a flat list of every dropped tuple buries that under its own volume.
+    """
+    per_repo: Counter[str] = Counter(repo for repo, _path, _conf in dropped)
+    # Sorted, not `most_common()`. The tally is a *set*, so its iteration order
+    # varies between processes under hash randomisation, and `most_common()`
+    # breaks ties by insertion order — which would make this file's line order
+    # differ run to run and the aggregate-output snapshot flake.
+    ordered = sorted(per_repo.items(), key=lambda kv: (-kv[1], kv[0]))
+    with (out_dir / "service-call-self-edges.jsonl").open("w", encoding="utf-8") as fh:
+        for repo, count in ordered:
+            paths = sorted({path for r, path, _conf in dropped if r == repo})
+            fh.write(json.dumps({
+                "repo": repo,
+                "dropped_self_edges": count,
+                "target_paths": paths[:50],
+                "target_paths_truncated": len(paths) > 50,
+            }, ensure_ascii=False) + "\n")
+
+
 def write_service_call_graph(
     metabase_root: Path,
     repo_jsons: list[Path],
@@ -136,7 +165,8 @@ def write_service_call_graph(
     them — the derivation `OI-14` identified as dominating cost (`OI-41`).
     """
     records = records_or_load(records, metabase_root, repo_jsons)
-    edges, broken = collect_service_edges(records)
+    dropped: set[tuple[str, str, str]] = set()
+    edges, broken = collect_service_edges(records, dropped=dropped)
     if repos_root:
         merge_openapi_edges(edges, records, repos_root)
 
@@ -213,6 +243,7 @@ def write_service_call_graph(
 
     (out_dir / "service-call-graph.md").write_text("\n".join(md), encoding="utf-8")
     _write_unmatched(out_dir, broken)
+    _write_self_edges(out_dir, dropped)
 
     jsonl = out_dir / "service-call-edges.jsonl"
     with jsonl.open("w", encoding="utf-8") as fh:

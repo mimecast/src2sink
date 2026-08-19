@@ -417,6 +417,12 @@
     "| --- | --- | --- | --- | --- |",
     "| fulfilment/query-forwarder | \u2014 | src/StockQueryForwarder.java:24 | no host, path, or declared target resolved | restTemplate.postForObject( |"
   ],
+  "graphs/service-call-self-edges.jsonl": [
+    "{\"repo\": \"acme/sql-runner-api\", \"dropped_self_edges\": 1, \"target_paths\": [\"/queries\"], \"target_paths_truncated\": false}",
+    "{\"repo\": \"fulfilment/stock-dao-kt\", \"dropped_self_edges\": 1, \"target_paths\": [\"/stock/search\"], \"target_paths_truncated\": false}",
+    "{\"repo\": \"fulfilment/stock-proxy\", \"dropped_self_edges\": 1, \"target_paths\": [\"/v1/forward\"], \"target_paths_truncated\": false}",
+    "{\"repo\": \"negative/safe-crud\", \"dropped_self_edges\": 1, \"target_paths\": [\"/items\"], \"target_paths_truncated\": false}"
+  ],
   "graphs/service-call-unmatched.jsonl": [
     "{\"source_repo\": \"fulfilment/query-forwarder\", \"host\": \"\", \"ref\": \"src/StockQueryForwarder.java:24\", \"reason\": \"no host, path, or declared target resolved\", \"raw\": \"restTemplate.postForObject(\"}"
   ],

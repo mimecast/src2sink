@@ -158,6 +158,32 @@ unreleased window, so **a single rescan covers the lot.**
   and on the sample corpus repairing the error region recovered **zero**
   extracted nodes. It is not yet a signal worth reporting raw.
 
+- **The `OI-34` sizing number the tool could not previously produce.** A call
+  from a client library to the service it fronts is a call within one repo id,
+  so `_append_path_edge` drops it as a self-edge — the hop the client exists to
+  make is the hop that disappears. Those edges never reached a written record,
+  so nothing downstream could count them.
+
+  `collect_service_edges` now takes an optional tally, and a run writes
+  `graphs/service-call-self-edges.jsonl`: one line per repo, with a count and
+  the target paths involved. That is the number of edges the estate would gain
+  if the project rather than the repo became the unit of analysis.
+
+  **The edges themselves are unchanged** — verified byte-for-byte against a
+  build from before the change, because a measurement that alters what it
+  measures is worthless. The tally is keyword-only and optional, so the three
+  existing callers are untouched, and it is deduplicated exactly as a real edge
+  is, so its size is comparable to the edge count rather than to a count of call
+  sites.
+
+- **Two measurement instruments for the fleet rebuild**
+  (`scripts/measure_resolution_tiers.py`, `scripts/measure_record_size.py`), and
+  [`docs/fleet-rebuild-runbook.md`](docs/fleet-rebuild-runbook.md) stating what
+  to capture before a rescan and what to read afterwards. The tier script is the
+  fleet-scale check on `OI-43` step 3's claims, which were measured on canonical
+  shapes only; the size script measures §3.5's three record-shrinking candidates
+  in exact bytes. Neither is in the `ci` chain — both need a real fleet.
+
 ## [3.1.0] - 2026-08-08
 
 **A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at
