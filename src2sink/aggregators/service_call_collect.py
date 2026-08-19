@@ -32,9 +32,23 @@ def _append_path_edge(
     conf: str,
     evidence: str,
     ref: str,
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> None:
-    """Append a deduplicated path-level call edge unless it is a self-edge."""
+    """Append a deduplicated path-level call edge unless it is a self-edge.
+
+    ``dropped`` is an opt-in tally of the self-edges this refuses to emit. It is
+    keyed and deduplicated exactly as a real edge is, so its size is directly
+    comparable to the edge count rather than being a count of call sites.
+
+    The tally exists because `OI-34` is justified on a hop that cannot currently
+    be seen: a call **from a client library to the service it fronts** is a call
+    within one repo id, so it is dropped here. Once the project rather than the
+    repo is the unit, those become real edges. Nothing else can count them —
+    they never reach a written record.
+    """
     if tgt_repo == src:
+        if dropped is not None:
+            dropped.add((src, tgt_path, conf))
         return
     key = (src, tgt_repo, tgt_path, conf)
     if key in seen:
@@ -59,14 +73,19 @@ def _append_host_edge(
     evidence: str,
     ref: str,
     conf: str = "low",
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Append a deduplicated service-level (``*`` path) call edge unless self-edge.
 
     Defaults to ``low`` for a hostname hint. A caller with stronger evidence for
     the hop but no resolved route — an api-client binding, which is explicit
     configuration — passes its own confidence.
+
+    ``dropped`` tallies refused self-edges; see :func:`_append_path_edge`.
     """
     if tgt_repo == src:
+        if dropped is not None:
+            dropped.add((src, "*", conf))
         return
     key = (src, tgt_repo, "*", conf)
     if key in seen:
@@ -126,6 +145,7 @@ def _collect_http_out_edges(
     seen: set[tuple[str, str, str, str]],
     edges: list[CallEdge],
     broken: list[dict[str, str]],
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Collect edges from http-out sink nodes, recording unmatched refs in broken."""
     memo: dict[str, tuple[list[Any], str]] = {}
@@ -153,6 +173,7 @@ def _collect_http_out_edges(
                         conf=conf,
                         evidence=f"path literal {path!r} in http-out",
                         ref=ref,
+                        dropped=dropped,
                     )
                     matched = True
                     edged_repos.add(tgt_repo)
@@ -180,6 +201,7 @@ def _collect_http_out_edges(
                             conf=declared_conf,
                             evidence=f"{why}; path {path!r} at call site",
                             ref=ref,
+                            dropped=dropped,
                         )
                 else:
                     _append_host_edge(
@@ -190,6 +212,7 @@ def _collect_http_out_edges(
                         evidence=str(why),
                         ref=ref,
                         conf=declared_conf,
+                        dropped=dropped,
                     )
                 matched = True
 
@@ -212,6 +235,7 @@ def _collect_http_out_edges(
                     tgt_repo=tgt_repo,
                     evidence=f"host {host!r} in http-out",
                     ref=ref,
+                    dropped=dropped,
                 )
             if not matched and not hosts:
                 # Neither a host nor a route nor a declared target: an outbound
@@ -230,6 +254,7 @@ def _collect_api_client_edges(
     records: list[dict[str, Any]],
     seen: set[tuple[str, str, str, str]],
     edges: list[CallEdge],
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Turn api-client-consumer propagator nodes into cross-repo call edges.
 
@@ -262,6 +287,7 @@ def _collect_api_client_edges(
                     conf="high",
                     evidence=f"{evidence} (declared path)",
                     ref=ref,
+                    dropped=dropped,
                 )
                 continue
             if paths:
@@ -272,6 +298,7 @@ def _collect_api_client_edges(
                 evidence=evidence,
                 ref=ref,
                 conf="high",
+                dropped=dropped,
             )
 
 
@@ -281,6 +308,7 @@ def _collect_reference_edges(
     alias_to_repo: dict[str, str],
     seen: set[tuple[str, str, str, str]],
     edges: list[CallEdge],
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Match path/URL literals in any node detail (config, tests, clients)."""
     memo: dict[str, tuple[list[Any], str]] = {}
@@ -307,6 +335,7 @@ def _collect_reference_edges(
                         conf=conf,
                         evidence=f"path/url reference in {node.get('family')}",
                         ref=ref,
+                        dropped=dropped,
                     )
             for host in hosts:
                 tgt_repo = resolve_repo_for_host(host, alias_to_repo)
@@ -318,22 +347,31 @@ def _collect_reference_edges(
                         tgt_repo=tgt_repo,
                         evidence=f"host reference in {node.get('family')}",
                         ref=ref,
+                        dropped=dropped,
                     )
 
 
 def collect_service_edges(
     records: list[dict[str, Any]],
+    *,
+    dropped: set[tuple[str, str, str]] | None = None,
 ) -> tuple[list[CallEdge], list[dict[str, str]]]:
-    """Collect all cross-repo call edges; returns (edges, unmatched outbound refs)."""
+    """Collect all cross-repo call edges; returns (edges, unmatched outbound refs).
+
+    ``dropped``, when supplied, is filled with the self-edges that were refused —
+    the `OI-34` sizing number. Keyword-only and optional so the three existing
+    callers are unaffected: the edges this returns are identical either way, and
+    a measurement must not change what it measures.
+    """
     inbound = build_inbound_index(records)
     alias_to_repo = build_repo_alias_index(records)
     edges: list[CallEdge] = []
     broken: list[dict[str, str]] = []
     seen: set[tuple[str, str, str, str]] = set()
 
-    _collect_http_out_edges(records, inbound, alias_to_repo, seen, edges, broken)
-    _collect_reference_edges(records, inbound, alias_to_repo, seen, edges)
-    _collect_api_client_edges(records, seen, edges)
+    _collect_http_out_edges(records, inbound, alias_to_repo, seen, edges, broken, dropped)
+    _collect_reference_edges(records, inbound, alias_to_repo, seen, edges, dropped)
+    _collect_api_client_edges(records, seen, edges, dropped)
     return edges, broken
 
 
