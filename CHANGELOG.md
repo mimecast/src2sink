@@ -158,6 +158,16 @@ unreleased window, so **a single rescan covers the lot.**
   and on the sample corpus repairing the error region recovered **zero**
   extracted nodes. It is not yet a signal worth reporting raw.
 
+### Security
+
+- **Dependency advisories cleared (`ES-23929`).** `pip` 26.1.2 → 26.2.2
+  (`PYSEC-2026-3721`) and `urllib3` 2.7.0 → 2.8.0 (`PYSEC-2026-4175`,
+  `PYSEC-2026-4176`, `PYSEC-2026-4177`). Both are development-time dependencies
+  resolved through the lockfile — neither is a runtime dependency of the
+  installed package, so nothing an installer pulls in was affected. The weekly
+  `pip-audit` schedule is what surfaced them, which is the reason it runs on a
+  cron rather than only on push: no first-party code had changed.
+
 ## [3.1.0] - 2026-08-08
 
 **A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at
