@@ -158,6 +158,31 @@ unreleased window, so **a single rescan covers the lot.**
   and on the sample corpus repairing the error region recovered **zero**
   extracted nodes. It is not yet a signal worth reporting raw.
 
+### Security
+
+- **Dependency advisories cleared (`ES-23929`).** Five open advisories against
+  three development dependencies:
+
+  | Package | Was | Now | Advisory |
+  |---|---|---|---|
+  | `urllib3` | 2.7.0 | 2.8.0 | `GHSA-vxq7-64xx-v4gw` (high), `GHSA-gh4c-6fx4-qh6g` |
+  | `filelock` | 3.32.0 | 4.2.4 | `GHSA-v4x8-3wr5-3wq8` (high), `GHSA-9vhv-jxww-xfm5` |
+  | `pip` | 26.1.2 | 26.2.2 | `GHSA-qwm4-qh6w-59xr` |
+
+  **No runtime dependency moved.** The installed package still resolves to
+  `defusedxml` and the tree-sitter grammars and nothing else; all three of these
+  reach the tree through the dev toolchain, so nothing an installer fetches was
+  affected. The lockfile refresh carries 23 dev-tool updates in total — `mypy`,
+  `pytest`, `ruff` and `coverage` among them.
+
+  Two things this surfaced, both worth keeping:
+
+  - `filelock` was flagged by Dependabot but **not** by `pip-audit`, which reads
+    PyPI's advisory feed rather than the GitHub one. The two databases do not
+    agree, and the higher-severity finding here was the one only Dependabot had.
+  - The weekly `pip-audit` cron is what caught the rest. No first-party code had
+    changed, so no push-triggered run would have.
+
 ## [3.1.0] - 2026-08-08
 
 **A drop-in upgrade.** `SCHEMA_VERSION` stays at `2`, `DETECTION_VERSION` at
