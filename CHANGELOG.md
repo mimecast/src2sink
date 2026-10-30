@@ -7,6 +7,8 @@ set out in [`docs/releasing.md`](docs/releasing.md).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-30
+
 ### ⚠️ Upgrading
 
 **A full rescan is required.** `DETECTION_VERSION` moves 13 → 19 and `DERIVATION_VERSION` 5 → 6, so records
@@ -973,6 +975,7 @@ Python **3.14+**. Install with `pip install src2sink` or `uv add src2sink`.
 - The metabase is a concentrated map of weaknesses and personal-data locations.
   Store it access-controlled and encrypted at rest — see the operations guide.
 
+[3.2.0]: https://github.com/mimecast/src2sink/releases/tag/v3.2.0
 [3.1.0]: https://github.com/mimecast/src2sink/releases/tag/v3.1.0
 [3.0.0]: https://github.com/mimecast/src2sink/releases/tag/v3.0.0
 [2.1.0]: https://github.com/mimecast/src2sink/releases/tag/v2.1.0
